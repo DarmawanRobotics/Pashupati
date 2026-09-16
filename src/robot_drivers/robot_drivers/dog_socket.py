@@ -46,7 +46,7 @@ def load_sdk_module(sdk_dir: str, module_name: str):
 
 
 class DogSocket:
-    """Wraps the SDK HighLevel handle: connect, move, gait switch, and state reads."""
+    """Wraps the SDK HighLevel handle: connect, move, and state reads."""
     def __init__(
         self,
         sdk_dir: str,
@@ -96,9 +96,9 @@ class DogSocket:
         """Send a zero-velocity command."""
         return self._dog.move(0.0, 0.0, 0.0)
 
-    def set_gait(self, gait_id):
-        """Switch the robot's walking gait."""
-        return self._dog.switchGait(gait_id)
+    def passive(self):
+        """Put the robot into passive/damping mode; the real e-stop/lock at SDK level."""
+        return self._dog.passive()
 
     def get_battery(self):
         """Return battery percentage (0-100) or None on read error."""

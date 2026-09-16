@@ -1,7 +1,12 @@
+"""Unit tests for DogSocket against a fake SDK module (no hardware needed)."""
+
 import sys
 import types
+
 import pytest
+
 from robot_drivers import dog_socket
+
 
 class FakeHighLevel:
     """Stand-in for the compiled SDK's HighLevel class."""
@@ -9,7 +14,7 @@ class FakeHighLevel:
     def __init__(self):
         """Seed fake state for assertions."""
         self.moved = None
-        self.gait = None
+        self.is_passive = False
         self.battery = 87.0
         self.mode = 1
 
@@ -26,6 +31,11 @@ class FakeHighLevel:
         self.moved = (vx, vy, yaw_rate)
         return True
 
+    def passive(self):
+        """Record that passive/damping mode was requested."""
+        self.is_passive = True
+        return True
+
     def getBatteryPower(self):
         """Return the fake battery percentage."""
         return self.battery
@@ -34,22 +44,17 @@ class FakeHighLevel:
         """Return the fake control mode id."""
         return self.mode
 
-    def switchGait(self, gait_id):
-        """Record the requested gait id."""
-        self.gait = gait_id
-        return True
-
 
 @pytest.fixture
 def socket(monkeypatch, tmp_path):
     """Build a DogSocket wired to the fake SDK module."""
     sdk_dir = tmp_path / "sdk"
-    (sdk_dir / "lib" / "x86_64").mkdir(parents=True)
-    fake_module = types.ModuleType("mc_sdk_l1_py")
+    (sdk_dir / "lib" / "zsl-1w" / "x86_64").mkdir(parents=True)
+    fake_module = types.ModuleType("mc_sdk_zsl_1w_py")
     fake_module.HighLevel = FakeHighLevel
-    monkeypatch.setitem(sys.modules, "mc_sdk_l1_py", fake_module)
+    monkeypatch.setitem(sys.modules, "mc_sdk_zsl_1w_py", fake_module)
     monkeypatch.setattr(dog_socket.platform, "machine", lambda: "x86_64")
-    return dog_socket.DogSocket(str(sdk_dir), "mc_sdk_l1_py", "127.0.0.1", 1234, "127.0.0.2")
+    return dog_socket.DogSocket(str(sdk_dir), "mc_sdk_zsl_1w_py", "127.0.0.1", 1234, "127.0.0.2")
 
 
 def test_move_forwards_values(socket):
@@ -58,10 +63,10 @@ def test_move_forwards_values(socket):
     assert socket._dog.moved == (0.1, 0.0, 0.2)
 
 
-def test_set_gait_forwards_id(socket):
-    """set_gait() should pass the gait id straight to the SDK."""
-    socket.set_gait(2)
-    assert socket._dog.gait == 2
+def test_passive_calls_sdk(socket):
+    """passive() should call the SDK's passive/damping mode."""
+    socket.passive()
+    assert socket._dog.is_passive is True
 
 
 def test_get_battery_returns_percentage(socket):

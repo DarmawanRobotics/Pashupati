@@ -26,8 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'sender_node = robot_drivers.sender_node:main',
-            'receiver_node = robot_drivers.receiver_node:main',
+            'robot_driver_node = robot_drivers.robot_driver_node:main',
         ],
     },
 )
