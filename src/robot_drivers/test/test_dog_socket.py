@@ -1,12 +1,7 @@
-"""Unit tests for DogSocket against a fake SDK module (no hardware needed)."""
-
 import sys
 import types
-
 import pytest
-
 from robot_drivers import dog_socket
-
 
 class FakeHighLevel:
     """Stand-in for the compiled SDK's HighLevel class."""

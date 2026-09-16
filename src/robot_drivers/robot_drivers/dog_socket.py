@@ -1,5 +1,6 @@
-import importlib
+"""Thin wrapper around the Genisom L1 SDK connection, move, gait and state calls."""
 
+import importlib
 import os
 import platform
 import sys
@@ -19,7 +20,6 @@ def check_sdk_dir(sdk_dir: str) -> str:
     """Check that the SDK root dir exists and contains the expected lib subdir."""
     if not sdk_dir or not os.path.isdir(sdk_dir):
         raise FileNotFoundError(f"SDK dir not found: {sdk_dir}")
-
     arch = (
         platform.machine()
         .replace("amd64", "x86_64")
@@ -28,19 +28,23 @@ def check_sdk_dir(sdk_dir: str) -> str:
     lib_path = os.path.join(sdk_dir, "lib", arch)
     if not os.path.isdir(lib_path):
         raise FileNotFoundError(f"SDK lib dir not found: {lib_path}")
-    return lib_path
+    return sdk_dir
 
 
-def load_sdk_module(lib_dir: str, module_name: str):
+def load_sdk_module(sdk_dir: str, module_name: str):
     """Add the SDK arch-specific lib dir to sys.path and import the compiled module."""
-    if lib_dir not in sys.path:
-        sys.path.append(lib_dir)
-    try:
-        return importlib.import_module(module_name)
-    except ImportError as e:
-        raise ImportError(
-            f"Failed to import SDK module '{module_name}' from '{lib_dir}': {e}"
-        ) 
+    arch = (
+        platform.machine()
+        .replace("amd64", "x86_64")
+        .replace("arm64", "aarch64")
+    )
+    lib_path = os.path.join(sdk_dir, "lib", arch)
+    if not os.path.isdir(lib_path):
+        raise FileNotFoundError(f"SDK lib dir not found: {lib_path}")
+    sys.path.insert(0, lib_path)
+    return importlib.import_module(module_name)
+
+
 class DogSocket:
     """Wraps the SDK HighLevel handle: connect, move, gait switch, and state reads."""
     def __init__(
@@ -52,11 +56,9 @@ class DogSocket:
         dog_ip: str,
     ):
         """Load the SDK module and construct the HighLevel handle."""
-        self._lib_dir = check_sdk_dir(sdk_dir)
-        self._module = load_sdk_module(
-            self._lib_dir,
-            module_name,
-        )
+
+        self._sdk_dir = check_sdk_dir(sdk_dir)
+        self._module = load_sdk_module(self._sdk_dir, module_name)
         self._dog = self._module.HighLevel()
 
         self._local_ip = local_ip
