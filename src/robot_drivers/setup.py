@@ -21,10 +21,13 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Bringup launch files and configs for Livox and RealSense sensor drivers',
+    description='Livox/RealSense bringup plus the Genisom L1 SDK cmd_vel bridge and state readout',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'sender_node = robot_drivers.sender_node:main',
+            'receiver_node = robot_drivers.receiver_node:main',
+        ],
     },
 )

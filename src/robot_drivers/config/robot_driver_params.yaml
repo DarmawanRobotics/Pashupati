@@ -1,0 +1,21 @@
+robot_driver_sender:
+  ros__parameters:
+    sdk_dir: ""
+    sdk_module_name: mc_sdk_l1_py
+    dog_ip: 192.168.234.1
+    local_ip: 192.168.234.13
+    local_port: 43988
+    control_frequency: 10.0
+    watchdog_timeout: 1.0
+    max_linear_vel: 0.4
+    max_angular_vel: 0.6
+    default_gait: 0
+
+robot_driver_receiver:
+  ros__parameters:
+    sdk_dir: ""
+    sdk_module_name: mc_sdk_l1_py
+    dog_ip: 192.168.234.1
+    local_ip: 192.168.234.13
+    local_port: 43989
+    poll_rate: 1.0

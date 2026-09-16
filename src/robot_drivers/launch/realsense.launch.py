@@ -8,7 +8,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg_share = get_package_share_directory('robot_drivers')
 
-    realsense_params_yaml = os.path.join(pkg_share, 'config', 'realsense', 'realsense_params.yaml')
+    realsense_params_yaml = os.path.join(pkg_share, 'config', 'realsense_params.yaml')
 
     realsense_camera_node = Node(
         package='realsense2_camera',
