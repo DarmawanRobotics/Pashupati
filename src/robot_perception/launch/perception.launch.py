@@ -16,8 +16,8 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file', default_value=default_params),
         Node(
             package='robot_perception',
-            executable='lidar_sector_perception_node',
-            name='lidar_sector_perception_node',
+            executable='lidar_sector_node',
+            name='lidar_sector_node',
             output='screen',
             parameters=[params_file],
         ),

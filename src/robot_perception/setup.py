@@ -23,7 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'lidar_sector_node = robot_perception.lidar_sector_node:LidarSectorNode',
+            'lidar_sector_node = robot_perception.lidar_sector_node:main',
         ],
     },
 )
