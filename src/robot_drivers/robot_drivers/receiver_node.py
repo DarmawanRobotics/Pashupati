@@ -1,7 +1,7 @@
-"""ROS2 node: polls and publishes the dog's battery and control-mode state."""
-
+#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
@@ -10,7 +10,6 @@ from robot_drivers.dog_socket import CTRL_MODE_NAMES, DogSocket
 
 class ReceiverNode(Node):
     """Publishes battery percentage and a human-readable control-mode string."""
-
     def __init__(self):
         """Declare params, connect the socket, and start the poll timer."""
         super().__init__("robot_receiver_node")

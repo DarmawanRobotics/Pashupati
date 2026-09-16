@@ -2,7 +2,7 @@ import os
 from glob import glob
 from setuptools import find_packages, setup
 
-package_name = 'molly_perception'
+package_name = 'robot_perception'
 
 setup(
     name=package_name,
@@ -18,12 +18,12 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Lidar sector perception (32-sector SectorScan) from Livox CustomMsg, with RViz markers, for Molly',
+    description='Lidar sector perception (32-sector SectorScan) from Livox CustomMsg, with RViz markers, for robot',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'lidar_sector_perception_node = molly_perception.lidar_sector_perception_node:main',
+            'lidar_sector_node = robot_perception.lidar_sector_node:LidarSectorNode',
         ],
     },
 )

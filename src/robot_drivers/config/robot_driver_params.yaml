@@ -1,4 +1,4 @@
-robot_driver_sender:
+robot_sender_node:
   ros__parameters:
     sdk_dir: ""
     sdk_module_name: mc_sdk_l1_py
@@ -9,9 +9,8 @@ robot_driver_sender:
     watchdog_timeout: 1.0
     max_linear_vel: 0.4
     max_angular_vel: 0.6
-    default_gait: 0
 
-robot_driver_receiver:
+robot_receiver_node:
   ros__parameters:
     sdk_dir: ""
     sdk_module_name: mc_sdk_l1_py

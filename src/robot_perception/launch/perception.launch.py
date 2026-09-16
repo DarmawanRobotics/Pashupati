@@ -8,14 +8,14 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('molly_perception')
+    pkg_share = get_package_share_directory('robot_perception')
     default_params = os.path.join(pkg_share, 'config', 'perception_params.yaml')
     params_file = LaunchConfiguration('params_file')
 
     return LaunchDescription([
         DeclareLaunchArgument('params_file', default_value=default_params),
         Node(
-            package='molly_perception',
+            package='robot_perception',
             executable='lidar_sector_perception_node',
             name='lidar_sector_perception_node',
             output='screen',

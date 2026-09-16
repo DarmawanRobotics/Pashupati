@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>molly_perception</name>
+  <name>robot_perception</name>
   <version>0.2.0</version>
   <description>Lidar sector perception: converts Livox's native CustomMsg (livox_ros_driver2) into a fixed N-sector SectorScan (default 32 sectors, front 180 deg) with RViz marker visualization. No PointCloud2, no avoidance/navigation logic here.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
@@ -11,7 +11,10 @@
   <depend>livox_ros_driver2</depend>
   <depend>visualization_msgs</depend>
   <depend>std_msgs</depend>
-  <depend>molly_navigation_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf_transformations</depend>
+  <depend>robot_interface</depend>
   <depend>python3-numpy</depend>
 
   <export>

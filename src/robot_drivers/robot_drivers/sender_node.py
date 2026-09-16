@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import time
 
 import rclpy
@@ -39,7 +40,7 @@ class SenderNode(Node):
 
         self._dog.connect()
 
-        self._auto_mode = False
+        self._is_auto = True
         self._latest_cmd = None
         self._last_cmd_time = 0.0
 
@@ -58,14 +59,14 @@ class SenderNode(Node):
 
     def mode_callback(self, request, response):
         """Enable or disable automatic cmd_vel control."""
-        self._auto_mode = request.data
-        if not self._auto_mode:
+        self._is_auto = request.data
+        if not self._is_auto:
             self._latest_cmd = None
             self._dog.stop()
         response.success = True
         response.message = (
             "auto mode disabled set to manual"
-            if not self._auto_mode
+            if not self._is_auto
             else "auto mode enabled"
         )
         self.get_logger().info(f"control mode: {response.message}")
@@ -86,7 +87,7 @@ class SenderNode(Node):
 
     def emergency_stop_callback(self, request, response):
         """Force manual mode and immediately stop the robot."""
-        self._auto_mode = False
+        self._is_auto = False
         self._latest_cmd = None
         try:
             self._dog.stop()
@@ -101,7 +102,7 @@ class SenderNode(Node):
 
     def update(self):
         """Forward cmd_vel to the robot while auto mode is enabled."""
-        if not self._auto_mode:
+        if not self._is_auto:
             return
         stale = (
             self._latest_cmd is None
@@ -115,29 +116,9 @@ class SenderNode(Node):
             self.get_logger().debug("stale cmd_vel: stopping")
             return
 
-        vx = max(
-            -self._max_linear_vel,
-            min(
-                self._max_linear_vel,
-                self._latest_cmd.linear.x,
-            ),
-        )
-
-        vy = max(
-            -self._max_linear_vel,
-            min(
-                self._max_linear_vel,
-                self._latest_cmd.linear.y,
-            ),
-        )
-
-        yaw = max(
-            -self._max_angular_vel,
-            min(
-                self._max_angular_vel,
-                self._latest_cmd.angular.z,
-            ),
-        )
+        vx = max(-self._max_linear_vel,min(self._max_linear_vel,self._latest_cmd.linear.x,),)
+        vy = max(-self._max_linear_vel,min(self._max_linear_vel,self._latest_cmd.linear.y,),)
+        yaw = max(-self._max_angular_vel,min(self._max_angular_vel,self._latest_cmd.angular.z,),)
         self._dog.move(vx, vy, yaw)
 
     def destroy_node(self):
