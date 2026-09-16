@@ -7,7 +7,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_srvs.srv import SetBool, Trigger
 
-from robot_interface.srv import SetGait
+from robot_interfaces.srv import SetGait
 from robot_drivers.dog_socket import DogSocket
 
 class SenderNode(Node):
@@ -15,10 +15,10 @@ class SenderNode(Node):
     def __init__(self):
         """Declare params, connect the SDK, and set up subscriptions/services."""
         super().__init__("sender_sender_node")
-        self.declare_parameter("sdk_dir", "")
-        self.declare_parameter("sdk_module_name", "mc_sdk_l1_py")
+        self.declare_parameter("sdk_dir", "/opt/genisom_l1_sdk")
+        self.declare_parameter("sdk_module_name", "mc_sdk_zsl_1w_py")
         self.declare_parameter("dog_ip", "192.168.234.1")
-        self.declare_parameter("local_ip", "192.168.234.13")
+        self.declare_parameter("local_ip", "192.168.234.234")
         self.declare_parameter("local_port", 43988)
 
         self.declare_parameter("control_frequency", 10.0)
@@ -39,6 +39,7 @@ class SenderNode(Node):
         )
 
         self._dog.connect()
+        self._dog.stand_up()
 
         self._is_auto = True
         self._latest_cmd = None
@@ -50,7 +51,7 @@ class SenderNode(Node):
         self.create_service(Trigger, "drivers/emergency_stop", self.emergency_stop_callback)
         
         frequency = self.get_parameter("control_frequency").value
-        self.create_timer(1.0 / frequency, self._control_loop)
+        self.create_timer(1.0 / frequency, self.update)
 
     def cmd_vel_callback(self, msg):
         """Cache the latest velocity command and its arrival time."""

@@ -25,7 +25,7 @@ def check_sdk_dir(sdk_dir: str) -> str:
         .replace("amd64", "x86_64")
         .replace("arm64", "aarch64")
     )
-    lib_path = os.path.join(sdk_dir, "lib", arch)
+    lib_path = os.path.join(sdk_dir, "lib/zsl-1w", arch)
     if not os.path.isdir(lib_path):
         raise FileNotFoundError(f"SDK lib dir not found: {lib_path}")
     return sdk_dir
@@ -38,7 +38,7 @@ def load_sdk_module(sdk_dir: str, module_name: str):
         .replace("amd64", "x86_64")
         .replace("arm64", "aarch64")
     )
-    lib_path = os.path.join(sdk_dir, "lib", arch)
+    lib_path = os.path.join(sdk_dir, "lib/zsl-1w", arch)
     if not os.path.isdir(lib_path):
         raise FileNotFoundError(f"SDK lib dir not found: {lib_path}")
     sys.path.insert(0, lib_path)

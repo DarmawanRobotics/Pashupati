@@ -13,10 +13,10 @@ class ReceiverNode(Node):
     def __init__(self):
         """Declare params, connect the socket, and start the poll timer."""
         super().__init__("robot_receiver_node")
-        self.declare_parameter("sdk_dir", "")
-        self.declare_parameter("sdk_module_name", "mc_sdk_l1W_py")
+        self.declare_parameter("sdk_dir", "/opt/genisom_l1_sdk/")
+        self.declare_parameter("sdk_module_name", "mc_sdk_zsl_1w_py")
         self.declare_parameter("dog_ip", "192.168.234.1")
-        self.declare_parameter("local_ip", "192.168.234.13")
+        self.declare_parameter("local_ip", "192.168.234.234")
         self.declare_parameter("local_port", 43989)
         self.declare_parameter("poll_rate", 1.0)
 
