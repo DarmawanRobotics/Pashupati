@@ -1,0 +1,3 @@
+[submodule "src/xtras/drivers/livox_ros_driver2"]
+	path = src/xtras/drivers/livox_ros_driver2
+	url = https://github.com/JasonY85/livox_ros_driver2.git
