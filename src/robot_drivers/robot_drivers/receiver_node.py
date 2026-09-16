@@ -14,9 +14,8 @@ class ReceiverNode(Node):
     def __init__(self):
         """Declare params, connect the socket, and start the poll timer."""
         super().__init__("robot_driver_receiver")
-
         self.declare_parameter("sdk_dir", "")
-        self.declare_parameter("sdk_module_name", "mc_sdk_l1_py")
+        self.declare_parameter("sdk_module_name", "mc_sdk_l1W_py")
         self.declare_parameter("dog_ip", "192.168.234.1")
         self.declare_parameter("local_ip", "192.168.234.13")
         self.declare_parameter("local_port", 43989)
@@ -31,13 +30,14 @@ class ReceiverNode(Node):
         )
         self._dog.connect()
 
-        self._battery_pub = self.create_publisher(BatteryState, "~/battery", 10)
-        self._state_pub = self.create_publisher(String, "~/state", 10)
+
+        self._battery_pub = self.create_publisher(BatteryState, "drivers/battery", 10)
+        self._state_pub = self.create_publisher(String, "drivers/robot_state", 10)
 
         rate = self.get_parameter("poll_rate").value
-        self.create_timer(1.0 / rate, self._poll)
+        self.create_timer(1.0 / rate, self._update_callback)
 
-    def _poll(self):
+    def _update_callback(self):
         """Read battery + control mode from the SDK and publish both."""
         connected = self._dog.is_connected()
         battery = self._dog.get_battery()
@@ -54,7 +54,6 @@ class ReceiverNode(Node):
         state_msg = String()
         state_msg.data = f"connected={connected} mode={mode_name}({mode}) battery={battery}"
         self._state_pub.publish(state_msg)
-
 
 def main(args=None):
     """Spin the receiver node."""

@@ -1,9 +1,9 @@
-"""Thin wrapper around the Genisom L1 SDK connection, move, gait and state calls."""
-
 import importlib
+
 import os
 import platform
 import sys
+
 
 CTRL_MODE_NAMES = {
     0: "DAMPING",
@@ -15,43 +15,61 @@ CTRL_MODE_NAMES = {
 }
 
 
-def find_sdk_dir(configured_dir=""):
-    """Resolve the SDK root dir from the param, env var, or a common root path."""
-    for candidate in (configured_dir, os.environ.get("GENISOM_SDK_DIR", "")):
-        if candidate and os.path.isdir(candidate):
-            return candidate
-    for guess in ("/root/genisom_l1_sdk_old", "/genisom_l1_sdk_old", "/home/nvidia/genisom_l1_sdk_old"):
-        if os.path.isdir(guess):
-            return guess
-    raise FileNotFoundError("genisom SDK dir not found: set the 'sdk_dir' param or GENISOM_SDK_DIR")
+def check_sdk_dir(sdk_dir: str) -> str:
+    """Check that the SDK root dir exists and contains the expected lib subdir."""
+    if not sdk_dir or not os.path.isdir(sdk_dir):
+        raise FileNotFoundError(f"SDK dir not found: {sdk_dir}")
 
-
-def load_sdk_module(sdk_dir, module_name):
-    """Add the SDK's arch-specific lib dir to sys.path and import the compiled module."""
-    arch = platform.machine().replace("amd64", "x86_64").replace("arm64", "aarch64")
+    arch = (
+        platform.machine()
+        .replace("amd64", "x86_64")
+        .replace("arm64", "aarch64")
+    )
     lib_path = os.path.join(sdk_dir, "lib", arch)
     if not os.path.isdir(lib_path):
         raise FileNotFoundError(f"SDK lib dir not found: {lib_path}")
-    sys.path.insert(0, lib_path)
-    os.environ["LD_LIBRARY_PATH"] = lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", "")
-    return importlib.import_module(module_name)
+    return lib_path
 
 
+def load_sdk_module(lib_dir: str, module_name: str):
+    """Add the SDK arch-specific lib dir to sys.path and import the compiled module."""
+    if lib_dir not in sys.path:
+        sys.path.append(lib_dir)
+    try:
+        return importlib.import_module(module_name)
+    except ImportError as e:
+        raise ImportError(
+            f"Failed to import SDK module '{module_name}' from '{lib_dir}': {e}"
+        ) 
 class DogSocket:
     """Wraps the SDK HighLevel handle: connect, move, gait switch, and state reads."""
-
-    def __init__(self, sdk_dir, module_name, local_ip, local_port, dog_ip):
+    def __init__(
+        self,
+        sdk_dir: str,
+        module_name: str,
+        local_ip: str,
+        local_port: int,
+        dog_ip: str,
+    ):
         """Load the SDK module and construct the HighLevel handle."""
-        self._sdk_dir = find_sdk_dir(sdk_dir)
-        self._module = load_sdk_module(self._sdk_dir, module_name)
+        self._lib_dir = check_sdk_dir(sdk_dir)
+        self._module = load_sdk_module(
+            self._lib_dir,
+            module_name,
+        )
         self._dog = self._module.HighLevel()
+
         self._local_ip = local_ip
         self._local_port = local_port
         self._dog_ip = dog_ip
 
     def connect(self):
         """Init the UDP link to the robot."""
-        self._dog.initRobot(self._local_ip, self._local_port, self._dog_ip)
+        self._dog.initRobot(
+            self._local_ip,
+            self._local_port,
+            self._dog_ip,
+        )
 
     def is_connected(self):
         """Return True if the SDK reports a live connection."""
@@ -77,7 +95,7 @@ class DogSocket:
         return self._dog.move(0.0, 0.0, 0.0)
 
     def set_gait(self, gait_id):
-        """Switch the robot's walking gait (confirm the real method name in the SDK header)."""
+        """Switch the robot's walking gait."""
         return self._dog.switchGait(gait_id)
 
     def get_battery(self):

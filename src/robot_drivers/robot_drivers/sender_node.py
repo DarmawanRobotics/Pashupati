@@ -4,17 +4,18 @@ import time
 from enum import Enum
 
 import rclpy
-from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from robot_interface.enum_utils import generateEnumDict
+
+from geometry_msgs.msg import Twist
+from std_srvs.srv import SetBool, Trigger
+
 from robot_interface.msg import GaitMode
 from robot_interface.srv import SetGait
-from std_srvs.srv import SetBool, Trigger
+from robot_interface.enum_utils import generateEnumDict
 
 from robot_drivers.dog_socket import DogSocket
 
 GaitModeEnum = Enum('GaitModeEnum', generateEnumDict(GaitMode))
-
 
 class SenderNode(Node):
     """Owns the SDK write side: cmd_vel forwarding, gait switch, mode and estop services."""
@@ -22,7 +23,6 @@ class SenderNode(Node):
     def __init__(self):
         """Declare params, connect the socket, and set up the sub/services/timer."""
         super().__init__("robot_driver_sender")
-
         self.declare_parameter("sdk_dir", "")
         self.declare_parameter("sdk_module_name", "mc_sdk_l1_py")
         self.declare_parameter("dog_ip", "192.168.234.1")
@@ -52,9 +52,9 @@ class SenderNode(Node):
         self._last_cmd_time = 0.0
 
         self.create_subscription(Twist, "cmd_vel", self._on_cmd_vel, 10)
-        self.create_service(SetBool, "~/set_auto_mode", self._on_set_auto_mode)
-        self.create_service(SetGait, "~/set_gait", self._on_set_gait)
-        self.create_service(Trigger, "~/emergency_stop", self._on_emergency_stop)
+        self.create_service(SetBool, "drivers/set_auto_mode", self._on_set_auto_mode)
+        self.create_service(SetGait, "drivers/set_gait", self._on_set_gait)
+        self.create_service(Trigger, "drivers/emergency_stop", self._on_emergency_stop)
 
         freq = self.get_parameter("control_frequency").value
         self.create_timer(1.0 / freq, self._control_loop)
@@ -63,7 +63,6 @@ class SenderNode(Node):
             self._dog.set_gait(self.get_parameter("default_gait").value)
         except Exception as error:
             self.get_logger().warn(f"default gait switch failed: {error}")
-
         self.get_logger().info("robot_driver sender ready (manual mode)")
 
     def _on_cmd_vel(self, msg):
@@ -109,10 +108,12 @@ class SenderNode(Node):
     def _control_loop(self):
         """Forward the latest cmd_vel to the dog while in auto mode, else do nothing."""
         if not self._auto_mode:
+            self.get_logger().debug("manual mode: ignoring cmd_vel")
             return
         stale = self._latest_cmd is None or (time.time() - self._last_cmd_time) > self._watchdog_timeout
         if stale:
             self._dog.stop()
+            self.get_logger().debug("stale cmd_vel: stopping")
             return
         vx = max(-self._max_linear_vel, min(self._max_linear_vel, self._latest_cmd.linear.x))
         vy = max(-self._max_linear_vel, min(self._max_linear_vel, self._latest_cmd.linear.y))
@@ -132,7 +133,6 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()
