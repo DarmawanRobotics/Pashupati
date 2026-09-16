@@ -13,8 +13,9 @@
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>tf2_ros</depend>
+  <depend>python3-transform3d</depend>
   <depend>tf_transformations</depend>
-  <depend>robot_interface</depend>
+  <depend>robot_interfaces</depend>
   <depend>python3-numpy</depend>
 
   <export>

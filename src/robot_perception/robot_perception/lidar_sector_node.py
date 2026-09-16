@@ -14,7 +14,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 import tf_transformations
 from tf2_ros import Buffer, TransformListener
 
-from robot_interface.msg import SectorScan
+from robot_interfaces.msg import SectorScan
 
 
 class LidarSectorNode(Node):
@@ -145,15 +145,19 @@ class LidarSectorNode(Node):
         origin = Point(x=0.0, y=0.0, z=0.0)
         for i, r in enumerate(ranges):
             theta = self._angle_min + (i + 0.5) * self._angle_increment
-            p = Point(x=float(r * math.cos(theta)), y=float(r * math.sin(theta)), z=0.0)
             color = self.range_to_color(float(r))
-
+            ray_end = Point(
+                x=float(self._range_max * math.cos(theta)),
+                y=float(self._range_max * math.sin(theta)),
+                z=0.0,
+            )
             ray_marker.points.append(origin)
-            ray_marker.points.append(p)
+            ray_marker.points.append(ray_end)
             ray_marker.colors.append(color)
             ray_marker.colors.append(color)
 
-            point_marker.points.append(p)
+            detected = Point(x=float(r * math.cos(theta)), y=float(r * math.sin(theta)), z=0.0)
+            point_marker.points.append(detected)
             point_marker.colors.append(color)
 
         markers = MarkerArray()
