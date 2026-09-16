@@ -1,6 +1,0 @@
-int32 STAND       = 0
-int32 WALK        = 1
-int32 TROT        = 2
-int32 STAIR_CLIMB = 3
-
-int32 gait_mode

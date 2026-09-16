@@ -1,26 +1,3 @@
-#!/usr/bin/env python3
-"""
-molly_perception / lidar_sector_perception_node
-
-Consumes livox_ros_driver2/msg/CustomMsg directly -- Livox's own native
-point format -- NOT sensor_msgs/PointCloud2. Requires the Livox driver
-launched with xfer_format:=1 ("Livox customized pointcloud format",
-see livox_ros_driver2's msg_MID360.launch as reference).
-
-Why CustomMsg instead of PointCloud2:
-- No PointCloud2 field-offset decoding (sensor_msgs_py.point_cloud2) --
-  points already arrive as a flat array of typed CustomPoint structs
-  (x, y, z, reflectivity, tag, line, offset_time), lighter on an
-  embedded Jetson.
-- Trade-off: this node is now Livox-specific. Swapping to a non-Livox
-  lidar later means going back to a PointCloud2-based version.
-
-Pure perception: height-band floor removal + fixed N-sector binning
-(default 32 sectors, front 180 deg -- same convention as ICar4-ITS's
-obstacle_1) + MarkerArray for RViz. No avoidance/danger logic here --
-that's molly_navigation's obstacle_avoidance_node.
-"""
-
 import math
 
 import numpy as np
