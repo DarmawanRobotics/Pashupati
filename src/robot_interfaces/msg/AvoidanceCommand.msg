@@ -1,0 +1,4 @@
+std_msgs/Header header
+float32 steering_bias
+float32 velocity_scale
+bool emergency

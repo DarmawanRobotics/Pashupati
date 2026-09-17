@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_perception</name>
+  <version>0.2.0</version>
+  <description>Lidar sector perception: converts Livox's native CustomMsg (livox_ros_driver2) into a fixed N-sector SectorScan (default 32 sectors, front 180 deg) with RViz marker visualization. No PointCloud2, no avoidance/navigation logic here.</description>
+  <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-transform3d</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>robot_interfaces</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
