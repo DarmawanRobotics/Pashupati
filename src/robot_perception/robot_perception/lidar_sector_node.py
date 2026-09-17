@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import math
 import numpy as np
 
@@ -19,7 +20,7 @@ class LidarSectorNode(Node):
     """Bins Livox points into fixed angular sectors and publishes a SectorScan."""
     def __init__(self):
         """Declare params, set up TF, and wire the subscription/publishers."""
-        super().__init__('lidar_sector_perception_node')
+        super().__init__('lidar_sector_node')
         self.declare_parameter('num_sectors', 32)
         self.declare_parameter('fov_deg', 180.0)
         self.declare_parameter('range_max', 8.0)

@@ -51,6 +51,7 @@ class RobotDriverNode(Node):
 
         self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
         self.create_service(SetBool, "drivers/set_auto_mode", self.mode_callback)
+        self.create_service(SetBool, "drivers/stand_up", self.stand_up_callback)
         self.create_service(Trigger, "drivers/emergency_stop", self.emergency_stop_callback)
 
         self._battery_pub = self.create_publisher(BatteryState, "drivers/battery", 10)
@@ -87,6 +88,19 @@ class RobotDriverNode(Node):
             "auto mode enabled" if self._is_auto else "auto mode disabled set to manual"
         )
         self.get_logger().info(f"control mode: {response.message}")
+        return response
+
+    def stand_up_callback(self, request, response):
+        """Stand up the robot if true or lie down if false."""
+        if request.data:
+            self._ensure_standing()
+            response.success = True
+            response.message = "robot standing"
+        else:
+            self.get_logger().info("lie_down service called")
+            success = self._dog.lie_down()
+            response.success = success
+            response.message = "robot lying down" if success else "lie_down failed"
         return response
 
     def emergency_stop_callback(self, request, response):
