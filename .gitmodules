@@ -4,3 +4,6 @@
 [submodule "src/xtras/drivers/realsense2_ros"]
 	path = src/xtras/drivers/realsense2_ros
 	url = https://github.com/realsenseai/realsense-ros.git
+[submodule "src/xtras/slam/fast_lio2"]
+	path = src/xtras/slam/fast_lio2
+	url = git@github.com:hku-mars/FAST_LIO.git
