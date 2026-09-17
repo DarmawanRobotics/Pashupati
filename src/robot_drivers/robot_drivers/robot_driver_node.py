@@ -48,6 +48,7 @@ class RobotDriverNode(Node):
         self._is_auto = False
         self._latest_cmd = None
         self._last_cmd_time = 0.0
+        self._battery_percentage = 0.0
 
         self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
         self.create_service(SetBool, "drivers/set_auto_mode", self.mode_callback)
@@ -79,16 +80,27 @@ class RobotDriverNode(Node):
 
     def mode_callback(self, request, response):
         """Enable or disable automatic cmd_vel control."""
-        self._is_auto = request.data
-        if not self._is_auto:
-            self._latest_cmd = None
-            self._dog.stop()
-        response.success = True
-        response.message = (
-            "auto mode enabled" if self._is_auto else "auto mode disabled set to manual"
-        )
-        self.get_logger().info(f"control mode: {response.message}")
-        return response
+        if not self._dog.is_connected():
+            response.success = False
+            response.message = "dog not connected"
+            self.get_logger().error("cannot set auto mode: dog not connected")
+            return response
+        if self._battery_percentage < 20.0:
+            response.success = False
+            response.message = "battery low"
+            self.get_logger().error("cannot set auto mode: battery low")
+            return response
+        else:
+            self._is_auto = request.data
+            if not self._is_auto:
+                self._latest_cmd = None
+                self._dog.stop()
+            response.success = True
+            response.message = (
+                "auto mode enabled" if self._is_auto else "auto mode disabled set to manual"
+            )
+            self.get_logger().info(f"control mode: {response.message}")
+            return response
 
     def stand_up_callback(self, request, response):
         """Stand up the robot if true or lie down if false."""
@@ -138,11 +150,12 @@ class RobotDriverNode(Node):
         connected = self._dog.is_connected()
         battery = self._dog.get_battery()
         mode = self._dog.get_ctrl_mode()
-
+        
         if battery is not None:
+            self._battery_percentage = battery/100.0
             battery_msg = BatteryState()
             battery_msg.header.stamp = self.get_clock().now().to_msg()
-            battery_msg.percentage = battery / 100.0
+            battery_msg.percentage = self._battery_percentage
             battery_msg.present = connected
             self._battery_pub.publish(battery_msg)
 
