@@ -1,0 +1,31 @@
+path_follower_node:
+  ros__parameters:
+    control_rate: 20.0
+    lookahead_distance: 1.0
+    avoidance_enabled: true
+    goal_tolerance: 0.3
+    target_linear_velocity: 0.4
+    max_linear_velocity: 0.6
+    max_angular_velocity: 1.0
+    linear_accel_limit: 0.5
+    angular_accel_limit: 1.5
+    arc_visualization_length: 2.0
+    marker_lifetime_sec: 0.5
+
+obstacle_avoidance_node:
+  ros__parameters:
+    safe_distance: 3.0
+    emergency_distance: 0.4
+    steering_gain: 1.5
+    velocity_gain: 1.0
+    steering_zone_center_deg: 45.0
+    steering_zone_width_deg: 60.0
+    velocity_zone_center_deg: 60.0
+    velocity_zone_width_deg: 90.0
+    following_zone_width_deg: 30.0
+    emergency_cone_deg: 60.0
+    smoothing: 0.85
+
+path_loader_node:
+  ros__parameters:
+    waypoints_file: ""
