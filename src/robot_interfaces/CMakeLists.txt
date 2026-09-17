@@ -8,6 +8,7 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/SectorScan.msg"
+  "msg/AvoidanceCommand.msg"
   "srv/SetGait.srv"
   DEPENDENCIES std_msgs
 )
