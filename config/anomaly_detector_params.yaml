@@ -1,0 +1,10 @@
+anomaly_detector_node:
+  ros__parameters:
+    image_topic: /camera/color/image_raw
+    result_topic: anomaly_detector/result
+    is_anomaly_topic: anomaly_detector/is_anomaly
+    annotated_topic: anomaly_detector/annotated_image
+    ollama_model: moondream
+    check_interval_sec: 2.0
+    publish_annotated: true
+    jpeg_quality: 90
