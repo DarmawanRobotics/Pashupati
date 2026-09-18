@@ -18,7 +18,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from moondream_anomaly_detector import ollama_client
+from robot_perception.utils import ollama_client
 
 
 class AnomalyDetectorNode(Node):

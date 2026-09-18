@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'lidar_sector_node = robot_perception.lidar_sector_node:main',
+            'anomaly_detector_node = robot_perception.anomaly_detector_node:main',
         ],
     },
 )
