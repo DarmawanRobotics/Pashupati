@@ -36,3 +36,5 @@ desktop.ini
 # ---- misc ----
 *.log
 .cache/
+
+.vscode/
