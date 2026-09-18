@@ -22,7 +22,9 @@ include_directories(include)
 
 add_library(${PROJECT_NAME} SHARED
   src/control_panel.cpp
+  src/cmd_vel_widget.cpp
   include/robot_ui/control_panel.hpp
+  include/robot_ui/cmd_vel_widget.hpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -37,6 +39,7 @@ ament_target_dependencies(${PROJECT_NAME}
   pluginlib
   std_srvs
   sensor_msgs
+  geometry_msgs
   robot_interfaces
 )
 

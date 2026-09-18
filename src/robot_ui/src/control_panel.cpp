@@ -11,24 +11,44 @@ namespace robot_ui
 {
 
 ControlPanel::ControlPanel(QWidget * parent)
-: rviz_common::Panel(parent), is_recording_(false), mission_is_active_(true)
+: rviz_common::Panel(parent), is_recording_(false)
 {
+  // --- Compact global styling: this is what stops the panel from
+  // rendering huge on first load (default Qt margins/paddings + normal
+  // font size add up fast across 5 group boxes). ---
+  setStyleSheet(
+    "QWidget { font-size: 9pt; }"
+    "QGroupBox { font-weight: 600; border: 1px solid #3a3a3a; border-radius: 4px;"
+    "  margin-top: 7px; padding-top: 4px; }"
+    "QGroupBox::title { subcontrol-origin: margin; left: 6px; padding: 0 3px; }"
+    "QPushButton { padding: 2px 8px; min-height: 18px; }"
+    "QLabel { padding: 0px; }"
+    "QLineEdit, QDoubleSpinBox { padding: 1px 3px; min-height: 18px; }");
+
   auto * main_layout = new QVBoxLayout;
+  main_layout->setContentsMargins(4, 4, 4, 4);
+  main_layout->setSpacing(4);
 
   // --- Battery group ---
   auto * battery_group = new QGroupBox("Battery");
   auto * battery_layout = new QVBoxLayout;
+  battery_layout->setContentsMargins(4, 4, 4, 4);
+  battery_layout->setSpacing(2);
   battery_progress_bar_ = new QProgressBar;
   battery_progress_bar_->setRange(0, 100);
   battery_progress_bar_->setFormat("no data yet");
+  battery_progress_bar_->setFixedHeight(14);
   battery_layout->addWidget(battery_progress_bar_);
   battery_group->setLayout(battery_layout);
 
   // --- Localization group ---
   auto * localization_group = new QGroupBox("Localization");
   auto * localization_layout = new QVBoxLayout;
+  localization_layout->setContentsMargins(4, 4, 4, 4);
+  localization_layout->setSpacing(2);
   localization_button_ = new QPushButton("Trigger Localization");
   localization_status_label_ = new QLabel("idle");
+  localization_status_label_->setFixedHeight(16);
   localization_layout->addWidget(localization_button_);
   localization_layout->addWidget(localization_status_label_);
   localization_group->setLayout(localization_layout);
@@ -36,17 +56,22 @@ ControlPanel::ControlPanel(QWidget * parent)
   // --- Path recording group ---
   auto * recording_group = new QGroupBox("Path Recording");
   auto * recording_layout = new QVBoxLayout;
+  recording_layout->setContentsMargins(4, 4, 4, 4);
+  recording_layout->setSpacing(2);
   record_button_ = new QPushButton("Start Recording");
   auto * dwell_layout = new QHBoxLayout;
+  dwell_layout->setSpacing(4);
   dwell_spinbox_ = new QDoubleSpinBox;
   dwell_spinbox_->setRange(0.0, 300.0);
   dwell_spinbox_->setValue(5.0);
   dwell_spinbox_->setSuffix(" s");
+  dwell_spinbox_->setFixedWidth(70);
   mark_stop_point_button_ = new QPushButton("Mark Stop Point");
   dwell_layout->addWidget(new QLabel("Dwell:"));
   dwell_layout->addWidget(dwell_spinbox_);
   dwell_layout->addWidget(mark_stop_point_button_);
   recording_status_label_ = new QLabel("not recording");
+  recording_status_label_->setFixedHeight(16);
   recording_layout->addWidget(record_button_);
   recording_layout->addLayout(dwell_layout);
   recording_layout->addWidget(recording_status_label_);
@@ -55,7 +80,10 @@ ControlPanel::ControlPanel(QWidget * parent)
   // --- Path loading group ---
   auto * load_group = new QGroupBox("Path Loading");
   auto * load_layout = new QVBoxLayout;
+  load_layout->setContentsMargins(4, 4, 4, 4);
+  load_layout->setSpacing(2);
   auto * file_layout = new QHBoxLayout;
+  file_layout->setSpacing(4);
   waypoints_file_edit_ = new QLineEdit(
     "/home/robot/dev/Pashupati/map/example/example_waypoint.csv");
   browse_button_ = new QPushButton("Browse...");
@@ -63,47 +91,57 @@ ControlPanel::ControlPanel(QWidget * parent)
   file_layout->addWidget(browse_button_);
   load_button_ = new QPushButton("Load Path");
   load_status_label_ = new QLabel("no path loaded yet");
+  load_status_label_->setFixedHeight(16);
   load_layout->addLayout(file_layout);
   load_layout->addWidget(load_button_);
   load_layout->addWidget(load_status_label_);
   load_group->setLayout(load_layout);
 
-  // --- Mission group (behavior tree) ---
-  auto * mission_group = new QGroupBox("Mission (Behavior Tree)");
-  auto * mission_layout = new QVBoxLayout;
-  mission_root_status_label_ = new QLabel("root: unknown");
-  mission_active_behavior_label_ = new QLabel("active: none");
-  mission_pause_button_ = new QPushButton("Pause Mission");
-  mission_layout->addWidget(mission_root_status_label_);
-  mission_layout->addWidget(mission_active_behavior_label_);
-  mission_layout->addWidget(mission_pause_button_);
-  mission_group->setLayout(mission_layout);
-
   // --- Navigation group ---
   auto * nav_group = new QGroupBox("Navigation");
   auto * nav_layout = new QVBoxLayout;
+  nav_layout->setContentsMargins(4, 4, 4, 4);
+  nav_layout->setSpacing(2);
   auto * nav_button_layout = new QHBoxLayout;
+  nav_button_layout->setSpacing(4);
   start_nav_button_ = new QPushButton("Start Navigation");
-  start_nav_button_->setEnabled(false);  // mission_is_active_ starts true, matches mission_node's default
   cancel_nav_button_ = new QPushButton("Cancel");
   cancel_nav_button_->setEnabled(false);
   nav_button_layout->addWidget(start_nav_button_);
   nav_button_layout->addWidget(cancel_nav_button_);
   nav_progress_bar_ = new QProgressBar;
   nav_progress_bar_->setRange(0, 100);
+  nav_progress_bar_->setFixedHeight(14);
   nav_status_label_ = new QLabel("NAV_INACTIVE");
   nav_status_label_->setAutoFillBackground(true);
+  nav_status_label_->setFixedHeight(16);
   nav_layout->addLayout(nav_button_layout);
   nav_layout->addWidget(nav_progress_bar_);
   nav_layout->addWidget(nav_status_label_);
   nav_group->setLayout(nav_layout);
 
+  // --- Cmd Vel group ---
+  auto * cmd_vel_group = new QGroupBox("Cmd Vel");
+  auto * cmd_vel_layout = new QVBoxLayout;
+  cmd_vel_layout->setContentsMargins(4, 4, 4, 4);
+  cmd_vel_layout->setSpacing(2);
+  auto * cmd_vel_row = new QHBoxLayout;
+  cmd_vel_row->setSpacing(6);
+  cmd_vel_widget_ = new CmdVelWidget;
+  cmd_vel_label_ = new QLabel("vx: 0.00  vy: 0.00  wz: 0.00");
+  cmd_vel_label_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+  cmd_vel_label_->setWordWrap(true);
+  cmd_vel_row->addWidget(cmd_vel_widget_);
+  cmd_vel_row->addWidget(cmd_vel_label_, 1);
+  cmd_vel_layout->addLayout(cmd_vel_row);
+  cmd_vel_group->setLayout(cmd_vel_layout);
+
   main_layout->addWidget(battery_group);
   main_layout->addWidget(localization_group);
   main_layout->addWidget(recording_group);
   main_layout->addWidget(load_group);
-  main_layout->addWidget(mission_group);
   main_layout->addWidget(nav_group);
+  main_layout->addWidget(cmd_vel_group);
   setLayout(main_layout);
 
   connect(localization_button_, &QPushButton::clicked, this, &ControlPanel::onTriggerLocalization);
@@ -113,7 +151,6 @@ ControlPanel::ControlPanel(QWidget * parent)
   connect(load_button_, &QPushButton::clicked, this, &ControlPanel::onLoadPath);
   connect(start_nav_button_, &QPushButton::clicked, this, &ControlPanel::onStartNavigation);
   connect(cancel_nav_button_, &QPushButton::clicked, this, &ControlPanel::onCancelNavigation);
-  connect(mission_pause_button_, &QPushButton::clicked, this, &ControlPanel::onToggleMissionActive);
 }
 
 ControlPanel::~ControlPanel() = default;
@@ -137,10 +174,9 @@ void ControlPanel::onInitialize()
     "drivers/battery", 10,
     std::bind(&ControlPanel::batteryCallback, this, std::placeholders::_1));
 
-  mission_set_active_client_ = node_->create_client<std_srvs::srv::SetBool>("mission/set_active");
-  mission_status_sub_ = node_->create_subscription<robot_interfaces::msg::MissionStatus>(
-    "mission/status", 10,
-    std::bind(&ControlPanel::missionStatusCallback, this, std::placeholders::_1));
+  cmd_vel_sub_ = node_->create_subscription<geometry_msgs::msg::Twist>(
+    "cmd_vel", 10,
+    std::bind(&ControlPanel::cmdVelCallback, this, std::placeholders::_1));
 
   // rviz's own event loop is Qt's, not rclcpp's spin() -- pump callbacks
   // (service responses, action feedback/result, the status subscription)
@@ -345,45 +381,14 @@ void ControlPanel::batteryCallback(const sensor_msgs::msg::BatteryState::SharedP
     QString::fromStdString("QProgressBar::chunk { background-color: " + color + "; }"));
 }
 
-void ControlPanel::onToggleMissionActive()
+void ControlPanel::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
-  if (!mission_set_active_client_->service_is_ready()) {
-    setStatusLabel(mission_root_status_label_, "mission/set_active not available", "#ffcc00");
-    return;
-  }
-  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
-  request->data = !mission_is_active_;
-  mission_set_active_client_->async_send_request(
-    request,
-    [this](rclcpp::Client<std_srvs::srv::SetBool>::SharedFuture future) {
-      // mission_is_active_, the button text, and start_nav_button_'s enabled state are all
-      // driven from missionStatusCallback (the actual mission/status topic), not from here --
-      // that keeps one source of truth even if something else also toggled mission/set_active.
-      auto response = future.get();
-      if (!response->success) {
-        setStatusLabel(mission_root_status_label_, "set_active failed: " + response->message, "#ff8888");
-      }
-    });
-}
-
-void ControlPanel::missionStatusCallback(const robot_interfaces::msg::MissionStatus::SharedPtr msg)
-{
-  mission_is_active_ = msg->active;
-  mission_pause_button_->setText(mission_is_active_ ? "Pause Mission" : "Resume Mission");
-  start_nav_button_->setEnabled(!mission_is_active_);
-
-  std::string color = "#cccccc";
-  if (msg->root_status == "RUNNING") {
-    color = "#88ff88";
-  } else if (msg->root_status == "SUCCESS") {
-    color = "#88bbff";
-  } else if (msg->root_status == "FAILURE") {
-    color = "#ff8888";
-  }
-  std::string suffix = msg->active ? "" : " (paused)";
-  setStatusLabel(mission_root_status_label_, "root: " + msg->root_status + suffix, color);
-  mission_active_behavior_label_->setText(
-    QString::fromStdString("active: " + msg->active_behavior));
+  cmd_vel_widget_->setValues(msg->linear.x, msg->linear.y, msg->angular.z);
+  cmd_vel_label_->setText(
+    QString("vx: %1 m/s\nvy: %2 m/s\nwz: %3 rad/s")
+      .arg(msg->linear.x, 0, 'f', 2)
+      .arg(msg->linear.y, 0, 'f', 2)
+      .arg(msg->angular.z, 0, 'f', 2));
 }
 
 }  // namespace robot_ui

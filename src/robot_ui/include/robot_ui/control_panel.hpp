@@ -16,14 +16,16 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rviz_common/panel.hpp>
 
+#include <geometry_msgs/msg/twist.hpp>
 #include <robot_interfaces/action/navigate_route.hpp>
-#include <robot_interfaces/msg/mission_status.hpp>
 #include <robot_interfaces/msg/navigation_status.hpp>
 #include <robot_interfaces/srv/load_path.hpp>
 #include <robot_interfaces/srv/mark_stop_point.hpp>
 #include <sensor_msgs/msg/battery_state.hpp>
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_srvs/srv/trigger.hpp>
+
+#include "robot_ui/cmd_vel_widget.hpp"
 
 namespace robot_ui
 {
@@ -46,7 +48,6 @@ private Q_SLOTS:
   void onLoadPath();
   void onStartNavigation();
   void onCancelNavigation();
-  void onToggleMissionActive();
   void onSpinRos();
 
 private:
@@ -60,7 +61,7 @@ private:
   void navResultCallback(const GoalHandleNavigateRoute::WrappedResult & result);
   void navStatusCallback(const robot_interfaces::msg::NavigationStatus::SharedPtr msg);
   void batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg);
-  void missionStatusCallback(const robot_interfaces::msg::MissionStatus::SharedPtr msg);
+  void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
 
   rclcpp::Node::SharedPtr node_;
   QTimer * spin_timer_;
@@ -99,13 +100,10 @@ private:
   GoalHandleNavigateRoute::SharedPtr current_goal_handle_;
   rclcpp::Subscription<robot_interfaces::msg::NavigationStatus>::SharedPtr nav_status_sub_;
 
-  // Mission (behavior tree)
-  QLabel * mission_root_status_label_;
-  QLabel * mission_active_behavior_label_;
-  QPushButton * mission_pause_button_;
-  bool mission_is_active_;
-  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr mission_set_active_client_;
-  rclcpp::Subscription<robot_interfaces::msg::MissionStatus>::SharedPtr mission_status_sub_;
+  // Cmd vel visualization
+  CmdVelWidget * cmd_vel_widget_;
+  QLabel * cmd_vel_label_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
 };
 
 }  // namespace robot_ui

@@ -1,5 +1,0 @@
-<BehaviorTree>
-  <Sequence name="Mission" memory="true">
-    <NavigateRoute name="Navigate"/>
-  </Sequence>
-</BehaviorTree>

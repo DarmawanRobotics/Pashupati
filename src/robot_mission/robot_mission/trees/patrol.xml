@@ -1,7 +1,0 @@
-<BehaviorTree>
-  <Repeat name="PatrolForever" num_success="-1">
-    <Retry name="RetryRoute" num_failures="3">
-      <NavigateRoute name="Navigate"/>
-    </Retry>
-  </Repeat>
-</BehaviorTree>
