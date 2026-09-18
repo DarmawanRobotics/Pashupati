@@ -11,23 +11,12 @@ def generate_launch_description():
     """Launch perception nodes."""
     pkg_share = get_package_share_directory("robot_perception")
     default_params = os.path.join(pkg_share, "config", "perception_params.yaml")
-
     params_file = LaunchConfiguration("params_file")
-    image_topic = LaunchConfiguration("image_topic")
-    camera_info_topic = LaunchConfiguration("camera_info_topic")
 
     return LaunchDescription([
         DeclareLaunchArgument(
             "params_file",
             default_value=default_params,
-        ),
-        DeclareLaunchArgument(
-            "image_topic",
-            default_value="/camera/color/image_raw",
-        ),
-        DeclareLaunchArgument(
-            "camera_info_topic",
-            default_value="/camera/color/camera_info",
         ),
 
         Node(
@@ -45,8 +34,8 @@ def generate_launch_description():
             output="screen",
             parameters=[params_file],
             remappings=[
-                ("image_rect", image_topic),
-                ("camera_info", camera_info_topic),
+                ("image_rect", "/camera/camera/color/image_raw"),
+                ("camera_info", "/camera/camera/color/camera_info"),
                 ("detections", "/perception/apriltag/detections"),
             ],
         ),

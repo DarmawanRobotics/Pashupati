@@ -4,10 +4,10 @@ lidar_sector_node:
     num_sectors: 32              # number of angular sectors used to divide the FOV
     fov_deg: 180.0               # total horizontal field of view in degrees
     range_max: 8.0               # maximum LiDAR detection range in meters
-    range_min: 0.1               # minimum LiDAR detection range in meters
+    range_min: 0.2              # minimum LiDAR detection range in meters
 
     # Obstacle height filtering
-    obstacle_z_min: 0.05         # minimum obstacle height relative to base_link in meters
+    obstacle_z_min: 0.20         # minimum obstacle height relative to base_link in meters
     obstacle_z_max: 1.20         # maximum obstacle height relative to base_link in meters
 
     # RViz marker visualization
@@ -50,6 +50,6 @@ apriltag:
     # Per-tag configuration
     # IDs, frames, and sizes must have the same number of elements.
     tag:
-      ids: [2, 4]                # AprilTag IDs whose TF frames should be published
+      ids: [2, 4]                        # AprilTag IDs whose TF frames should be published
       frames: [base_map, charging_dock]  # TF frame assigned to each tag ID
-      sizes: [0.15, 0.15]        # physical tag size for each tag ID in meters
+      sizes: [0.15, 0.15]                # physical tag size for each tag ID in meters
