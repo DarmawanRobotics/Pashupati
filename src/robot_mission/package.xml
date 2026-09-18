@@ -10,6 +10,7 @@
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>py_trees</depend>
+  <depend>std_srvs</depend>
   <depend>robot_interfaces</depend>
 
   <export>

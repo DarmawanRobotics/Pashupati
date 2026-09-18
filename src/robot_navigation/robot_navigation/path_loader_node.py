@@ -11,6 +11,7 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 
 from robot_interfaces.msg import Waypoint, WaypointPath
+from robot_interfaces.srv import LoadPath
 
 
 class PathLoaderNode(Node):
@@ -38,6 +39,7 @@ class PathLoaderNode(Node):
         self._waypoints = self.load_waypoints(self._waypoints_file)
         self.publish_all()
         self.create_timer(republish_period, self.publish_all)
+        self.create_service(LoadPath, 'navigation/load_path', self.load_path_callback)
 
     def load_waypoints(self, filepath: str) -> list:
         """Read x,y,yaw_deg[,dwell_sec] rows from filepath, skipping comments and blank lines."""
@@ -86,6 +88,21 @@ class PathLoaderNode(Node):
             wp.dwell_sec = dwell_sec
             msg.waypoints.append(wp)
         return msg
+
+    def load_path_callback(self, request, response):
+        """Load a new waypoints file on demand and republish immediately, without relaunching."""
+        waypoints = self.load_waypoints(request.waypoints_file)
+        if not waypoints:
+            response.success = False
+            response.message = f'no waypoints loaded from "{request.waypoints_file}"'
+            return response
+
+        self._waypoints_file = request.waypoints_file
+        self._waypoints = waypoints
+        self.publish_all()
+        response.success = True
+        response.message = f'loaded {len(waypoints)} waypoints from {request.waypoints_file}'
+        return response
 
     def publish_all(self):
         """Stamp and publish both the Path and WaypointPath representations."""

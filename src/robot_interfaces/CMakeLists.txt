@@ -12,7 +12,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Waypoint.msg"
   "msg/WaypointPath.msg"
   "msg/NavigationStatus.msg"
+  "msg/MissionStatus.msg"
   "srv/MarkStopPoint.srv"
+  "srv/LoadPath.srv"
   "action/NavigateRoute.action"
   DEPENDENCIES std_msgs action_msgs
 )
