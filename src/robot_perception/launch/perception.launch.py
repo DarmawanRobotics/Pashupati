@@ -21,4 +21,11 @@ def generate_launch_description():
             output='screen',
             parameters=[params_file],
         ),
+        Node(
+            package='robot_perception',
+            executable='anomaly_detector_node',
+            name='anomaly_detector_node',
+            output='screen',
+            parameters=[params_file],
+        ),
     ])

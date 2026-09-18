@@ -1,11 +1,3 @@
-"""Ollama client helpers for Moondream-based anomaly detection.
-
-Ported from the standalone moondream_anomaly_detector.py script -- the
-CLI/OpenCV/threading parts were dropped, this module keeps only the
-Ollama-facing logic (model check/pull, structured chat call, response
-parsing) so the ROS2 node can stay focused on pub/sub plumbing.
-"""
-
 import json
 import time
 
@@ -23,8 +15,6 @@ ANOMALY_PROMPT = (
     "Keep the description to a single short sentence (under 15 words), do not repeat phrases."
 )
 
-# `anomaly` is deliberately NOT a separate field -- deriving is_anomaly from
-# `type` alone makes an anomaly=true/type="none" contradiction impossible.
 ANOMALY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -36,11 +26,14 @@ ANOMALY_SCHEMA = {
 
 
 def model_is_available(model_name: str) -> bool:
+    """Check if the Ollama model is present locally."""
     response = ollama.list()
     models = response.models if hasattr(response, 'models') else response.get('models', [])
     for model in models:
-        name = (getattr(model, 'model', '') if not isinstance(model, dict)
-                 else model.get('model', model.get('name', '')))
+        if isinstance(model, dict):
+            name = model.get('model', model.get('name', ''))
+        else:
+            name = getattr(model, 'model', '')
         if model_name.lower() in name.lower():
             return True
     return False
@@ -56,25 +49,23 @@ def ensure_model(model_name: str, logger=None) -> None:
 
 
 def query_frame(jpeg_bytes: bytes, model_name: str = "moondream") -> dict:
-    """Run one structured anomaly query against a JPEG-encoded frame.
-
-    Returns: {is_anomaly, type, description, latency_sec, raw}
-    """
-    t0 = time.perf_counter()
+    """Run one structured anomaly query against a JPEG-encoded frame."""
+    start = time.perf_counter()
     response = ollama.chat(
         model=model_name,
         messages=[{'role': 'user', 'content': ANOMALY_PROMPT, 'images': [jpeg_bytes]}],
         format=ANOMALY_SCHEMA,
         options={'temperature': 0, 'repeat_penalty': 1.1},
     )
-    latency = time.perf_counter() - t0
+    latency = time.perf_counter() - start
     raw_text = response.get('message', {}).get('content', '')
-    parsed = _parse_response(raw_text)
+    parsed = parse_response(raw_text)
     parsed['latency_sec'] = latency
     return parsed
 
 
-def _parse_response(text: str) -> dict:
+def parse_response(text: str) -> dict:
+    """Parse Ollama's JSON response into a structured dict, with fallback for non-JSON text."""
     try:
         data = json.loads(text)
         anomaly_type = str(data.get("type", "none")).lower()
