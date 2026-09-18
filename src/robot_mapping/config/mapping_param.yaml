@@ -1,4 +1,4 @@
-/**:
+fast_lio:
     ros__parameters:
         feature_extract_enable: false
         point_filter_num: 3
@@ -48,3 +48,11 @@
             pcd_save_en: true
             interval: -1                 # how many LiDAR frames saved in each pcd file; 
                                         # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
+
+path_recorder_node:
+  ros__parameters:
+    output_path: "/home/robot/dev/Pashupati/map/"
+    map_frame: "map"
+    base_frame: "base_link"
+    min_waypoint_spacing_m: 0.2
+    record_rate_hz: 10.0

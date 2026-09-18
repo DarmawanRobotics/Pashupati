@@ -1,7 +1,0 @@
-path_recorder_node:
-  ros__parameters:
-    output_file: "/home/robot/dev/Pashupati/map/recorded_path.csv"
-    map_frame: "map"
-    base_frame: "base_link"
-    min_waypoint_spacing_m: 0.2
-    record_rate_hz: 10.0

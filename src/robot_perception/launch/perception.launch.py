@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 import os
-
 from ament_index_python.packages import get_package_share_directory
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -9,15 +10,12 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     """Launch perception nodes."""
-    pkg_share = get_package_share_directory("robot_perception")
-    default_params = os.path.join(pkg_share, "config", "perception_params.yaml")
-    params_file = LaunchConfiguration("params_file")
+    default_params = os.path.join(get_package_share_directory('robot_perception'), 'config', 'perception_params.yaml')
+    params_file = LaunchConfiguration('params_file')
 
     return LaunchDescription([
-        DeclareLaunchArgument(
-            "params_file",
-            default_value=default_params,
-        ),
+        DeclareLaunchArgument("params_file",default_value=default_params,description="Path to the perception parameters file"),
+        DeclareLaunchArgument("debug", default_value="true", description="Enable debug mode for apriltag detection"),
 
         Node(
             package="robot_perception",
@@ -38,5 +36,18 @@ def generate_launch_description():
                 ("camera_info", "/camera/camera/color/camera_info"),
                 ("detections", "/perception/apriltag/detections"),
             ],
+        ),
+
+        Node(
+            package="apriltag_draw",
+            executable="apriltag_draw",
+            name="apriltag_draw",
+            output="screen",
+            remappings=[
+                ("tags", "/perception/apriltag/detections"),
+                ("image", "/camera/camera/color/image_raw"),
+                ("image_tags", "/perception/apriltag/image_tags"),
+            ],
+            conditions=[LaunchConfiguration("debug")],
         ),
     ])
