@@ -4,15 +4,14 @@ import time
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist
-from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, Trigger
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import BatteryState
 
 from robot_drivers.dog_socket import CTRL_MODE_NAMES, DogSocket
 
-MOVABLE_MODES = {1, 18, 21}  # STANDING, MOVING, ACTION
-
+MOVABLE_MODES = {1, 18, 21} 
 
 class RobotDriverNode(Node):
     """Owns the single SDK connection: cmd_vel forwarding, mode/estop services, and state polling."""
@@ -90,24 +89,13 @@ class RobotDriverNode(Node):
                     self.get_logger().error(response.message)
                     return response
 
-            battery = self._dog.get_battery()
-            if battery is not None:
-                self._battery_percentage = battery
-
-            if self._battery_percentage < 20.0: 
-                response.success = False
-                response.message = "battery low"
-                self.get_logger().error("cannot set auto mode: battery low")
-                self._dog.disconnect()
-                return response
-
             stand_ok, stand_msg = self.ensure_standing()
             if not stand_ok:
                 response.success = False
                 response.message = f"stand_up failed: {stand_msg}"
                 self._dog.disconnect()
                 return response
-
+            
             self._is_auto = True
             response.success = True
             response.message = "auto mode enabled"
@@ -219,7 +207,6 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()
