@@ -15,6 +15,24 @@ CTRL_MODE_NAMES = {
     51: "LIE_DOWN",
 }
 
+SDK_ERROR_CODES = {
+    0x3012: "motor data lost",
+    0x3010: "motor disabled",
+    0x3011: "motor fault",
+    0x3009: "motor angle limit exceeded",
+    0x3007: "state machine switching failed",
+    0x3013: "speed command too large",
+}
+
+
+def describe_error(code) -> str:
+    """Translate an SDK uint32_t return code into a readable message."""
+    if code is None:
+        return "no response"
+    if code == 0:
+        return "ok"
+    return SDK_ERROR_CODES.get(code, f"unknown error 0x{code:x}")
+
 
 def check_sdk_dir(sdk_dir: str) -> str:
     """Check that the SDK root dir exists and contains the expected lib subdir."""
@@ -55,50 +73,67 @@ class DogSocket:
         local_port: int,
         dog_ip: str,
     ):
-        """Load the SDK module and construct the HighLevel handle."""
-
+        """Load the SDK module; the HighLevel handle itself is built in connect()."""
         self._sdk_dir = check_sdk_dir(sdk_dir)
         self._module = load_sdk_module(self._sdk_dir, module_name)
-        self._dog = self._module.HighLevel()
+        self._dog = None
 
         self._local_ip = local_ip
         self._local_port = local_port
         self._dog_ip = dog_ip
 
     def connect(self):
-        """Init the UDP link to the robot."""
+        """Build a fresh HighLevel handle and init the UDP link to the robot."""
+        self._dog = self._module.HighLevel()
         self._dog.initRobot(
             self._local_ip,
             self._local_port,
             self._dog_ip,
         )
 
+    def disconnect(self):
+        """Release the local_ip/local_port bind.
+
+        SDK has no close/disconnect call, only initRobot() to open one. Dropping
+        the HighLevel handle so it gets garbage-collected is the only way to free
+        it up for manual/remote control. Best-effort: if the SDK's binding
+        doesn't release on destruction, this won't help — not something we can
+        fix from the Python side.
+        """
+        self._dog = None
+
     def is_connected(self):
-        """Return True if the SDK reports a live connection."""
+        """Return True if a handle exists and the SDK reports a live connection."""
+        if self._dog is None:
+            return False
         try:
             return bool(self._dog.checkConnect())
         except Exception:
             return False
 
     def stand_up(self):
-        """Ask the robot to stand up."""
-        return self._dog.standUp()
+        """Ask the robot to stand up. Returns (success, message)."""
+        code = self._dog.standUp()
+        return code == 0, describe_error(code)
 
     def lie_down(self):
-        """Ask the robot to lie down."""
-        return self._dog.lieDown()
+        """Ask the robot to lie down. Returns (success, message)."""
+        code = self._dog.lieDown()
+        return code == 0, describe_error(code)
 
     def move(self, vx, vy, yaw_rate):
-        """Forward a planar velocity command to the robot."""
-        return self._dog.move(vx, vy, yaw_rate)
+        """Forward a planar velocity command to the robot. Returns (success, message)."""
+        code = self._dog.move(vx, vy, yaw_rate)
+        return code == 0, describe_error(code)
 
     def stop(self):
-        """Send a zero-velocity command."""
-        return self._dog.move(0.0, 0.0, 0.0)
+        """Send a zero-velocity command. Returns (success, message)."""
+        return self.move(0.0, 0.0, 0.0)
 
     def passive(self):
-        """Put the robot into passive/damping mode; the real e-stop/lock at SDK level."""
-        return self._dog.passive()
+        """Put the robot into passive/damping mode. Returns (success, message)."""
+        code = self._dog.passive()
+        return code == 0, describe_error(code)
 
     def get_battery(self):
         """Return battery percentage (0-100) or None on read error."""

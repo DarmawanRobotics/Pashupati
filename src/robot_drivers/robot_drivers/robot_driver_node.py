@@ -4,20 +4,19 @@ import time
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist
-from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, Trigger
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import BatteryState
 
 from robot_drivers.dog_socket import CTRL_MODE_NAMES, DogSocket
 
-MOVABLE_MODES = {1, 18, 21}  # STANDING, MOVING, ACTION
-
+MOVABLE_MODES = {1, 18, 21} 
 
 class RobotDriverNode(Node):
     """Owns the single SDK connection: cmd_vel forwarding, mode/estop services, and state polling."""
     def __init__(self):
-        """Declare params, connect the SDK once, and set up subscriptions/services/timers."""
+        """Declare params, create the SDK handle (unbound), and set up subscriptions/services/timers."""
         super().__init__("robot_driver_node")
         self.declare_parameter("sdk_dir", "/opt/genisom_l1_sdk")
         self.declare_parameter("sdk_module_name", "mc_sdk_zsl_1w_py")
@@ -42,9 +41,6 @@ class RobotDriverNode(Node):
             self.get_parameter("local_port").value,
             self.get_parameter("dog_ip").value,
         )
-        self._dog.connect()
-        self._ensure_standing()
-
         self._is_auto = False
         self._latest_cmd = None
         self._last_cmd_time = 0.0
@@ -64,14 +60,17 @@ class RobotDriverNode(Node):
         poll_rate = self.get_parameter("poll_rate").value
         self.create_timer(1.0 / poll_rate, self.poll_state)
 
-    def _ensure_standing(self):
-        """Stand up only if the robot isn't already in a movable state."""
+    def ensure_standing(self):
+        """Stand up only if the robot isn't already in a movable state. Must be connected."""
         mode = self._dog.get_ctrl_mode()
         if mode in MOVABLE_MODES:
             self.get_logger().info(f"already movable (mode={mode}), skip stand_up")
-            return
+            return True, "already standing"
         self.get_logger().info(f"mode={mode}, standing up")
-        self._dog.stand_up()
+        success, message = self._dog.stand_up()
+        if not success:
+            self.get_logger().error(f"stand_up failed: {message}")
+        return success, message
 
     def cmd_vel_callback(self, msg):
         """Cache the latest velocity command and its arrival time."""
@@ -79,51 +78,68 @@ class RobotDriverNode(Node):
         self._last_cmd_time = time.time()
 
     def mode_callback(self, request, response):
-        """Enable or disable automatic cmd_vel control."""
-        if not self._dog.is_connected():
-            response.success = False
-            response.message = "dog not connected"
-            self.get_logger().error("cannot set auto mode: dog not connected")
-            return response
-        if self._battery_percentage < 20.0:
-            response.success = False
-            response.message = "battery low"
-            self.get_logger().error("cannot set auto mode: battery low")
-            return response
-        else:
-            self._is_auto = request.data
-            if not self._is_auto:
-                self._latest_cmd = None
-                self._dog.stop()
+        """Bind on auto-enable, unbind on auto-disable so manual/remote control regains authority."""
+        if request.data:
+            if not self._dog.is_connected():
+                try:
+                    self._dog.connect()
+                except Exception as error:
+                    response.success = False
+                    response.message = f"connect failed: {error}"
+                    self.get_logger().error(response.message)
+                    return response
+
+            stand_ok, stand_msg = self.ensure_standing()
+            if not stand_ok:
+                response.success = False
+                response.message = f"stand_up failed: {stand_msg}"
+                self._dog.disconnect()
+                return response
+            
+            self._is_auto = True
             response.success = True
-            response.message = (
-                "auto mode enabled" if self._is_auto else "auto mode disabled set to manual"
-            )
-            self.get_logger().info(f"control mode: {response.message}")
+            response.message = "auto mode enabled"
+            self.get_logger().info(response.message)
             return response
 
+        self._is_auto = False
+        self._latest_cmd = None
+        if self._dog.is_connected():
+            self._dog.stop()
+            self._dog.disconnect()
+        response.success = True
+        response.message = "auto mode disabled, unbound for manual control"
+        self.get_logger().info(response.message)
+        return response
+
     def stand_up_callback(self, request, response):
-        """Stand up the robot if true or lie down if false."""
+        """Stand up the robot if true or lie down if false. Requires an active bind (auto mode)."""
+        if not self._dog.is_connected():
+            response.success = False
+            response.message = "not bound (enable auto mode first)"
+            return response
         if request.data:
-            self._ensure_standing()
-            response.success = True
-            response.message = "robot standing"
+            success, message = self.ensure_standing()
         else:
             self.get_logger().info("lie_down service called")
-            success = self._dog.lie_down()
-            response.success = success
-            response.message = "robot lying down" if success else "lie_down failed"
+            success, message = self._dog.lie_down()
+        response.success = success
+        response.message = message
         return response
 
     def emergency_stop_callback(self, request, response):
-        """Force manual mode and put the robot into a safe passive/damping state."""
+        """Force manual mode, stop + passive, then unbind if currently bound."""
         self._is_auto = False
         self._latest_cmd = None
         try:
-            self._dog.stop()
-            self._dog.passive()
+            if self._dog.is_connected():
+                self._dog.stop()
+                success, message = self._dog.passive()
+                self._dog.disconnect()
+                if not success:
+                    self.get_logger().warning(f"passive() returned: {message}")
             response.success = True
-            response.message = "robot stopped and set passive"
+            response.message = "robot stopped, set passive, and unbound"
             self.get_logger().warning("emergency stop triggered")
         except Exception as error:
             response.success = False
@@ -143,30 +159,39 @@ class RobotDriverNode(Node):
         vx = max(-self._max_linear_vel, min(self._max_linear_vel, self._latest_cmd.linear.x))
         vy = max(-self._max_linear_vel, min(self._max_linear_vel, self._latest_cmd.linear.y))
         yaw = max(-self._max_angular_vel, min(self._max_angular_vel, self._latest_cmd.angular.z))
-        self._dog.move(vx, vy, yaw)
+        success, message = self._dog.move(vx, vy, yaw)
+        if not success:
+            self.get_logger().warning(f"move() returned: {message}")
 
     def poll_state(self):
-        """Read battery + control mode from the SDK and publish both."""
-        connected = self._dog.is_connected()
+        """Publish battery + mode only while bound; otherwise report unbound status."""
+        if not self._dog.is_connected():
+            state_msg = String()
+            state_msg.data = "connected=False mode=MANUAL(unbound)"
+            self._state_pub.publish(state_msg)
+            return
+
         battery = self._dog.get_battery()
         mode = self._dog.get_ctrl_mode()
-        
+
         if battery is not None:
-            self._battery_percentage = battery/100.0
+            self._battery_percentage = battery / 100.0
             battery_msg = BatteryState()
             battery_msg.header.stamp = self.get_clock().now().to_msg()
             battery_msg.percentage = self._battery_percentage
-            battery_msg.present = connected
+            battery_msg.present = True
             self._battery_pub.publish(battery_msg)
 
         mode_name = CTRL_MODE_NAMES.get(mode, "UNKNOWN")
         state_msg = String()
-        state_msg.data = f"connected={connected} mode={mode_name}({mode}) battery={battery}"
+        state_msg.data = f"connected=True mode={mode_name}({mode}) battery={battery}"
         self._state_pub.publish(state_msg)
 
     def destroy_node(self):
-        """Stop the robot before shutting down."""
-        self._dog.stop()
+        """Stop and unbind before shutting down, if currently bound."""
+        if self._dog.is_connected():
+            self._dog.stop()
+            self._dog.disconnect()
         super().destroy_node()
 
 
@@ -182,7 +207,6 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

@@ -2,8 +2,8 @@
 <?xml-stylesheet type="text/xsl" href="http://download.ros.org/schema/package_format3.xsd"?>
 <package format="3">
   <name>robot_interfaces</name>
-  <version>0.1.0</version>
-  <description>Enum-style messages (GaitMode) and services (SetGait) plus a generic enum_utils helper</description>
+  <version>0.6.0</version>
+  <description>Custom interfaces for the robot stack: perception (SectorScan), navigation (AvoidanceCommand, Waypoint, WaypointPath, NavigationStatus, NavigateRoute), and drivers (SetGait).</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 

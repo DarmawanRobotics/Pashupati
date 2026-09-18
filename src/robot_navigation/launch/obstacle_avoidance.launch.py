@@ -17,7 +17,7 @@ def generate_launch_description():
             package='robot_navigation', 
             executable='obstacle_avoidance_node',
             name='obstacle_avoidance_node', 
-            output='screen',
+            output='screen', 
             parameters=[params_file],
         ),
     ])

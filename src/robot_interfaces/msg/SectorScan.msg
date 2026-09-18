@@ -1,6 +1,7 @@
-# Output of lidar_sector_perception_node.
+# Output of lidar_sector_node (robot_perception).
 # Fixed-count angular sectors, each holding the nearest obstacle distance.
 # Sector i center angle = angle_min + (i + 0.5) * angle_increment (rad, REP-103: +left/CCW).
+
 std_msgs/Header header
 uint32 num_sectors
 float32 angle_min

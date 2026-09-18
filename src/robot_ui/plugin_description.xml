@@ -1,0 +1,10 @@
+<library path="robot_ui">
+  <class name="robot_ui/ControlPanel"
+         type="robot_ui::ControlPanel"
+         base_class_type="rviz_common::Panel">
+    <description>
+      Battery monitoring, one-click localization trigger, path recording/stop-point marking,
+      path loading, and navigate_route control for the Pashupati robot.
+    </description>
+  </class>
+</library>

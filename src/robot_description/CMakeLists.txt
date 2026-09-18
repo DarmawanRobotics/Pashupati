@@ -6,7 +6,7 @@ find_package(xacro REQUIRED)
 find_package(robot_state_publisher REQUIRED)
 
 install(
-  DIRECTORY urdf launch
+  DIRECTORY urdf launch rviz
   DESTINATION share/${PROJECT_NAME}
 )
 

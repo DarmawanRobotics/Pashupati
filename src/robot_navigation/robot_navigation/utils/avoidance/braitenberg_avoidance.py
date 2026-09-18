@@ -1,13 +1,6 @@
 import math
-from dataclasses import dataclass
 
-
-@dataclass
-class AvoidanceResult:
-    """Output of one avoidance update: steering bias, velocity scale, and an emergency flag."""
-    steering_bias: float = 0.0
-    velocity_scale: float = 1.0
-    emergency: bool = False
+from robot_navigation.utils.avoidance.base_avoidance import AvoidanceAlgorithm, AvoidanceResult
 
 
 def angle_diff(a: float, b: float) -> float:
@@ -28,7 +21,7 @@ def tent_weight(theta: float, center: float, half_width: float) -> float:
     return max(0.0, 1.0 - d / half_width)
 
 
-class BraitenbergAvoidance:
+class BraitenbergAvoidance(AvoidanceAlgorithm):
     """Discrete-sector Braitenberg-style reactive avoidance: obstacles bias steering and speed."""
 
     def __init__(
