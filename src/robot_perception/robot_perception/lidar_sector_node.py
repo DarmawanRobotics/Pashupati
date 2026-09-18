@@ -164,7 +164,7 @@ class LidarSectorNode(Node):
         ray_marker.pose.orientation.w = 1.0
         ray_marker.scale.x = 0.02
         ray_marker.lifetime = self._marker_lifetime
-
+    
         point_marker = Marker()
         point_marker.header = ray_marker.header
         point_marker.ns = 'sector_points'
@@ -174,12 +174,14 @@ class LidarSectorNode(Node):
         point_marker.pose.orientation.w = 1.0
         point_marker.scale.x = point_marker.scale.y = point_marker.scale.z = 0.08
         point_marker.lifetime = self._marker_lifetime
-
+    
         origin = Point(x=0.0, y=0.0, z=0.0)
+        detection_eps = 1e-3 
         for i, r in enumerate(ranges):
+            r = float(r)
             theta = self._angle_min + (i + 0.5) * self._angle_increment
-            color = self.range_to_color(float(r))
-
+            color = self.range_to_color(r)
+    
             ray_length = self.corridor_ray_length(theta)
             ray_end = Point(
                 x=float(ray_length * math.cos(theta)),
@@ -191,15 +193,17 @@ class LidarSectorNode(Node):
             ray_marker.colors.append(color)
             ray_marker.colors.append(color)
 
-            detected = Point(x=float(r * math.cos(theta)), y=float(r * math.sin(theta)), z=0.0)
-            point_marker.points.append(detected)
-            point_marker.colors.append(color)
-
+            has_detection = r < (self._range_max - detection_eps)
+            within_corridor = r <= ray_length + detection_eps
+            if has_detection and within_corridor:
+                detected = Point(x=float(r * math.cos(theta)), y=float(r * math.sin(theta)), z=0.0)
+                point_marker.points.append(detected)
+                point_marker.colors.append(color)
+    
         markers = MarkerArray()
         markers.markers.append(ray_marker)
         markers.markers.append(point_marker)
         self._markers_pub.publish(markers)
-
 
 def main(args=None):
     """Spin the lidar sector perception node."""
