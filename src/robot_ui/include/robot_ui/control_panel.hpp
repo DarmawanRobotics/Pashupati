@@ -13,11 +13,9 @@
 #include <QWidget>
 
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp_action/rclcpp_action.hpp>
 #include <rviz_common/panel.hpp>
 
 #include <geometry_msgs/msg/twist.hpp>
-#include <robot_interfaces/action/navigate_route.hpp>
 #include <robot_interfaces/msg/navigation_status.hpp>
 #include <robot_interfaces/srv/load_path.hpp>
 #include <robot_interfaces/srv/mark_stop_point.hpp>
@@ -46,19 +44,11 @@ private Q_SLOTS:
   void onMarkStopPoint();
   void onBrowseWaypointsFile();
   void onLoadPath();
-  void onStartNavigation();
-  void onCancelNavigation();
+  void onToggleNavigation();
   void onSpinRos();
 
 private:
-  using NavigateRoute = robot_interfaces::action::NavigateRoute;
-  using GoalHandleNavigateRoute = rclcpp_action::ClientGoalHandle<NavigateRoute>;
-
   void setStatusLabel(QLabel * label, const std::string & text, const std::string & color);
-  void navFeedbackCallback(
-    GoalHandleNavigateRoute::SharedPtr,
-    const std::shared_ptr<const NavigateRoute::Feedback> feedback);
-  void navResultCallback(const GoalHandleNavigateRoute::WrappedResult & result);
   void navStatusCallback(const robot_interfaces::msg::NavigationStatus::SharedPtr msg);
   void batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg);
   void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
@@ -66,8 +56,10 @@ private:
   rclcpp::Node::SharedPtr node_;
   QTimer * spin_timer_;
 
-  // Battery
+  // Battery -- a small fixed-size bar plus a separate text label, instead of
+  // one wide bar with the percentage crammed inside it.
   QProgressBar * battery_progress_bar_;
+  QLabel * battery_label_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
 
   // Localization
@@ -91,13 +83,13 @@ private:
   QLabel * load_status_label_;
   rclcpp::Client<robot_interfaces::srv::LoadPath>::SharedPtr load_path_client_;
 
-  // Navigation
-  QPushButton * start_nav_button_;
-  QPushButton * cancel_nav_button_;
-  QProgressBar * nav_progress_bar_;
+  // Navigation -- a plain on/off toggle (mirrors Path Recording's pattern), not an
+  // action: the path is a dense, continuous trajectory, not a handful of discrete
+  // goals, so there's no useful "progress %" or mid-route cancel semantics to expose.
+  QPushButton * nav_button_;
   QLabel * nav_status_label_;
-  rclcpp_action::Client<NavigateRoute>::SharedPtr navigate_client_;
-  GoalHandleNavigateRoute::SharedPtr current_goal_handle_;
+  bool is_navigating_;
+  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr nav_client_;
   rclcpp::Subscription<robot_interfaces::msg::NavigationStatus>::SharedPtr nav_status_sub_;
 
   // Cmd vel visualization

@@ -17,7 +17,7 @@ path_follower_node:
     action_feedback_rate: 5.0        # Hz, navigate_route action feedback publish rate
     failure_state_timeout_sec: 5.0   # seconds stuck in TF_UNAVAILABLE/NO_PATH before the action aborts
 
-    controller: pure_pursuit   # pure_pursuit | pid | mppi
+    controller: mppi   # pure_pursuit | pid | mppi
 
     pure_pursuit.lookahead_distance: 1.0   # meters, target point distance ahead
     pure_pursuit.goal_tolerance: 0.3       # meters, "arrived" radius
@@ -43,7 +43,7 @@ path_follower_node:
 
 obstacle_avoidance_node:
   ros__parameters:
-    algorithm: braitenberg      # braitenberg | vfh
+    algorithm: vfh              # braitenberg | vfh
     safe_distance: 3.0          # meters, danger starts below this range
     emergency_distance: 0.4     # meters, hard-stop range
     emergency_cone_deg: 60.0    # deg, frontal cone checked for hard-stop

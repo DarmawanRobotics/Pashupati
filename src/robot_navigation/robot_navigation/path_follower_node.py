@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 import math
-import time
 
 import rclpy
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.duration import Duration
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
@@ -17,7 +13,6 @@ from rcl_interfaces.msg import SetParametersResult
 
 from tf2_ros import Buffer, TransformListener
 
-from robot_interfaces.action import NavigateRoute
 from robot_interfaces.msg import AvoidanceCommand, NavigationStatus, WaypointPath
 
 from robot_navigation.utils import visualization
@@ -51,10 +46,12 @@ class SlewLimiter:
 
 class PathFollowerNode(Node):
     """Drives the robot along a received waypoint path using a selectable controller, blended
-    with avoidance, pausing to align and dwell at inspection stop points, and exposing the whole
-    route as a cancellable NavigateRoute action with feedback (not just a service call)."""
+    with avoidance, pausing to align and dwell at inspection stop points. A single SetBool
+    service starts/stops it -- the path is a dense, continuous trajectory rather than a
+    handful of discrete goals, so a plain always-on control loop is a better fit here than
+    a goal/feedback/result action."""
 
-    FAILURE_STATES = {'TF_UNAVAILABLE', 'NO_PATH'}
+    _WARN_STATES = {'NO_PATH', 'TF_UNAVAILABLE', 'EMERGENCY_STOP'}
 
     def __init__(self):
         """Declare params, set up TF, build the initial controller, and wire subscriptions/outputs."""
@@ -72,9 +69,6 @@ class PathFollowerNode(Node):
         self.declare_parameter('stop_point_tolerance', 0.3)
         self.declare_parameter('yaw_tolerance_deg', 5.0)
         self.declare_parameter('align_kp', 1.5)
-
-        self.declare_parameter('action_feedback_rate', 5.0)
-        self.declare_parameter('failure_state_timeout_sec', 5.0)
 
         self.declare_parameter('controller', 'pure_pursuit')
         self.declare_parameter('pure_pursuit.lookahead_distance', 1.0)
@@ -110,9 +104,6 @@ class PathFollowerNode(Node):
         self._yaw_tolerance = math.radians(float(self.get_parameter('yaw_tolerance_deg').value))
         self._align_kp = float(self.get_parameter('align_kp').value)
 
-        self._action_feedback_rate = float(self.get_parameter('action_feedback_rate').value)
-        self._failure_state_timeout = float(self.get_parameter('failure_state_timeout_sec').value)
-
         self._linear_limiter = SlewLimiter(float(self.get_parameter('linear_accel_limit').value))
         self._angular_limiter = SlewLimiter(float(self.get_parameter('angular_accel_limit').value))
         self._speed_regulator = SpeedRegulator(
@@ -126,12 +117,10 @@ class PathFollowerNode(Node):
         self._avoidance_velocity_scale = 1.0
         self._avoidance_emergency = False
         self._have_path = False
-        self._goal_logged = False
         self._nav_active = False
         self._current_path_points: list[tuple[float, float]] = []
 
         self._waypoints: list[tuple[float, float, float, float]] = []
-        self._total_route_distance = 0.0
         self._next_stop_index = None
         self._follower_state = 'FOLLOWING'
         self._align_target_yaw = 0.0
@@ -154,21 +143,11 @@ class PathFollowerNode(Node):
         self._status_pub = self.create_publisher(NavigationStatus, 'navigation/status', 10)
 
         self._auto_mode_client = self.create_client(SetBool, 'drivers/set_auto_mode')
+        self.create_service(SetBool, 'navigation/start_nav', self.start_nav_callback)
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
-        timer_group = MutuallyExclusiveCallbackGroup()
-        action_group = ReentrantCallbackGroup()
-
         self._last_time = self.get_clock().now()
-        self.create_timer(1.0 / self._control_rate, self.control_loop, callback_group=timer_group)
-
-        self._action_server = ActionServer(
-            self, NavigateRoute, 'navigate_route',
-            execute_callback=self.execute_navigate_route,
-            goal_callback=self.navigate_goal_callback,
-            cancel_callback=self.navigate_cancel_callback,
-            callback_group=action_group,
-        )
+        self.create_timer(1.0 / self._control_rate, self.control_loop)
 
     def build_controller_params(self, name: str) -> dict:
         """Collect the constructor kwargs for a controller name from its declared parameters."""
@@ -229,16 +208,8 @@ class PathFollowerNode(Node):
         self._controller.set_path(self._current_path_points)
         self._speed_regulator.reset()
         self._have_path = len(self._waypoints) > 0
-        self._goal_logged = False
         self._follower_state = 'FOLLOWING'
         self._next_stop_index = self.find_next_stop_index(0)
-
-        if len(self._waypoints) >= 2:
-            fx, fy, _, _ = self._waypoints[0]
-            lx, ly, _, _ = self._waypoints[-1]
-            self._total_route_distance = math.hypot(lx - fx, ly - fy)
-        else:
-            self._total_route_distance = 0.0
 
     def avoidance_callback(self, msg: AvoidanceCommand):
         """Cache the latest avoidance signal for blending into the control loop."""
@@ -260,74 +231,33 @@ class PathFollowerNode(Node):
             return False, 'drivers/set_auto_mode call timed out'
         return future.result().success, future.result().message
 
-    def compute_progress(self) -> float:
-        """Return an approximate 0..1 progress: 1 - remaining/total straight-line distance to the goal."""
-        if not self._waypoints or self._total_route_distance <= 1e-6:
-            return 0.0
-        pose = self.current_pose()
-        if pose is None:
-            return 0.0
-        gx, gy, _, _ = self._waypoints[-1]
-        remaining = math.hypot(gx - pose.x, gy - pose.y)
-        return max(0.0, min(1.0, 1.0 - remaining / self._total_route_distance))
+    def start_nav_callback(self, request, response):
+        """Enable or disable navigation, gating driver auto mode along with it."""
+        if request.data:
+            success, message = self.call_set_auto_mode(True)
+            if not success:
+                self.get_logger().error(f'failed to enable auto mode: {message}')
+                response.success = False
+                response.message = f'failed to enable auto mode: {message}'
+                return response
 
-    def navigate_goal_callback(self, goal_request):
-        """Accept a NavigateRoute goal only if navigation isn't already running."""
-        if self._nav_active:
-            return GoalResponse.REJECT
-        return GoalResponse.ACCEPT
-
-    def navigate_cancel_callback(self, goal_handle):
-        """Always accept a cancel request."""
-        return CancelResponse.ACCEPT
-
-    def execute_navigate_route(self, goal_handle):
-        """Drive the currently loaded route to completion, reporting feedback and supporting cancellation."""
-        success, message = self.call_set_auto_mode(True)
-        if not success:
-            goal_handle.abort()
-            return NavigateRoute.Result(success=False, message=f'failed to enable auto mode: {message}')
-
-        self._nav_active = True
-        self._goal_logged = False
-        feedback_msg = NavigateRoute.Feedback()
-        failure_since = None
-
-        while rclpy.ok():
-            if goal_handle.is_cancel_requested:
-                self._nav_active = False
-                self.publish_stop()
-                self.call_set_auto_mode(False)
-                goal_handle.canceled()
-                return NavigateRoute.Result(success=False, message='navigation canceled')
-
-            feedback_msg.state = self._last_status
-            feedback_msg.message = self._last_status_message
-            feedback_msg.progress = self.compute_progress()
-            goal_handle.publish_feedback(feedback_msg)
-
-            if self._last_status == 'GOAL_REACHED':
-                self._nav_active = False
-                self.call_set_auto_mode(False)
-                goal_handle.succeed()
-                return NavigateRoute.Result(success=True, message='goal reached')
-
-            if self._last_status in self.FAILURE_STATES:
-                now = self.get_clock().now()
-                if failure_since is None:
-                    failure_since = now
-                elif (now - failure_since).nanoseconds / 1e9 > self._failure_state_timeout:
-                    self._nav_active = False
-                    self.call_set_auto_mode(False)
-                    goal_handle.abort()
-                    return NavigateRoute.Result(success=False, message=f'stuck in {self._last_status} too long')
-            else:
-                failure_since = None
-
-            time.sleep(1.0 / self._action_feedback_rate)
+            self._nav_active = True
+            self.get_logger().info('navigation started')
+            response.success = True
+            response.message = 'navigation started'
+            return response
 
         self._nav_active = False
-        return NavigateRoute.Result(success=False, message='node shutting down')
+        self.publish_stop()
+
+        success, message = self.call_set_auto_mode(False)
+        if not success:
+            self.get_logger().error(f'failed to switch back to manual mode: {message}')
+
+        self.get_logger().info('navigation stopped, switched to manual mode')
+        response.success = True
+        response.message = 'navigation stopped, switched to manual mode'
+        return response
 
     def current_pose(self):
         """Look up the robot's current map->base_link pose, or None if TF isn't ready."""
@@ -340,7 +270,14 @@ class PathFollowerNode(Node):
         return Pose2D(p.x, p.y, yaw_from_quaternion(t.transform.rotation))
 
     def publish_status(self, stamp, status, message):
-        """Publish the current follower state as a NavigationStatus, and cache it for the action server."""
+        """Publish the current follower state as a NavigationStatus, logging once per
+        state transition (not every tick) so the console and the GUI both show clear,
+        readable events -- "navigation started/ended", "no tf", "no path", etc -- instead
+        of staying silent or spamming at the 20Hz control rate."""
+        if status != self._last_status:
+            log = self.get_logger().warn if status in self._WARN_STATES else self.get_logger().info
+            log(f'[{status}] {message}')
+
         self._last_status = status
         self._last_status_message = message
         msg = NavigationStatus()
@@ -420,7 +357,7 @@ class PathFollowerNode(Node):
         stamp = now.to_msg()
 
         if not self._nav_active:
-            self.publish_markers(stamp, 'NAV_INACTIVE', 'send a navigate_route goal to begin', 0.0, 0.0)
+            self.publish_markers(stamp, 'NAV_INACTIVE', "call service 'navigation/start_nav' to begin", 0.0, 0.0)
             return
 
         if not self._have_path:
@@ -443,9 +380,6 @@ class PathFollowerNode(Node):
             return
 
         if self._controller.is_finished(pose):
-            if not self._goal_logged:
-                self.get_logger().info('Goal reached, holding position.')
-                self._goal_logged = True
             self.publish_stop()
             self.publish_markers(stamp, 'GOAL_REACHED', 'holding position', pose.x, pose.y)
             return
@@ -507,14 +441,11 @@ class PathFollowerNode(Node):
 
 
 def main(args=None):
-    """Spin the path follower node on a multi-threaded executor so the action's blocking
-    execute_callback never stalls the periodic control_loop timer."""
+    """Spin the path follower node."""
     rclpy.init(args=args)
     node = PathFollowerNode()
-    executor = MultiThreadedExecutor()
-    executor.add_node(node)
     try:
-        executor.spin()
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:

@@ -11,9 +11,17 @@ namespace robot_ui
 {
 
 ControlPanel::ControlPanel(QWidget * parent)
-: rviz_common::Panel(parent), is_recording_(false)
+: rviz_common::Panel(parent), is_recording_(false), is_navigating_(false)
 {
-  // --- Compact global styling: this is what stops the panel from
+  // Hard cap on the panel's own width -- this is what actually stops it
+  // ballooning when a status label gets a long string (e.g. "loaded 90
+  // waypoints from /home/robot/dev/.../example_waypoint.csv"). Word wrap on
+  // a label only wraps text *within whatever width it's given*; without a
+  // ceiling on the panel itself, an unconstrained label just asks for a
+  // wider layout instead of wrapping.
+  setMaximumWidth(260);
+
+  // Compact global styling: this is what stops the panel from
   // rendering huge on first load (default Qt margins/paddings + normal
   // font size add up fast across 5 group boxes). ---
   setStyleSheet(
@@ -31,14 +39,16 @@ ControlPanel::ControlPanel(QWidget * parent)
 
   // --- Battery group ---
   auto * battery_group = new QGroupBox("Battery");
-  auto * battery_layout = new QVBoxLayout;
+  auto * battery_layout = new QHBoxLayout;
   battery_layout->setContentsMargins(4, 4, 4, 4);
-  battery_layout->setSpacing(2);
+  battery_layout->setSpacing(6);
   battery_progress_bar_ = new QProgressBar;
   battery_progress_bar_->setRange(0, 100);
-  battery_progress_bar_->setFormat("no data yet");
-  battery_progress_bar_->setFixedHeight(14);
+  battery_progress_bar_->setTextVisible(false);
+  battery_progress_bar_->setFixedSize(60, 12);
+  battery_label_ = new QLabel("no data yet");
   battery_layout->addWidget(battery_progress_bar_);
+  battery_layout->addWidget(battery_label_, 1);
   battery_group->setLayout(battery_layout);
 
   // --- Localization group ---
@@ -48,7 +58,8 @@ ControlPanel::ControlPanel(QWidget * parent)
   localization_layout->setSpacing(2);
   localization_button_ = new QPushButton("Trigger Localization");
   localization_status_label_ = new QLabel("idle");
-  localization_status_label_->setFixedHeight(16);
+  localization_status_label_->setWordWrap(true);
+  localization_status_label_->setFixedHeight(28);
   localization_layout->addWidget(localization_button_);
   localization_layout->addWidget(localization_status_label_);
   localization_group->setLayout(localization_layout);
@@ -71,7 +82,8 @@ ControlPanel::ControlPanel(QWidget * parent)
   dwell_layout->addWidget(dwell_spinbox_);
   dwell_layout->addWidget(mark_stop_point_button_);
   recording_status_label_ = new QLabel("not recording");
-  recording_status_label_->setFixedHeight(16);
+  recording_status_label_->setWordWrap(true);
+  recording_status_label_->setFixedHeight(28);
   recording_layout->addWidget(record_button_);
   recording_layout->addLayout(dwell_layout);
   recording_layout->addWidget(recording_status_label_);
@@ -91,7 +103,8 @@ ControlPanel::ControlPanel(QWidget * parent)
   file_layout->addWidget(browse_button_);
   load_button_ = new QPushButton("Load Path");
   load_status_label_ = new QLabel("no path loaded yet");
-  load_status_label_->setFixedHeight(16);
+  load_status_label_->setWordWrap(true);
+  load_status_label_->setFixedHeight(28);
   load_layout->addLayout(file_layout);
   load_layout->addWidget(load_button_);
   load_layout->addWidget(load_status_label_);
@@ -102,21 +115,12 @@ ControlPanel::ControlPanel(QWidget * parent)
   auto * nav_layout = new QVBoxLayout;
   nav_layout->setContentsMargins(4, 4, 4, 4);
   nav_layout->setSpacing(2);
-  auto * nav_button_layout = new QHBoxLayout;
-  nav_button_layout->setSpacing(4);
-  start_nav_button_ = new QPushButton("Start Navigation");
-  cancel_nav_button_ = new QPushButton("Cancel");
-  cancel_nav_button_->setEnabled(false);
-  nav_button_layout->addWidget(start_nav_button_);
-  nav_button_layout->addWidget(cancel_nav_button_);
-  nav_progress_bar_ = new QProgressBar;
-  nav_progress_bar_->setRange(0, 100);
-  nav_progress_bar_->setFixedHeight(14);
+  nav_button_ = new QPushButton("Start Navigation");
   nav_status_label_ = new QLabel("NAV_INACTIVE");
   nav_status_label_->setAutoFillBackground(true);
-  nav_status_label_->setFixedHeight(16);
-  nav_layout->addLayout(nav_button_layout);
-  nav_layout->addWidget(nav_progress_bar_);
+  nav_status_label_->setWordWrap(true);
+  nav_status_label_->setFixedHeight(28);
+  nav_layout->addWidget(nav_button_);
   nav_layout->addWidget(nav_status_label_);
   nav_group->setLayout(nav_layout);
 
@@ -149,8 +153,7 @@ ControlPanel::ControlPanel(QWidget * parent)
   connect(mark_stop_point_button_, &QPushButton::clicked, this, &ControlPanel::onMarkStopPoint);
   connect(browse_button_, &QPushButton::clicked, this, &ControlPanel::onBrowseWaypointsFile);
   connect(load_button_, &QPushButton::clicked, this, &ControlPanel::onLoadPath);
-  connect(start_nav_button_, &QPushButton::clicked, this, &ControlPanel::onStartNavigation);
-  connect(cancel_nav_button_, &QPushButton::clicked, this, &ControlPanel::onCancelNavigation);
+  connect(nav_button_, &QPushButton::clicked, this, &ControlPanel::onToggleNavigation);
 }
 
 ControlPanel::~ControlPanel() = default;
@@ -164,7 +167,7 @@ void ControlPanel::onInitialize()
   mark_stop_point_client_ =
     node_->create_client<robot_interfaces::srv::MarkStopPoint>("mapping/mark_stop_point");
   load_path_client_ = node_->create_client<robot_interfaces::srv::LoadPath>("navigation/load_path");
-  navigate_client_ = rclcpp_action::create_client<NavigateRoute>(node_, "navigate_route");
+  nav_client_ = node_->create_client<std_srvs::srv::SetBool>("navigation/start_nav");
 
   nav_status_sub_ = node_->create_subscription<robot_interfaces::msg::NavigationStatus>(
     "navigation/status", 10,
@@ -179,8 +182,8 @@ void ControlPanel::onInitialize()
     std::bind(&ControlPanel::cmdVelCallback, this, std::placeholders::_1));
 
   // rviz's own event loop is Qt's, not rclcpp's spin() -- pump callbacks
-  // (service responses, action feedback/result, the status subscription)
-  // on a timer instead of blocking the GUI thread with a real spin().
+  // (service responses, the status subscription) on a timer instead of
+  // blocking the GUI thread with a real spin().
   spin_timer_ = new QTimer(this);
   connect(spin_timer_, &QTimer::timeout, this, &ControlPanel::onSpinRos);
   spin_timer_->start(50);
@@ -283,67 +286,26 @@ void ControlPanel::onLoadPath()
     });
 }
 
-void ControlPanel::onStartNavigation()
+void ControlPanel::onToggleNavigation()
 {
-  if (!navigate_client_->wait_for_action_server(std::chrono::seconds(0))) {
-    setStatusLabel(nav_status_label_, "action server not available", "#ffcc00");
+  if (!nav_client_->service_is_ready()) {
+    setStatusLabel(nav_status_label_, "service not available", "#ffcc00");
     return;
   }
-
-  auto goal_msg = NavigateRoute::Goal();
-  auto send_goal_options = rclcpp_action::Client<NavigateRoute>::SendGoalOptions();
-  send_goal_options.feedback_callback = std::bind(
-    &ControlPanel::navFeedbackCallback, this, std::placeholders::_1, std::placeholders::_2);
-  send_goal_options.result_callback =
-    std::bind(&ControlPanel::navResultCallback, this, std::placeholders::_1);
-  send_goal_options.goal_response_callback =
-    [this](GoalHandleNavigateRoute::SharedPtr goal_handle) {
-      if (!goal_handle) {
-        setStatusLabel(nav_status_label_, "goal rejected", "#ff8888");
-      } else {
-        current_goal_handle_ = goal_handle;
-        start_nav_button_->setEnabled(false);
-        cancel_nav_button_->setEnabled(true);
+  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
+  request->data = !is_navigating_;
+  nav_client_->async_send_request(
+    request,
+    [this](rclcpp::Client<std_srvs::srv::SetBool>::SharedFuture future) {
+      auto response = future.get();
+      if (response->success) {
+        is_navigating_ = !is_navigating_;
+        nav_button_->setText(is_navigating_ ? "Stop Navigation" : "Start Navigation");
       }
-    };
-
-  navigate_client_->async_send_goal(goal_msg, send_goal_options);
-}
-
-void ControlPanel::onCancelNavigation()
-{
-  if (current_goal_handle_) {
-    navigate_client_->async_cancel_goal(current_goal_handle_);
-  }
-}
-
-void ControlPanel::navFeedbackCallback(
-  GoalHandleNavigateRoute::SharedPtr,
-  const std::shared_ptr<const NavigateRoute::Feedback> feedback)
-{
-  nav_progress_bar_->setValue(static_cast<int>(feedback->progress * 100.0f));
-}
-
-void ControlPanel::navResultCallback(const GoalHandleNavigateRoute::WrappedResult & result)
-{
-  start_nav_button_->setEnabled(true);
-  cancel_nav_button_->setEnabled(false);
-  current_goal_handle_.reset();
-
-  switch (result.code) {
-    case rclcpp_action::ResultCode::SUCCEEDED:
-      setStatusLabel(nav_status_label_, "SUCCEEDED: " + result.result->message, "#88ff88");
-      break;
-    case rclcpp_action::ResultCode::ABORTED:
-      setStatusLabel(nav_status_label_, "ABORTED: " + result.result->message, "#ff8888");
-      break;
-    case rclcpp_action::ResultCode::CANCELED:
-      setStatusLabel(nav_status_label_, "CANCELED", "#ffcc00");
-      break;
-    default:
-      setStatusLabel(nav_status_label_, "UNKNOWN RESULT", "#ffcc00");
-      break;
-  }
+      setStatusLabel(
+        nav_status_label_, response->message,
+        response->success ? "#88ff88" : "#ff8888");
+    });
 }
 
 void ControlPanel::navStatusCallback(const robot_interfaces::msg::NavigationStatus::SharedPtr msg)
@@ -368,7 +330,7 @@ void ControlPanel::batteryCallback(const sensor_msgs::msg::BatteryState::SharedP
 {
   int percent = static_cast<int>(msg->percentage * 100.0f);
   battery_progress_bar_->setValue(percent);
-  battery_progress_bar_->setFormat(QString("Battery: %1%").arg(percent));
+  battery_label_->setText(QString("Battery: %1%").arg(percent));
 
   // Matches robot_driver_node's own low-battery gate (0.20) for auto mode.
   std::string color = "#88ff88";

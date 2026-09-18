@@ -1,7 +1,0 @@
----
-bool success
-string message
----
-string state
-string message
-float32 progress

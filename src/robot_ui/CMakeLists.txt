@@ -8,11 +8,11 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rclcpp_action REQUIRED)
 find_package(rviz_common REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(robot_interfaces REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
@@ -34,7 +34,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp
-  rclcpp_action
   rviz_common
   pluginlib
   std_srvs
@@ -63,6 +62,6 @@ install(
 
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
-ament_export_dependencies(rclcpp rclcpp_action rviz_common pluginlib std_srvs sensor_msgs robot_interfaces)
+ament_export_dependencies(rclcpp rviz_common pluginlib std_srvs sensor_msgs geometry_msgs robot_interfaces)
 
 ament_package()

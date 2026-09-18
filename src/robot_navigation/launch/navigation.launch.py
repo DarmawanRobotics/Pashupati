@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -8,15 +9,10 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('robot_navigation')
-    default_params = os.path.join(pkg_share, 'config', 'navigation_params.yaml')
-    # Canonical route location for this robot -- same workspace-root map/ folder
-    # path_record.yaml already assumes for recorded_path.csv. There is no
-    # waypoints/ folder installed under this package's own share dir (nothing
-    # populates it), so pointing there silently produces an empty path.
+    default_params = os.path.join(get_package_share_directory('robot_navigation'), 'config', 'navigation_params.yaml')
     default_waypoints = '/home/robot/dev/Pashupati/map/example/example_waypoint.csv'
 
-    params_file = LaunchConfiguration('params_file')
+    params_file = LaunchConfiguration('params_file')    
     waypoints_file = LaunchConfiguration('waypoints_file')
 
     return LaunchDescription([
@@ -28,5 +24,21 @@ def generate_launch_description():
             name='path_loader_node', 
             output='screen',
             parameters=[params_file, {'waypoints_file': waypoints_file}],
+        ),
+        
+        Node(
+            package='robot_navigation', 
+            executable='obstacle_avoidance_node',
+            name='obstacle_avoidance_node', 
+            output='screen', 
+            parameters=[params_file],
+        ),
+
+        Node(
+            package='robot_navigation', 
+            executable='path_follower_node',
+            name='path_follower_node', 
+            output='screen', 
+            parameters=[params_file],
         ),
     ])
