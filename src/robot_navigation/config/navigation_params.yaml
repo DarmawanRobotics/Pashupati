@@ -28,4 +28,4 @@ obstacle_avoidance_node:
 
 path_loader_node:
   ros__parameters:
-    waypoints_file: ""
+    waypoints_file: "/home/robot/dev/Pashupati/map/recorded_path.csv"
