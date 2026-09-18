@@ -15,7 +15,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("params_file",default_value=default_params,description="Path to the perception parameters file"),
-        DeclareLaunchArgument("debug", default_value="true", description="Enable debug mode for apriltag detection"),
 
         Node(
             package="robot_perception",
@@ -48,6 +47,5 @@ def generate_launch_description():
                 ("image", "/camera/camera/color/image_raw"),
                 ("image_tags", "/perception/apriltag/image_tags"),
             ],
-            conditions=[LaunchConfiguration("debug")],
         ),
     ])
