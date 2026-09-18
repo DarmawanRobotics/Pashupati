@@ -11,3 +11,10 @@ lidar_sector_node:
     corridor_x_max: 5.0
     corridor_y_min: -1.0
     corridor_y_max: 1.0
+
+anomaly_detector_node:
+  ros__parameters:
+    ollama_model: moondream
+    check_interval_sec: 2.0
+    publish_annotated: true
+    jpeg_quality: 90
