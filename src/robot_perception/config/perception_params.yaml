@@ -1,13 +1,55 @@
 lidar_sector_node:
   ros__parameters:
-    num_sectors: 32
-    fov_deg: 180.0
-    range_max: 8.0
-    obstacle_z_min: 0.05
-    obstacle_z_max: 1.20
-    publish_markers: true
-    marker_lifetime_sec: 0.3
-    corridor_x_min: 0.0
-    corridor_x_max: 5.0
-    corridor_y_min: -1.0
-    corridor_y_max: 1.0
+    # Angular sector configuration
+    num_sectors: 32              # number of angular sectors used to divide the FOV
+    fov_deg: 180.0               # total horizontal field of view in degrees
+    range_max: 8.0               # maximum LiDAR detection range in meters
+    range_min: 0.1               # minimum LiDAR detection range in meters
+
+    # Obstacle height filtering
+    obstacle_z_min: 0.05         # minimum obstacle height relative to base_link in meters
+    obstacle_z_max: 1.20         # maximum obstacle height relative to base_link in meters
+
+    # RViz marker visualization
+    publish_markers: true        # publish sector rays and detected obstacle points
+    marker_lifetime_sec: 0.3     # lifetime of each marker in seconds
+
+    # Corridor boundary
+    # Defines the rectangular area used to limit the sector rays
+    corridor_x_min: 0.0          # minimum X boundary in base_link frame in meters
+    corridor_x_max: 5.0          # maximum X boundary in base_link frame in meters
+    corridor_y_min: -1.0         # minimum Y boundary in base_link frame in meters
+    corridor_y_max: 1.0          # maximum Y boundary in base_link frame in meters
+
+
+apriltag:
+  ros__parameters:
+    # Input image configuration
+    image_transport: raw         # image transport type: "raw" or "compressed"
+
+    # AprilTag detector configuration
+    family: 36h11                # AprilTag family: 16h5, 25h9, 36h11, etc.
+    size: 0.16                   # default physical tag edge length in meters
+    profile: false               # print detector profiling information
+
+    # Detection filtering
+    max_hamming: 0               # maximum allowed bit errors in the detected tag
+
+    # AprilTag detector tuning
+    detector:
+      threads: 1                 # number of CPU threads used by the detector
+      decimate: 2.0              # image downsampling factor for faster detection
+      blur: 0.0                  # Gaussian blur sigma applied during detection
+      refine: 1                  # refine detected tag corner positions
+      sharpening: 0.25           # sharpening strength applied before decoding
+      debug: 0                   # save additional detector debug images
+
+    # Tag pose estimation
+    pose_estimation_method: pnp   # pose estimation method: PnP
+
+    # Per-tag configuration
+    # IDs, frames, and sizes must have the same number of elements.
+    tag:
+      ids: [2, 4]                # AprilTag IDs whose TF frames should be published
+      frames: [base_map, charging_dock]  # TF frame assigned to each tag ID
+      sizes: [0.15, 0.15]        # physical tag size for each tag ID in meters

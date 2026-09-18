@@ -24,6 +24,7 @@ class LidarSectorNode(Node):
         self.declare_parameter('num_sectors', 32)
         self.declare_parameter('fov_deg', 180.0)
         self.declare_parameter('range_max', 8.0)
+        self.declare_parameter('range_min', 0.1)
         self.declare_parameter('obstacle_z_min', 0.05)
         self.declare_parameter('obstacle_z_max', 1.20)
         self.declare_parameter('publish_markers', True)
@@ -36,6 +37,7 @@ class LidarSectorNode(Node):
         self._num_sectors = int(self.get_parameter('num_sectors').value)
         self._fov = math.radians(float(self.get_parameter('fov_deg').value))
         self._range_max = float(self.get_parameter('range_max').value)
+        self._range_min = float(self.get_parameter('range_min').value)
         self._z_min = float(self.get_parameter('obstacle_z_min').value)
         self._z_max = float(self.get_parameter('obstacle_z_max').value)
         self._publish_markers = bool(self.get_parameter('publish_markers').value)
@@ -123,7 +125,10 @@ class LidarSectorNode(Node):
                 r = np.hypot(base_x, base_y)
                 theta = np.arctan2(base_y, base_x)
 
-                valid = (r <= self._range_max) & (theta >= self._angle_min) & (theta < self._angle_min + self._fov)
+                valid = (
+                    (r >= self._range_min) & (r <= self._range_max)
+                    & (theta >= self._angle_min) & (theta < self._angle_min + self._fov)
+                )
                 r, theta = r[valid], theta[valid]
                 if r.size > 0:
                     idx = np.clip(
