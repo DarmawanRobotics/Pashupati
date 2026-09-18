@@ -1,31 +1,68 @@
 path_follower_node:
   ros__parameters:
-    control_rate: 20.0
-    lookahead_distance: 1.0
-    avoidance_enabled: true
-    goal_tolerance: 0.3
-    target_linear_velocity: 0.4
-    max_linear_velocity: 0.6
-    max_angular_velocity: 1.0
-    linear_accel_limit: 0.5
-    angular_accel_limit: 1.5
-    arc_visualization_length: 2.0
-    marker_lifetime_sec: 0.5
+    control_rate: 20.0                # Hz, control loop frequency
+    target_linear_velocity: 0.4       # m/s, cruise speed
+    max_linear_velocity: 0.6          # m/s, hard cap
+    max_angular_velocity: 1.0         # rad/s, hard cap
+    linear_accel_limit: 0.5           # m/s^2, ramp limit
+    angular_accel_limit: 1.5          # rad/s^2, ramp limit
+    arc_visualization_length: 2.0     # meters, RViz curvature arc length
+    marker_lifetime_sec: 0.5          # seconds, RViz marker lifetime
+    avoidance_enabled: true           # apply obstacle avoidance to cmd_vel
+
+    stop_point_tolerance: 0.3   # meters, distance to a dwell_sec>0 waypoint that triggers ALIGNING
+    yaw_tolerance_deg: 5.0      # deg, heading error considered "aligned" before DWELLING starts
+    align_kp: 1.5               # P gain for the in-place rotation during ALIGNING
+
+    action_feedback_rate: 5.0        # Hz, navigate_route action feedback publish rate
+    failure_state_timeout_sec: 5.0   # seconds stuck in TF_UNAVAILABLE/NO_PATH before the action aborts
+
+    controller: pure_pursuit   # pure_pursuit | pid | mppi
+
+    pure_pursuit.lookahead_distance: 1.0   # meters, target point distance ahead
+    pure_pursuit.goal_tolerance: 0.3       # meters, "arrived" radius
+
+    pid.lookahead_distance: 1.0   # meters, target point distance ahead
+    pid.goal_tolerance: 0.3       # meters, "arrived" radius
+    pid.kp: 1.5                   # proportional gain
+    pid.ki: 0.0                   # integral gain
+    pid.kd: 0.2                   # derivative gain
+
+    mppi.goal_tolerance: 0.3     # meters, "arrived" radius
+    mppi.horizon_steps: 15       # steps simulated per rollout
+    mppi.dt: 0.1                 # seconds per rollout step
+    mppi.num_samples: 200        # sampled trajectories per tick
+    mppi.angular_std: 1.0        # rad/s, sampling noise stddev
+    mppi.temperature: 1.0        # softmax weighting sharpness
+
+    speed_regulator_enabled: false   # scale speed down on sharp turns
+    speed_regulator.kp: 0.3          # proportional gain
+    speed_regulator.ki: 0.0          # integral gain
+    speed_regulator.kd: 0.0          # derivative gain
+    speed_regulator.min_scale: 0.3   # floor on the speed multiplier
 
 obstacle_avoidance_node:
   ros__parameters:
-    safe_distance: 3.0
-    emergency_distance: 0.4
-    steering_gain: 1.5
-    velocity_gain: 1.0
-    steering_zone_center_deg: 45.0
-    steering_zone_width_deg: 60.0
-    velocity_zone_center_deg: 60.0
-    velocity_zone_width_deg: 90.0
-    following_zone_width_deg: 30.0
-    emergency_cone_deg: 60.0
-    smoothing: 0.85
+    algorithm: braitenberg      # braitenberg | vfh
+    safe_distance: 3.0          # meters, danger starts below this range
+    emergency_distance: 0.4     # meters, hard-stop range
+    emergency_cone_deg: 60.0    # deg, frontal cone checked for hard-stop
+
+    braitenberg.steering_gain: 1.5              # obstacle-to-steering strength
+    braitenberg.velocity_gain: 1.0              # obstacle-to-speed strength
+    braitenberg.steering_zone_center_deg: 45.0  # deg, left/right steering zone center
+    braitenberg.steering_zone_width_deg: 60.0   # deg, steering zone width
+    braitenberg.velocity_zone_center_deg: 60.0  # deg, left/right slowdown zone center
+    braitenberg.velocity_zone_width_deg: 90.0   # deg, slowdown zone width
+    braitenberg.following_zone_width_deg: 30.0  # deg, frontal slowdown zone width
+    braitenberg.smoothing: 0.85                 # 0-1, output filter (higher = smoother/slower)
+
+    vfh.min_gap_width_deg: 20.0   # deg, narrowest gap considered passable
+    vfh.steering_gain: 1.0        # gap-angle-to-steering strength
+    vfh.velocity_gain: 1.0        # obstacle-to-speed strength
+    vfh.smoothing: 0.85           # 0-1, output filter (higher = smoother/slower)
 
 path_loader_node:
   ros__parameters:
-    waypoints_file: "/home/robot/dev/Pashupati/map/recorded_path.csv"
+    waypoints_file: ""       # path to the route CSV (x,y,yaw_deg,dwell_sec)
+    republish_period: 2.0    # seconds, how often to republish the loaded path

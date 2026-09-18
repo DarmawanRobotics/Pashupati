@@ -1,40 +1,41 @@
 import math
 
+from robot_navigation.utils.controllers.base_controller import ControllerOutput, PathController
 from robot_navigation.utils.pose2d import Pose2D
 
 
-class PurePursuit:
-    """Tracks a path of x,y points and outputs steering curvature toward a lookahead point."""
+def angle_diff(a: float, b: float) -> float:
+    """Return the signed difference a-b wrapped into (-pi, pi]."""
+    d = a - b
+    while d > math.pi:
+        d -= 2 * math.pi
+    while d < -math.pi:
+        d += 2 * math.pi
+    return d
 
-    def __init__(self, lookahead_distance: float = 1.0, goal_tolerance: float = 0.3):
+
+class PidController(PathController):
+    """Heading-error PID path follower: steers toward a lookahead point at a constant cruise speed."""
+
+    def __init__(self, target_linear_velocity=0.4, lookahead_distance=1.0, goal_tolerance=0.3, kp=1.5, ki=0.0, kd=0.2):
+        self._target_linear_velocity = target_linear_velocity
         self._lookahead_distance = lookahead_distance
         self._goal_tolerance = goal_tolerance
+        self._kp = kp
+        self._ki = ki
+        self._kd = kd
         self._path: list[tuple[float, float]] = []
         self._index_nearest = 0
+        self._integral = 0.0
+        self._last_error = 0.0
         self._last_lookahead = (0.0, 0.0)
 
-    def set_path(self, path_xy: list[tuple[float, float]]):
-        """Replace the tracked path and reset the nearest-point search index."""
+    def set_path(self, path_xy):
+        """Replace the tracked path and reset the controller's integral/derivative state."""
         self._path = path_xy
         self._index_nearest = 0
-
-    def set_lookahead_distance(self, distance: float):
-        """Update the lookahead distance, floored to avoid a degenerate zero-length lookahead."""
-        self._lookahead_distance = max(0.05, distance)
-
-    def lookahead_distance(self) -> float:
-        """Return the currently configured lookahead distance."""
-        return self._lookahead_distance
-
-    def last_lookahead_point(self) -> tuple[float, float]:
-        """Return the lookahead point computed by the most recent update() call."""
-        return self._last_lookahead
-
-    def nearest_point(self) -> tuple[float, float]:
-        """Return the path point at the current nearest-index."""
-        if not self._path:
-            return 0.0, 0.0
-        return self._path[self._index_nearest]
+        self._integral = 0.0
+        self._last_error = 0.0
 
     def nearest_index(self, pose: Pose2D) -> int:
         """Find the closest path index searching forward only, to keep progress monotonic."""
@@ -63,20 +64,26 @@ class PurePursuit:
         gx, gy = self._path[-1]
         return math.hypot(gx - pose.x, gy - pose.y) < self._goal_tolerance
 
-    def update(self, pose: Pose2D) -> float:
-        """Advance tracking to the current pose and return the target curvature (1/m, +left)."""
+    def update(self, pose: Pose2D, dt: float) -> ControllerOutput:
+        """Run one PID step on the heading error toward the lookahead point."""
         if not self._path:
-            return 0.0
+            return ControllerOutput(0.0, 0.0)
 
         self._index_nearest = self.nearest_index(pose)
         gx, gy = self.lookahead_point(pose, self._index_nearest)
         self._last_lookahead = (gx, gy)
 
-        dx, dy = gx - pose.x, gy - pose.y
-        local_x = math.cos(-pose.yaw) * dx - math.sin(-pose.yaw) * dy
-        local_y = math.sin(-pose.yaw) * dx + math.cos(-pose.yaw) * dy
+        desired_heading = math.atan2(gy - pose.y, gx - pose.x)
+        error = angle_diff(desired_heading, pose.yaw)
 
-        lookahead_sq = local_x * local_x + local_y * local_y
-        if lookahead_sq < 1e-6:
-            return 0.0
-        return 2.0 * local_y / lookahead_sq
+        safe_dt = max(dt, 1e-3)
+        self._integral += error * safe_dt
+        derivative = (error - self._last_error) / safe_dt
+        self._last_error = error
+
+        angular = self._kp * error + self._ki * self._integral + self._kd * derivative
+        return ControllerOutput(linear=self._target_linear_velocity, angular=angular)
+
+    def debug_info(self) -> dict:
+        """Expose the lookahead point for visualization."""
+        return {'lookahead_xy': self._last_lookahead, 'lookahead_distance': self._lookahead_distance}

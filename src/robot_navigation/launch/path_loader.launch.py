@@ -19,8 +19,10 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file', default_value=default_params),
         DeclareLaunchArgument('waypoints_file', default_value=default_waypoints),
         Node(
-            package='robot_navigation', executable='path_loader_node',
-            name='path_loader_node', output='screen',
+            package='robot_navigation', 
+            executable='path_loader_node',
+            name='path_loader_node', 
+            output='screen',
             parameters=[params_file, {'waypoints_file': waypoints_file}],
         ),
     ])

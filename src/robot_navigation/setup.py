@@ -6,7 +6,7 @@ package_name = 'robot_navigation'
 
 setup(
     name=package_name,
-    version='0.2.0',
+    version='0.5.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Pure pursuit path following and Braitenberg obstacle avoidance',
+    description='Selectable path controllers, obstacle avoidance algorithms, and inspection stop points',
     license='MIT',
     entry_points={
         'console_scripts': [

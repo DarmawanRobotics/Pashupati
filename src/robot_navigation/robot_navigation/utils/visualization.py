@@ -6,7 +6,7 @@ from visualization_msgs.msg import Marker
 
 
 def lookahead_marker(frame_id: str, stamp, x: float, y: float) -> Marker:
-    """Build a sphere marker at the pure pursuit lookahead point."""
+    """Build a sphere marker at the controller's lookahead point."""
     marker = Marker()
     marker.header.frame_id = frame_id
     marker.header.stamp = stamp
@@ -60,6 +60,23 @@ def curvature_arc_marker(frame_id: str, stamp, curvature: float, arc_length: flo
             x = math.sin(curvature * s) / curvature
             y = (1.0 - math.cos(curvature * s)) / curvature
         marker.points.append(Point(x=x, y=y, z=0.0))
+    return marker
+
+
+def rollout_marker(frame_id: str, stamp, points_xy) -> Marker:
+    """Build a line strip showing a predicted trajectory rollout (e.g. MPPI's best sample)."""
+    marker = Marker()
+    marker.header.frame_id = frame_id
+    marker.header.stamp = stamp
+    marker.ns = 'pure_pursuit'
+    marker.id = 4
+    marker.type = Marker.LINE_STRIP
+    marker.action = Marker.ADD
+    marker.pose.orientation.w = 1.0
+    marker.scale.x = 0.03
+    marker.color = ColorRGBA(r=1.0, g=0.4, b=0.9, a=0.8)
+    for x, y in points_xy:
+        marker.points.append(Point(x=float(x), y=float(y), z=0.0))
     return marker
 
 
