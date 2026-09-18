@@ -21,14 +21,7 @@ def generate_launch_description():
         )
     )
 
-    sdk_bridge_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_share, 'launch', 'sdk_bridge.launch.py')
-        )
-    )
-
     return LaunchDescription([
         livox_launch,
         realsense_launch,
-        sdk_bridge_launch,
     ])

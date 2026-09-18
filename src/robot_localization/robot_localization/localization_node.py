@@ -30,7 +30,7 @@ class LocalizationNode(Node):
 
         self.get_logger().info(
             f"localization_node ready with {len(self._tag_poses)} configured tag(s). "
-            f"Call '{self.get_name()}/localization/start' while any configured tag is visible."
+            "Call service 'localization/start' while any configured tag is visible."
         )
 
     def load_tag_poses(self, filepath: str) -> dict:

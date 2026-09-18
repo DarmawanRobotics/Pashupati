@@ -6,7 +6,7 @@ package_name = 'robot_mapping'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='0.2.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
@@ -16,10 +16,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='darmawan',
-    maintainer_email='darmawan@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    maintainer='Agus Darmawan',
+    maintainer_email='darmawandeveloper@gmail.com',
+    description='FAST-LIO2 mapping bringup and teach-and-repeat path recording with inspection stop points',
+    license='MIT',
     extras_require={
         'test': [
             'pytest',

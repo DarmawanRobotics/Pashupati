@@ -1,0 +1,69 @@
+# tmuxp session for Pashupati -- one visible window per subsystem, instead of
+# everything's logs interleaved in a single `ros2 launch` terminal.
+#
+# This is an ALTERNATIVE to bringup.launch.py, not something to run alongside
+# it -- running both starts every node twice. Use this one when you want to
+# watch (or restart) a single subsystem's log without touching the rest, or
+# want the "control" window for manual service/action calls during testing.
+# Use bringup.launch.py for a single-command, unattended boot instead.
+#
+# Install: pip install --user tmuxp
+# Run:     tmuxp load src/robot_bringup/tmux/pashupati.yaml
+# Detach:  Ctrl-b d   (session keeps running)
+# Reattach: tmuxp load src/robot_bringup/tmux/pashupati.yaml   (or: tmux attach -t pashupati)
+# Kill everything: tmux kill-session -t pashupati
+
+session_name: pashupati
+start_directory: /home/robot/dev/Pashupati
+shell_command_before:
+  - source /opt/ros/humble/setup.bash
+  - source install/setup.bash
+
+windows:
+  - window_name: description
+    panes:
+      - ros2 launch robot_description description.launch.py
+
+  - window_name: drivers
+    panes:
+      - ros2 launch robot_drivers driver.launch.py
+
+  - window_name: mapping
+    layout: even-vertical
+    panes:
+      - ros2 launch robot_mapping fast_lio.launch.py
+      - ros2 launch robot_mapping path_recorder.launch.py
+
+  - window_name: localization
+    panes:
+      - ros2 launch robot_localization localization.launch.py
+
+  - window_name: perception
+    panes:
+      - ros2 launch robot_perception perception.launch.py
+
+  - window_name: navigation
+    layout: even-vertical
+    panes:
+      - ros2 launch robot_navigation obstacle_avoidance.launch.py
+      - ros2 launch robot_navigation path_follower.launch.py
+      - ros2 launch robot_navigation path_loader.launch.py
+
+  - window_name: mission
+    panes:
+      - ros2 launch robot_mission mission.launch.py
+
+  - window_name: rviz
+    panes:
+      - ros2 launch robot_bringup rviz.launch.py
+
+  - window_name: control
+    panes:
+      - shell_command:
+          - clear
+          - 'echo "Manual service/action calls -- examples:"'
+          - 'echo "  ros2 service call /localization/start std_srvs/srv/Trigger"'
+          - 'echo "  ros2 service call /mapping/path_record std_srvs/srv/SetBool \"{data: true}\""'
+          - 'echo "  ros2 service call /mapping/mark_stop_point robot_interfaces/srv/MarkStopPoint \"{dwell_sec: 5.0}\""'
+          - 'echo "  ros2 action send_goal /navigate_route robot_interfaces/action/NavigateRoute {} --feedback"'
+          - 'echo "  ros2 topic echo /navigation/status"'

@@ -10,12 +10,14 @@ from std_srvs.srv import SetBool
 import tf_transformations
 from tf2_ros import Buffer, TransformListener
 
+from robot_interfaces.srv import MarkStopPoint
+
 
 class PathRecorderNode(Node):
-    """Record the robot path from TF and save it as a waypoint CSV."""
+    """Record the robot path from TF and save it as a waypoint CSV (x,y,yaw_deg,dwell_sec)."""
 
     def __init__(self):
-        """Initialize parameters, TF listener, service, and recording timer."""
+        """Initialize parameters, TF listener, services, and recording timer."""
         super().__init__('path_recorder_node')
         self.declare_parameter('output_file', '/tmp/recorded_path.csv')
         self.declare_parameter('map_frame', 'map')
@@ -30,11 +32,12 @@ class PathRecorderNode(Node):
         record_rate = float(self.get_parameter('record_rate_hz').value)
 
         self._recording = False
-        self._waypoints: list[tuple[float, float, float]] = []
+        self._waypoints: list[tuple[float, float, float, float]] = []
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self.create_service(SetBool, 'mapping/path_record', self.recording_callback)
+        self.create_service(MarkStopPoint, 'mapping/mark_stop_point', self.mark_stop_point_callback)
         self.create_timer(1.0 / record_rate, self.record_tick)
 
     def recording_callback(self, request, response):
@@ -64,11 +67,8 @@ class PathRecorderNode(Node):
         self.get_logger().info(response.message)
         return response
 
-    def record_tick(self):
-        """Sample the robot pose and append a waypoint when it has moved far enough."""
-        if not self._recording:
-            return
-
+    def lookup_current_pose(self):
+        """Look up the current map->base_link pose as (x, y, yaw_deg), or None if TF isn't ready."""
         try:
             transform = self._tf_buffer.lookup_transform(
                 self._map_frame,
@@ -80,27 +80,58 @@ class PathRecorderNode(Node):
                 f'TF lookup {self._map_frame}->{self._base_frame} failed: {error}',
                 throttle_duration_sec=2.0,
             )
-            return
+            return None
 
         x = transform.transform.translation.x
         y = transform.transform.translation.y
         q = transform.transform.rotation
         yaw = tf_transformations.euler_from_quaternion([q.x, q.y, q.z, q.w])[2]
+        return x, y, math.degrees(yaw)
+
+    def record_tick(self):
+        """Sample the robot pose and append a dwell_sec=0 waypoint when it has moved far enough."""
+        if not self._recording:
+            return
+
+        pose = self.lookup_current_pose()
+        if pose is None:
+            return
+        x, y, yaw_deg = pose
 
         if self._waypoints:
-            last_x, last_y, _ = self._waypoints[-1]
+            last_x, last_y, _, _ = self._waypoints[-1]
             if math.hypot(x - last_x, y - last_y) < self._min_spacing:
                 return
 
-        self._waypoints.append((x, y, math.degrees(yaw)))
+        self._waypoints.append((x, y, yaw_deg, 0.0))
+
+    def mark_stop_point_callback(self, request, response):
+        """Append the current pose as an inspection stop point, bypassing the distance filter."""
+        if not self._recording:
+            response.success = False
+            response.message = 'not recording, call mapping/path_record(true) first'
+            return response
+
+        pose = self.lookup_current_pose()
+        if pose is None:
+            response.success = False
+            response.message = 'TF not available, could not sample current pose'
+            return response
+
+        x, y, yaw_deg = pose
+        self._waypoints.append((x, y, yaw_deg, request.dwell_sec))
+        response.success = True
+        response.message = f'stop point marked at ({x:.2f}, {y:.2f}), dwell {request.dwell_sec:.1f}s'
+        self.get_logger().info(response.message)
+        return response
 
     def write_csv(self):
         """Write recorded waypoints to the configured CSV file."""
         with open(self._output_file, 'w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(['# x', 'y', 'yaw_deg'])
-            for x, y, yaw_deg in self._waypoints:
-                writer.writerow([f'{x:.4f}', f'{y:.4f}', f'{yaw_deg:.2f}'])
+            writer.writerow(['# x', 'y', 'yaw_deg', 'dwell_sec'])
+            for x, y, yaw_deg, dwell_sec in self._waypoints:
+                writer.writerow([f'{x:.4f}', f'{y:.4f}', f'{yaw_deg:.2f}', f'{dwell_sec:.1f}'])
 
 
 def main(args=None):

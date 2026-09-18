@@ -10,7 +10,11 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg_share = get_package_share_directory('robot_navigation')
     default_params = os.path.join(pkg_share, 'config', 'navigation_params.yaml')
-    default_waypoints = os.path.join(pkg_share, 'waypoints', 'example_route.csv')
+    # Canonical route location for this robot -- same workspace-root map/ folder
+    # path_record.yaml already assumes for recorded_path.csv. There is no
+    # waypoints/ folder installed under this package's own share dir (nothing
+    # populates it), so pointing there silently produces an empty path.
+    default_waypoints = '/home/robot/dev/Pashupati/map/example/example_waypoint.csv'
 
     params_file = LaunchConfiguration('params_file')
     waypoints_file = LaunchConfiguration('waypoints_file')

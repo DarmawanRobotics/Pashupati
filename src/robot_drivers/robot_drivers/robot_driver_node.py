@@ -61,7 +61,7 @@ class RobotDriverNode(Node):
         poll_rate = self.get_parameter("poll_rate").value
         self.create_timer(1.0 / poll_rate, self.poll_state)
 
-    def _ensure_standing(self):
+    def ensure_standing(self):
         """Stand up only if the robot isn't already in a movable state. Must be connected."""
         mode = self._dog.get_ctrl_mode()
         if mode in MOVABLE_MODES:
@@ -92,16 +92,16 @@ class RobotDriverNode(Node):
 
             battery = self._dog.get_battery()
             if battery is not None:
-                self._battery_percentage = battery / 100.0
+                self._battery_percentage = battery
 
-            if self._battery_percentage < 20.0:
+            if self._battery_percentage < 20.0: 
                 response.success = False
                 response.message = "battery low"
                 self.get_logger().error("cannot set auto mode: battery low")
                 self._dog.disconnect()
                 return response
 
-            stand_ok, stand_msg = self._ensure_standing()
+            stand_ok, stand_msg = self.ensure_standing()
             if not stand_ok:
                 response.success = False
                 response.message = f"stand_up failed: {stand_msg}"
@@ -131,7 +131,7 @@ class RobotDriverNode(Node):
             response.message = "not bound (enable auto mode first)"
             return response
         if request.data:
-            success, message = self._ensure_standing()
+            success, message = self.ensure_standing()
         else:
             self.get_logger().info("lie_down service called")
             success, message = self._dog.lie_down()
