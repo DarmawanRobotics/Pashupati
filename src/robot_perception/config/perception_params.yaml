@@ -53,3 +53,21 @@ apriltag:
       ids: [2, 4]                        # AprilTag IDs whose TF frames should be published
       frames: [base_map, charging_dock]  # TF frame assigned to each tag ID
       sizes: [0.15, 0.15]                # physical tag size for each tag ID in meters
+    num_sectors: 32
+    fov_deg: 180.0
+    range_max: 8.0
+    obstacle_z_min: 0.05
+    obstacle_z_max: 1.20
+    publish_markers: true
+    marker_lifetime_sec: 0.3
+    corridor_x_min: 0.0
+    corridor_x_max: 5.0
+    corridor_y_min: -1.0
+    corridor_y_max: 1.0
+
+anomaly_detector_node:
+  ros__parameters:
+    ollama_model: moondream
+    check_interval_sec: 2.0
+    publish_annotated: true
+    jpeg_quality: 90

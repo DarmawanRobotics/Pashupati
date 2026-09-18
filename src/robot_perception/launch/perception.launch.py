@@ -48,4 +48,14 @@ def generate_launch_description():
                 ("image_tags", "/perception/apriltag/image_tags"),
             ],
         ),
+      
+          Node(
+            package='robot_perception',
+            executable='anomaly_detector_node',
+            name='anomaly_detector_node',
+            output='screen',
+            parameters=[params_file],
+        ),
     ])
+    
+
