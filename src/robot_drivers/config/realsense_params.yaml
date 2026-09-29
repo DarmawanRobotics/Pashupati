@@ -6,4 +6,4 @@ realsense_camera:
     rgb_camera.profile: 848x480x30
     enable_depth: false
     publish_tf: true
-    tf_publish_rate: 0.0x
+    tf_publish_rate: 0.0

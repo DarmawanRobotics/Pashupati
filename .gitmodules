@@ -7,3 +7,6 @@
 [submodule "src/xtras/slam/fast_lio2"]
 	path = src/xtras/slam/fast_lio2
 	url = git@github.com:hku-mars/FAST_LIO.git
+[submodule "src/xtras/drivers/genisom_l1w_ros2"]
+	path = src/xtras/drivers/genisom_l1w_ros2
+	url = git@github.com:DarmawanRobotics/genisom_l1w_ros2.git
