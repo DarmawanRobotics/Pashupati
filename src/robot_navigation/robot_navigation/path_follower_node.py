@@ -89,7 +89,8 @@ class PathFollowerNode(Node):
         self.declare_parameter('mppi.dt', 0.1)
         self.declare_parameter('mppi.num_samples', 200)
         self.declare_parameter('mppi.angular_std', 1.0)
-        self.declare_parameter('mppi.temperature', 1.0)
+        self.declare_parameter('mppi.temperature', 0.05)
+        self.declare_parameter('mppi.window_points', 60)
 
         self.declare_parameter('speed_regulator_enabled', False)
         self.declare_parameter('speed_regulator.kp', 0.3)
@@ -183,6 +184,7 @@ class PathFollowerNode(Node):
             params['num_samples'] = int(self.get_parameter('mppi.num_samples').value)
             params['angular_std'] = float(self.get_parameter('mppi.angular_std').value)
             params['temperature'] = float(self.get_parameter('mppi.temperature').value)
+            params['window_points'] = int(self.get_parameter('mppi.window_points').value)
             params['max_angular_velocity'] = self._max_angular_velocity
         return params
 

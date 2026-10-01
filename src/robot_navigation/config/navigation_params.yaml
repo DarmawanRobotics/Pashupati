@@ -22,7 +22,7 @@ path_follower_node:
     action_feedback_rate: 5.0        # Hz, navigate_route action feedback publish rate
     failure_state_timeout_sec: 5.0   # seconds stuck in TF_UNAVAILABLE/NO_PATH before the action aborts
 
-    controller: mppi   # pure_pursuit | pid | mppi
+    controller: pure_pursuit   # pure_pursuit | pid | mppi
 
     pure_pursuit.lookahead_distance: 1.0   # meters, target point distance ahead
     pure_pursuit.goal_tolerance: 0.3       # meters, "arrived" radius
@@ -38,7 +38,8 @@ path_follower_node:
     mppi.dt: 0.1                 # seconds per rollout step
     mppi.num_samples: 200        # sampled trajectories per tick
     mppi.angular_std: 1.0        # rad/s, sampling noise stddev
-    mppi.temperature: 1.0        # softmax weighting sharpness
+    mppi.temperature: 0.05       # softmax sharpness for the normalized cost
+    mppi.window_points: 60       # path points ahead used for the tracking cost
 
     speed_regulator_enabled: false   # scale speed down on sharp turns
     speed_regulator.kp: 0.3          # proportional gain

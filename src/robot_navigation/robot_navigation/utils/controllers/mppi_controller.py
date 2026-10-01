@@ -6,9 +6,8 @@ from robot_navigation.utils.pose2d import Pose2D
 
 
 class MppiController(PathController):
-    """Simplified Model Predictive Path Integral controller: samples angular-velocity sequences
-    at a fixed cruise speed, rolls them out with a unicycle model, and returns a cost-weighted
-    average of the first control (softmax over path-tracking cost, warm-started each tick)."""
+    """Simplified MPPI: samples angular-velocity sequences at cruise speed, rolls out a unicycle
+    model and returns the cost-weighted first control (local path window + lookahead terminal cost)."""
 
     def __init__(
         self,
@@ -20,6 +19,7 @@ class MppiController(PathController):
         angular_std=1.0,
         temperature=1.0,
         max_angular_velocity=1.0,
+        window_points=60,
     ):
         self._target_linear_velocity = target_linear_velocity
         self._goal_tolerance = goal_tolerance
@@ -30,14 +30,16 @@ class MppiController(PathController):
         self._temperature = temperature
         self._max_angular_velocity = max_angular_velocity
         self._progress = PathProgress()
+        self._window_points = window_points
         self._path = np.zeros((0, 2))
         self._last_angular = 0.0
         self._last_rollout = None
 
     def set_path(self, path_xy, start_index=None):
-        """Replace the tracked path as a numpy array for vectorized distance queries."""
+        """Replace the tracked path, optionally pinning progress to start_index."""
         self._progress.set_path(path_xy, start_index)
-        self._path = np.array(path_xy) if path_xy else np.zeros((0, 2))
+        self._path = np.zeros((0, 2))
+        self._last_angular = 0.0
 
     def is_finished(self, pose: Pose2D) -> bool:
         """Return True once progress reached the end and the robot is within goal_tolerance."""
@@ -47,18 +49,22 @@ class MppiController(PathController):
         """Return the current progress index along the path."""
         return self._progress.index
 
-    def path_cost(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
-        """Sum, over the horizon, of each rolled-out point's squared distance to its nearest path point."""
+    def path_cost(self, xs: np.ndarray, ys: np.ndarray, target) -> np.ndarray:
+        """Mean squared distance to the local path window plus terminal distance to the lookahead target."""
         dx = xs[:, :, None] - self._path[None, None, :, 0]
         dy = ys[:, :, None] - self._path[None, None, :, 1]
-        nearest_sq = (dx * dx + dy * dy).min(axis=2)
-        return nearest_sq.sum(axis=1)
+        tracking = (dx * dx + dy * dy).min(axis=2).mean(axis=1)
+        terminal = (xs[:, -1] - target[0]) ** 2 + (ys[:, -1] - target[1]) ** 2
+        return tracking + terminal
 
     def update(self, pose: Pose2D, dt: float) -> ControllerOutput:
         """Sample control sequences, roll them out, and return a cost-weighted-average command."""
-        if self._path.shape[0] == 0:
+        if not self._progress.path:
             return ControllerOutput(0.0, 0.0)
         self._progress.update(pose)
+        self._path = np.array(self._progress.window(self._window_points))
+        horizon_length = self._target_linear_velocity * self._rollout_dt * self._horizon_steps
+        target = self._progress.lookahead_point(pose, horizon_length)
 
         angular_samples = np.random.normal(self._last_angular, self._angular_std, size=(self._num_samples, self._horizon_steps))
         angular_samples = np.clip(angular_samples, -self._max_angular_velocity, self._max_angular_velocity)
@@ -76,8 +82,8 @@ class MppiController(PathController):
             xs[:, step] = x
             ys[:, step] = y
 
-        costs = self.path_cost(xs, ys) + 0.01 * np.sum(angular_samples ** 2, axis=1)
-        weights = np.exp(-costs / self._temperature)
+        costs = self.path_cost(xs, ys, target) + 0.01 * np.mean(angular_samples ** 2, axis=1)
+        weights = np.exp(-(costs - costs.min()) / self._temperature)
         weights /= np.sum(weights) + 1e-9
 
         best_angular_sequence = np.sum(weights[:, None] * angular_samples, axis=0)
