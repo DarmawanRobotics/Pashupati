@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pashupati_bringup</name>
+  <version>0.1.0</version>
+  <description>One launch for the whole robot with respawning nodes, used by the systemd service.</description>
+  <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>l1w_bringup</exec_depend>
+  <exec_depend>fast_lio</exec_depend>
+  <exec_depend>apriltag_ros</exec_depend>
+  <exec_depend>robot_mapping</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>robot_perception</exec_depend>
+  <exec_depend>robot_navigation</exec_depend>
+  <exec_depend>robot_bridge</exec_depend>
+  <exec_depend>robot_fleet</exec_depend>
+  <exec_depend>robot_inspection</exec_depend>
+  <exec_depend>robot_health</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: script/start_tmux.sh [mapping|patrol]
+# Usage: script/start_tmux.sh [mapping|patrol]   (development; production: pashupati.service)
 #   mapping: FAST-LIO saves the PCD map, record a route with the RViz panel
 #   patrol:  map saving off, route loaded, navigation ready (start it from the panel)
 # Env: WS, ROUTE, TAGS, ROBOT_NS, CC_URL + CC_TOKEN (command center), RVIZ=0 (headless),
@@ -65,6 +65,12 @@ run nav.2 "ros2 launch robot_fleet fleet.launch.py robot_ns:=$ROBOT_NS server_ur
 token:='$CC_TOKEN'"
 tmux send-keys -t "$SESSION:nav.3" "$SETUP" C-m
 tmux send-keys -t "$SESSION:nav.3" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
+
+# Window 3: on-robot inspection (Moondream) and health
+tmux new-window -t "$SESSION" -n extra
+tmux split-window -h -t "$SESSION:extra"
+run extra.0 "ros2 launch robot_inspection inspection.launch.py"
+run extra.1 "ros2 launch robot_health health.launch.py"
 
 tmux select-window -t "$SESSION:robot"
 if [[ "$DETACH" != "1" ]]; then

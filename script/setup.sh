@@ -7,9 +7,10 @@
 #   script/setup.sh install livox build  # install only these
 #   script/setup.sh install all          # every component, including ros and service
 #
-# Components: ros tools submodules livox genisom rosdep realsense_udev build service network
+# Components: ros tools submodules livox genisom rosdep realsense_udev ollama people_model build
+#             service network
 # Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), GENISOM_SETUP (genisom submodule script),
-#      SERVICE_MODE (patrol), FORCE=1 (reinstall even when the check passes)
+#      VLM_MODEL (moondream), PEOPLE_MODEL (models/yolo11n.engine), FORCE=1 (reinstall anyway)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,13 +19,15 @@ LIVOX_SDK_REPO="${LIVOX_SDK_REPO:-https://github.com/Livox-SDK/Livox-SDK2.git}"
 LIVOX_SDK_REF="${LIVOX_SDK_REF:-master}"
 GENISOM_SETUP="${GENISOM_SETUP:-$ROOT/src/xtras/drivers/genisom_l1w_ros2/script/setup.sh}"
 SERVICE_NAME=pashupati
-SERVICE_MODE="${SERVICE_MODE:-patrol}"
+ENV_FILE=/etc/pashupati/pashupati.env
+VLM_MODEL="${VLM_MODEL:-moondream}"
+PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n.engine}"
 REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"
 ROBOT_IP="${ROBOT_IP:-192.168.234.1}"
 
-ALL=(ros tools submodules livox genisom rosdep realsense_udev build service network)
-DEFAULT_INSTALL=(tools submodules livox genisom rosdep realsense_udev build)
+ALL=(ros tools submodules livox genisom rosdep realsense_udev ollama people_model build service network)
+DEFAULT_INSTALL=(tools submodules livox genisom rosdep realsense_udev ollama build)
 
 SUDO=$([[ "$(id -u)" -eq 0 ]] && echo "" || echo "sudo")
 IN_DOCKER=$([[ -f /.dockerenv ]] && echo 1 || echo 0)
@@ -149,6 +152,37 @@ install_build() {
     (cd "$ROOT" && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release)
 }
 
+check_ollama() {
+    [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
+    command -v ollama >/dev/null || { echo "Ollama not installed"; return 1; }
+    ollama list 2>/dev/null | awk '{print $1}' | grep -q "^$VLM_MODEL" \
+        || { echo "model $VLM_MODEL not pulled"; return 1; }
+    echo "ollama with $VLM_MODEL"
+}
+install_ollama() {
+    command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh
+    $SUDO systemctl enable --now ollama 2>/dev/null || true
+    for _ in $(seq 20); do ollama list >/dev/null 2>&1 && break; sleep 1; done
+    ollama pull "$VLM_MODEL"
+}
+
+check_people_model() {
+    [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
+    python3 -c "import ultralytics" 2>/dev/null || { echo "python ultralytics missing"; return 1; }
+    [[ -f "$PEOPLE_MODEL" ]] || { echo "no model at $PEOPLE_MODEL"; return 1; }
+    echo "$PEOPLE_MODEL"
+}
+install_people_model() {
+    cat <<EOF
+Person detection needs Ultralytics and a model (manual on Jetson, PyTorch must be NVIDIA's build):
+  1. install the JetPack PyTorch wheel, then: pip3 install ultralytics
+  2. mkdir -p $(dirname "$PEOPLE_MODEL") && cd $(dirname "$PEOPLE_MODEL")
+  3. yolo export model=yolo11n.pt format=engine half=True imgsz=640
+Or run without it: PEOPLE=false in $ENV_FILE.
+EOF
+    return 1
+}
+
 check_service() {
     [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
     systemctl is-enabled "$SERVICE_NAME.service" >/dev/null 2>&1 \
@@ -159,30 +193,39 @@ check_service() {
 install_service() {
     local user
     user=$(id -un)
+    if [[ ! -f "$ENV_FILE" ]]; then
+        $SUDO install -D -m 640 -o root -g "$(id -gn)" "$ROOT/script/pashupati.env.example" "$ENV_FILE"
+        log "edit $ENV_FILE (route, tags, NETRA url/token)"
+    fi
     $SUDO tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null <<EOF
 [Unit]
-Description=Pashupati patrol stack ($SERVICE_MODE, tmux session '$SERVICE_NAME')
-After=network-online.target
-Wants=network-online.target
+Description=Pashupati robot stack
+After=network-online.target ollama.service
+Wants=network-online.target ollama.service
+StartLimitIntervalSec=0
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 User=$user
+WorkingDirectory=$ROOT
+EnvironmentFile=-$ENV_FILE
 Environment=WS=$ROOT
-Environment=RVIZ=0
-Environment=DETACH=1
-EnvironmentFile=-/etc/pashupati/pashupati.env
-ExecStart=$ROOT/script/start_tmux.sh $SERVICE_MODE
-ExecStop=/usr/bin/tmux kill-session -t $SERVICE_NAME
+Environment=PYTHONUNBUFFERED=1
+Environment=RCUTILS_COLORIZED_OUTPUT=0
+ExecStart=$ROOT/script/run_robot.sh
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+Nice=-5
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
 EOF
     $SUDO systemctl daemon-reload
     $SUDO systemctl enable "$SERVICE_NAME.service"
-    log "command center: put CC_URL=... and CC_TOKEN=... in /etc/pashupati/pashupati.env"
-    log "start now with: sudo systemctl start $SERVICE_NAME, attach with: tmux attach -t $SERVICE_NAME"
+    log "start: sudo systemctl start $SERVICE_NAME   logs: journalctl -fu $SERVICE_NAME"
 }
 
 check_network() {
