@@ -11,7 +11,6 @@ class MppiController(PathController):
 
     def __init__(
         self,
-        target_linear_velocity=0.4,
         goal_tolerance=0.3,
         horizon_steps=15,
         dt=0.1,
@@ -21,7 +20,6 @@ class MppiController(PathController):
         max_angular_velocity=1.0,
         window_points=60,
     ):
-        self._target_linear_velocity = target_linear_velocity
         self._goal_tolerance = goal_tolerance
         self._horizon_steps = horizon_steps
         self._rollout_dt = dt
@@ -57,13 +55,14 @@ class MppiController(PathController):
         terminal = (xs[:, -1] - target[0]) ** 2 + (ys[:, -1] - target[1]) ** 2
         return tracking + terminal
 
-    def update(self, pose: Pose2D, dt: float) -> ControllerOutput:
+    def update(self, pose: Pose2D, dt: float, target_speed: float) -> ControllerOutput:
         """Sample control sequences, roll them out, and return a cost-weighted-average command."""
         if not self._progress.path:
             return ControllerOutput(0.0, 0.0)
         self._progress.update(pose)
         self._path = np.array(self._progress.window(self._window_points))
-        horizon_length = self._target_linear_velocity * self._rollout_dt * self._horizon_steps
+        speed = max(target_speed, 0.05)
+        horizon_length = speed * self._rollout_dt * self._horizon_steps
         target = self._progress.lookahead_point(pose, horizon_length)
 
         angular_samples = np.random.normal(self._last_angular, self._angular_std, size=(self._num_samples, self._horizon_steps))
@@ -77,8 +76,8 @@ class MppiController(PathController):
 
         for step in range(self._horizon_steps):
             yaw = yaw + angular_samples[:, step] * self._rollout_dt
-            x = x + self._target_linear_velocity * np.cos(yaw) * self._rollout_dt
-            y = y + self._target_linear_velocity * np.sin(yaw) * self._rollout_dt
+            x = x + speed * np.cos(yaw) * self._rollout_dt
+            y = y + speed * np.sin(yaw) * self._rollout_dt
             xs[:, step] = x
             ys[:, step] = y
 
@@ -90,7 +89,7 @@ class MppiController(PathController):
         self._last_angular = float(best_angular_sequence[0])
         self._last_rollout = (xs[np.argmax(weights)].tolist(), ys[np.argmax(weights)].tolist())
 
-        return ControllerOutput(linear=self._target_linear_velocity, angular=self._last_angular)
+        return ControllerOutput(linear=target_speed, angular=self._last_angular)
 
     def debug_info(self) -> dict:
         """Expose the best-scoring rollout for visualization, once one has been computed."""

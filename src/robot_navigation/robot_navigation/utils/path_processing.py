@@ -128,3 +128,21 @@ def max_deviation(path: list[tuple[float, float]], reference: list[tuple[float, 
         return 0.0
     segments = list(zip(reference, reference[1:]))
     return max(min(point_segment_distance(p, a, b) for a, b in segments) for p in path)
+
+
+def velocity_profile(points: list[tuple[float, float]], stop_indices: list[int], cruise: float,
+                     min_speed: float, max_lateral_accel: float, decel: float,
+                     approach_speed: float) -> list[float]:
+    """Speed limit per point: curvature limit, then a backward pass to brake into stops and the end."""
+    n = len(points)
+    if n == 0:
+        return []
+    kappa = curvatures(points)
+    v = [max(min_speed, min(cruise, math.sqrt(max_lateral_accel / k) if k > 1e-6 else cruise)) for k in kappa]
+    for i in stop_indices:
+        v[i] = min(v[i], approach_speed)
+    v[-1] = min(v[-1], approach_speed)
+    for i in range(n - 2, -1, -1):
+        ds = math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1])
+        v[i] = min(v[i], math.sqrt(v[i + 1] ** 2 + 2.0 * decel * ds))
+    return v

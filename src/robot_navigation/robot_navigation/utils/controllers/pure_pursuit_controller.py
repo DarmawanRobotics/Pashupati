@@ -6,8 +6,7 @@ from robot_navigation.utils.pure_pursuit import PurePursuit
 class PurePursuitController(PathController):
     """Pure pursuit adapter: curvature-based steering at a constant cruise speed."""
 
-    def __init__(self, target_linear_velocity=0.4, lookahead_distance=1.0, goal_tolerance=0.3):
-        self._target_linear_velocity = target_linear_velocity
+    def __init__(self, lookahead_distance=1.0, goal_tolerance=0.3):
         self._pure_pursuit = PurePursuit(lookahead_distance=lookahead_distance, goal_tolerance=goal_tolerance)
         self._last_curvature = 0.0
 
@@ -15,11 +14,11 @@ class PurePursuitController(PathController):
         """Replace the tracked path, optionally pinning progress to start_index."""
         self._pure_pursuit.set_path(path_xy, start_index)
 
-    def update(self, pose: Pose2D, dt: float) -> ControllerOutput:
-        """Compute the pure pursuit curvature and scale it by the cruise speed."""
+    def update(self, pose: Pose2D, dt: float, target_speed: float) -> ControllerOutput:
+        """Compute the pure pursuit curvature and scale it by the requested speed."""
         curvature = self._pure_pursuit.update(pose)
         self._last_curvature = curvature
-        return ControllerOutput(linear=self._target_linear_velocity, angular=self._target_linear_velocity * curvature)
+        return ControllerOutput(linear=target_speed, angular=target_speed * curvature)
 
     def is_finished(self, pose: Pose2D) -> bool:
         """Delegate to the underlying pure pursuit tracker."""

@@ -3,6 +3,10 @@ path_follower_node:
     control_rate: 20.0                # Hz, control loop frequency
     target_linear_velocity: 0.4       # m/s, cruise speed (keep low in crowds)
     max_linear_velocity: 0.6          # m/s, hard cap
+    min_linear_velocity: 0.1          # m/s, floor of the speed profile (never crawl slower)
+    max_lateral_accel: 0.3            # m/s^2, curvature speed limit v = sqrt(a / kappa)
+    decel_limit: 0.3                  # m/s^2, braking used to plan speed into stops and the end
+    approach_speed: 0.15              # m/s, speed when arriving at stop points and the route end
     max_angular_velocity: 1.0         # rad/s, hard cap
     linear_accel_limit: 0.5           # m/s^2, ramp limit (emergency stops bypass it)
     angular_accel_limit: 1.5          # rad/s^2, ramp limit

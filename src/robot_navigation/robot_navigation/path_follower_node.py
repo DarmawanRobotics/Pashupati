@@ -21,6 +21,7 @@ from robot_navigation.utils import visualization
 from robot_navigation.utils.command_filter import SlewLimiter
 from robot_navigation.utils.controllers.registry import create_controller
 from robot_navigation.utils.geometry import angle_diff, clamp, yaw_from_quaternion
+from robot_navigation.utils.path_processing import velocity_profile
 from robot_navigation.utils.pose2d import Pose2D
 from robot_navigation.utils.speed_regulator import SpeedRegulator
 
@@ -39,6 +40,10 @@ class PathFollowerNode(Node):
 
         self._control_rate = float(p('control_rate').value)
         self._target_linear_velocity = float(p('target_linear_velocity').value)
+        self._min_linear_velocity = float(p('min_linear_velocity').value)
+        self._max_lateral_accel = float(p('max_lateral_accel').value)
+        self._decel_limit = float(p('decel_limit').value)
+        self._approach_speed = float(p('approach_speed').value)
         self._max_linear_velocity = float(p('max_linear_velocity').value)
         self._max_angular_velocity = float(p('max_angular_velocity').value)
         self._arc_length = float(p('arc_visualization_length').value)
@@ -69,6 +74,7 @@ class PathFollowerNode(Node):
         self._avoidance_time = None
         self._nav_active = False
         self._waypoints: list[tuple[float, float, float, float]] = []
+        self._speed_profile: list[float] = []
         self._next_stop_index = None
         self._follower_state = 'FOLLOWING'
         self._align_target_yaw = 0.0
@@ -120,6 +126,10 @@ class PathFollowerNode(Node):
         defaults = {
             'control_rate': 20.0,
             'target_linear_velocity': 0.4,
+            'min_linear_velocity': 0.1,
+            'max_lateral_accel': 0.3,
+            'decel_limit': 0.3,
+            'approach_speed': 0.15,
             'max_linear_velocity': 0.6,
             'max_angular_velocity': 1.0,
             'linear_accel_limit': 0.5,
@@ -170,7 +180,7 @@ class PathFollowerNode(Node):
     def build_controller_params(self, name: str) -> dict:
         """Collect the constructor kwargs for a controller name from its declared parameters."""
         p = self.get_parameter
-        params = {'target_linear_velocity': self._target_linear_velocity}
+        params = {}
         if name == 'pure_pursuit':
             params['lookahead_distance'] = float(p('pure_pursuit.lookahead_distance').value)
             params['goal_tolerance'] = float(p('pure_pursuit.goal_tolerance').value)
@@ -236,6 +246,15 @@ class PathFollowerNode(Node):
         if waypoints == self._waypoints:
             return
         self._waypoints = waypoints
+        self._speed_profile = velocity_profile(
+            [(w[0], w[1]) for w in waypoints],
+            [i for i, w in enumerate(waypoints) if w[3] > 0.0],
+            cruise=self._target_linear_velocity,
+            min_speed=self._min_linear_velocity,
+            max_lateral_accel=self._max_lateral_accel,
+            decel=self._decel_limit,
+            approach_speed=self._approach_speed,
+        )
         self._lap = 0
         self.restart_route()
         stops = sum(1 for w in waypoints if w[3] > 0.0)
@@ -482,7 +501,9 @@ class PathFollowerNode(Node):
         if self.check_stop_point(pose, stamp):
             return
 
-        output = self._controller.update(pose, dt)
+        index = min(self._controller.progress_index(), len(self._speed_profile) - 1)
+        target_speed = self._speed_profile[index] if self._speed_profile else self._target_linear_velocity
+        output = self._controller.update(pose, dt, target_speed)
         target_angular = output.angular + steering_bias
         target_linear = output.linear * velocity_scale
         if self._speed_regulator_enabled:

@@ -9,9 +9,7 @@ from robot_navigation.utils.pose2d import Pose2D
 class PidController(PathController):
     """Heading-error PID path follower: steers toward a lookahead point at a constant cruise speed."""
 
-    def __init__(self, target_linear_velocity=0.4, lookahead_distance=1.0, goal_tolerance=0.3,
-                 kp=1.5, ki=0.0, kd=0.2):
-        self._target_linear_velocity = target_linear_velocity
+    def __init__(self, lookahead_distance=1.0, goal_tolerance=0.3, kp=1.5, ki=0.0, kd=0.2):
         self._lookahead_distance = lookahead_distance
         self._goal_tolerance = goal_tolerance
         self._kp = kp
@@ -36,7 +34,7 @@ class PidController(PathController):
         """Return the current progress index along the path."""
         return self._progress.index
 
-    def update(self, pose: Pose2D, dt: float) -> ControllerOutput:
+    def update(self, pose: Pose2D, dt: float, target_speed: float) -> ControllerOutput:
         """Run one PID step on the heading error toward the lookahead point."""
         if not self._progress.path:
             return ControllerOutput(0.0, 0.0)
@@ -52,7 +50,7 @@ class PidController(PathController):
         self._last_error = error
 
         angular = self._kp * error + self._ki * self._integral + self._kd * derivative
-        return ControllerOutput(linear=self._target_linear_velocity, angular=angular)
+        return ControllerOutput(linear=target_speed, angular=angular)
 
     def debug_info(self) -> dict:
         """Expose the lookahead point for visualization."""

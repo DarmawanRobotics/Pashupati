@@ -18,8 +18,8 @@ class PathController:
         """Replace the tracked path; start_index pins progress instead of a global search."""
         raise NotImplementedError
 
-    def update(self, pose: Pose2D, dt: float) -> ControllerOutput:
-        """Compute the nominal linear/angular command for the current pose."""
+    def update(self, pose: Pose2D, dt: float, target_speed: float) -> ControllerOutput:
+        """Compute the nominal command for the current pose at the requested forward speed."""
         raise NotImplementedError
 
     def is_finished(self, pose: Pose2D) -> bool:
