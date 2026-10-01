@@ -1,11 +1,7 @@
 import math
 
+from robot_navigation.utils.geometry import wrap_angle
 from robot_navigation.utils.pose2d import Pose2D
-
-
-def wrap_angle(a: float) -> float:
-    """Wrap an angle into (-pi, pi]."""
-    return math.atan2(math.sin(a), math.cos(a))
 
 
 class PathProgress:

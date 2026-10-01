@@ -1,13 +1,9 @@
 import math
 
 from robot_navigation.utils.controllers.base_controller import ControllerOutput, PathController
+from robot_navigation.utils.geometry import angle_diff
 from robot_navigation.utils.path_progress import PathProgress
 from robot_navigation.utils.pose2d import Pose2D
-
-
-def angle_diff(a: float, b: float) -> float:
-    """Return the signed difference a-b wrapped into (-pi, pi]."""
-    return math.atan2(math.sin(a - b), math.cos(a - b))
 
 
 class PidController(PathController):
