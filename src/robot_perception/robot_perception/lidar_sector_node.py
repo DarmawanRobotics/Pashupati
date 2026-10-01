@@ -8,18 +8,23 @@ import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
 from robot_interfaces.msg import SectorScan
+from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import ColorRGBA
-from tf2_ros import Buffer, TransformListener
+from tf2_ros import Buffer, TransformException, TransformListener
 import tf_transformations
 from visualization_msgs.msg import Marker, MarkerArray
 
 
 class LidarSectorNode(Node):
-    """Bins Livox points into fixed angular sectors and publishes a SectorScan."""
+    """Bins lidar points into fixed angular sectors and publishes a SectorScan."""
 
     def __init__(self):
         """Declare params, set up TF, and wire the subscription/publishers."""
         super().__init__('lidar_sector_node')
+        self.declare_parameter('input_type', 'livox')
+        self.declare_parameter('pointcloud_topic', '/cloud_registered_body')
+        self.declare_parameter('base_frame', 'base_link')
+        self.declare_parameter('lidar_frame', 'livox_frame')
         self.declare_parameter('num_sectors', 32)
         self.declare_parameter('fov_deg', 180.0)
         self.declare_parameter('range_max', 8.0)
@@ -59,12 +64,20 @@ class LidarSectorNode(Node):
         self._angle_min = -self._fov / 2.0
         self._angle_increment = self._fov / self._num_sectors
 
+        self._base_frame = self.get_parameter('base_frame').value
+        self._fallback_frame = self.get_parameter('lidar_frame').value
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
-        self._extrinsic_rotation = None
-        self._extrinsic_translation = None
+        self._extrinsics: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
-        self.create_subscription(CustomMsg, 'livox/lidar', self.livox_callback, 10)
+        input_type = self.get_parameter('input_type').value
+        if input_type == 'pointcloud2':
+            topic = self.get_parameter('pointcloud_topic').value
+            self.create_subscription(PointCloud2, topic, self.pointcloud_callback, 10)
+        elif input_type == 'livox':
+            self.create_subscription(CustomMsg, 'livox/lidar', self.livox_callback, 10)
+        else:
+            raise ValueError(f"input_type must be 'livox' or 'pointcloud2', got {input_type!r}")
         self._sectorscan_pub = self.create_publisher(SectorScan, 'perception/sector_scan', 10)
         self._markers_pub = (
             self.create_publisher(MarkerArray, 'perception/obstacles', 10)
@@ -72,24 +85,23 @@ class LidarSectorNode(Node):
             else None
         )
 
-    def lookup_extrinsic(self) -> bool:
-        """Look up and cache the static lidar_frame -> base_frame transform from TF."""
-        try:
-            tf = self._tf_buffer.lookup_transform('base_link', 'livox_frame', rclpy.time.Time())
-        except Exception as error:
-            self.get_logger().warn(
-                f'waiting for TF {"livox_frame"} -> {"base_link"}: {error}',
-                throttle_duration_sec=2.0,
-            )
-            return False
-
-        q = tf.transform.rotation
-        self._extrinsic_rotation = tf_transformations.quaternion_matrix([q.x, q.y, q.z, q.w])[
-            :3, :3
-        ]
-        t = tf.transform.translation
-        self._extrinsic_translation = np.array([t.x, t.y, t.z])
-        return True
+    def extrinsic(self, frame_id: str):
+        """Return the cached (rotation, translation) from frame_id to base_frame, or None."""
+        if frame_id not in self._extrinsics:
+            try:
+                tf = self._tf_buffer.lookup_transform(
+                    self._base_frame, frame_id, rclpy.time.Time()
+                )
+            except TransformException as error:
+                self.get_logger().warn(
+                    f'waiting for TF {frame_id} -> {self._base_frame}: {error}',
+                    throttle_duration_sec=2.0,
+                )
+                return None
+            q, t = tf.transform.rotation, tf.transform.translation
+            rotation = tf_transformations.quaternion_matrix([q.x, q.y, q.z, q.w])[:3, :3]
+            self._extrinsics[frame_id] = (rotation, np.array([t.x, t.y, t.z]))
+        return self._extrinsics[frame_id]
 
     def range_to_color(self, r: float) -> ColorRGBA:
         """Map a range value to a red-to-green ColorRGBA for visualization."""
@@ -120,22 +132,41 @@ class LidarSectorNode(Node):
         return max(0.0, length)
 
     def livox_callback(self, msg: CustomMsg):
-        """Transform incoming points into base_frame, bin them per sector, and publish."""
-        if self._extrinsic_rotation is None and not self.lookup_extrinsic():
-            return
-
+        """Convert a Livox CustomMsg to an Nx3 array and process it."""
         n = msg.point_num
+        xyz = np.empty((n, 3), dtype=np.float32)
+        if n > 0:
+            xyz[:, 0] = np.fromiter((p.x for p in msg.points), dtype=np.float32, count=n)
+            xyz[:, 1] = np.fromiter((p.y for p in msg.points), dtype=np.float32, count=n)
+            xyz[:, 2] = np.fromiter((p.z for p in msg.points), dtype=np.float32, count=n)
+        self.process(msg.header, xyz)
+
+    def pointcloud_callback(self, msg: PointCloud2):
+        """Read x/y/z straight from the PointCloud2 buffer (no per-point Python objects)."""
+        offsets = {f.name: f.offset for f in msg.fields}
+        if not {'x', 'y', 'z'} <= offsets.keys():
+            self.get_logger().error('PointCloud2 has no x/y/z fields', throttle_duration_sec=5.0)
+            return
+        dtype = np.dtype({
+            'names': ['x', 'y', 'z'],
+            'formats': ['<f4' if not msg.is_bigendian else '>f4'] * 3,
+            'offsets': [offsets['x'], offsets['y'], offsets['z']],
+            'itemsize': msg.point_step,
+        })
+        cloud = np.frombuffer(msg.data, dtype=dtype, count=msg.width * msg.height)
+        xyz = np.stack([cloud['x'], cloud['y'], cloud['z']], axis=1).astype(np.float32)
+        self.process(msg.header, xyz[np.isfinite(xyz).all(axis=1)])
+
+    def process(self, header, xyz: np.ndarray):
+        """Transform points into base_frame, bin them per sector, and publish."""
+        extrinsic = self.extrinsic(header.frame_id or self._fallback_frame)
+        if extrinsic is None:
+            return
+        rotation, translation = extrinsic
         ranges = np.full(self._num_sectors, self._range_max, dtype=np.float32)
 
-        if n > 0:
-            x = np.fromiter((p.x for p in msg.points), dtype=np.float32, count=n)
-            y = np.fromiter((p.y for p in msg.points), dtype=np.float32, count=n)
-            z = np.fromiter((p.z for p in msg.points), dtype=np.float32, count=n)
-
-            points = (
-                np.stack([x, y, z], axis=1) @ self._extrinsic_rotation.T
-                + self._extrinsic_translation
-            )
+        if xyz.shape[0] > 0:
+            points = xyz @ rotation.T + translation
             base_x, base_y, base_z = points[:, 0], points[:, 1], points[:, 2]
 
             sx0, sx1, sy0, sy1 = self._self_box
@@ -162,15 +193,15 @@ class LidarSectorNode(Node):
                     )
                     np.minimum.at(ranges, idx, r.astype(np.float32))
 
-        self.publish_scan(msg.header, ranges)
+        self.publish_scan(header, ranges)
         if self._publish_markers:
-            self.publish_marker_array(msg.header, ranges)
+            self.publish_marker_array(header, ranges)
 
     def publish_scan(self, header, ranges: np.ndarray):
         """Fill and publish a SectorScan message from the binned ranges."""
         out = SectorScan()
         out.header.stamp = header.stamp
-        out.header.frame_id = 'base_link'
+        out.header.frame_id = self._base_frame
         out.num_sectors = self._num_sectors
         out.angle_min = self._angle_min
         out.angle_increment = self._angle_increment
@@ -182,7 +213,7 @@ class LidarSectorNode(Node):
         """Build and publish ray and point markers for RViz visualization."""
         ray_marker = Marker()
         ray_marker.header.stamp = header.stamp
-        ray_marker.header.frame_id = 'base_link'
+        ray_marker.header.frame_id = self._base_frame
         ray_marker.ns = 'sector_rays'
         ray_marker.id = 0
         ray_marker.type = Marker.LINE_LIST

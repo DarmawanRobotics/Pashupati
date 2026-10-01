@@ -1,5 +1,13 @@
 lidar_sector_node:
   ros__parameters:
+    # livox: Livox CustomMsg on livox/lidar (works without FAST-LIO).
+    # pointcloud2: any PointCloud2, e.g. FAST-LIO /cloud_registered_body. Parsed straight from
+    # the buffer, several times cheaper on the Jetson than CustomMsg, but needs FAST-LIO running.
+    input_type: livox
+    pointcloud_topic: /cloud_registered_body
+    base_frame: base_link
+    lidar_frame: livox_frame          # used when the cloud header has no frame_id
+
     # Angular sector configuration
     num_sectors: 32              # number of angular sectors used to divide the FOV
     fov_deg: 180.0               # total horizontal field of view in degrees
