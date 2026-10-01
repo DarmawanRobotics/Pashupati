@@ -12,9 +12,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/WaypointPath.msg"
   "msg/NavigationStatus.msg"
   "msg/MissionStatus.msg"
+  "msg/StopPointEvent.msg"
   "srv/MarkStopPoint.srv"
   "srv/LoadPath.srv"
-  DEPENDENCIES std_msgs 
+  DEPENDENCIES std_msgs
 )
 
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()

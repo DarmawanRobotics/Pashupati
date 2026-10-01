@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
-<?xml-stylesheet type="text/xsl" href="http://download.ros.org/schema/package_format3.xsd"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>robot_interfaces</name>
   <version>0.6.0</version>
-  <description>Custom interfaces for the robot stack: perception (SectorScan), navigation (AvoidanceCommand, Waypoint, WaypointPath, NavigationStatus, NavigateRoute), and drivers (SetGait).</description>
+  <description>Custom interfaces for the patrol stack: SectorScan, AvoidanceCommand, Waypoint, WaypointPath, NavigationStatus, MissionStatus, StopPointEvent, LoadPath, MarkStopPoint.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>std_msgs</depend>
-  <build_depend>rosidl_default_generators</build_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
   <member_of_group>rosidl_interface_packages</member_of_group>
   <export>
