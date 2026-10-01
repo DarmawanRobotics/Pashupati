@@ -573,9 +573,12 @@ class PathFollowerNode(Node):
         _, _, _, emergency, stale = self.avoidance_signal()
         if emergency or stale:
             self.publish_stop(hard=True)
-            self.publish_markers(
-                stamp, 'EMERGENCY_STOP', 'obstacle during final approach', pose.x, pose.y
+            state, reason = (
+                ('AVOIDANCE_STALE', 'no fresh navigation/avoidance during final approach')
+                if stale
+                else ('EMERGENCY_STOP', 'obstacle during final approach')
             )
+            self.publish_markers(stamp, state, reason, pose.x, pose.y)
             return
 
         target = 'goal' if self._approach_is_goal else f'stop {self._approach_index}'
@@ -720,10 +723,10 @@ class PathFollowerNode(Node):
             )
             return
 
+        if self.check_stop_point(pose, stamp):
+            return
         if self._controller.is_finished(pose):
             self.handle_route_end()
-            return
-        if self.check_stop_point(pose, stamp):
             return
 
         now_sec = now.nanoseconds / 1e9
