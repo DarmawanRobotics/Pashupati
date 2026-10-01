@@ -14,4 +14,9 @@
          base_class_type="rviz_common::Panel">
     <description>Live parameter tuning for navigation nodes, with controller/algorithm selection and YAML export.</description>
   </class>
+  <class name="robot_rviz/TagPanel"
+         type="robot_rviz::TagPanel"
+         base_class_type="rviz_common::Panel">
+    <description>AprilTag tools: record tag poses in the map frame and localize from a tag.</description>
+  </class>
 </library>
