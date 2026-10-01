@@ -39,7 +39,8 @@ sleep 3
 run robot.1 "ros2 launch robot_mapping mapping.launch.py save_map:=$SAVE_MAP tags_config_file:=$TAGS"
 run robot.2 "ros2 launch robot_perception perception.launch.py"
 run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix robot_rviz)/share/robot_rviz/rviz/robot.rviz \
---ros-args -r battery:=/$ROBOT_NS/battery -r cmd_vel:=/$ROBOT_NS/cmd_vel"
+--ros-args -r battery:=/$ROBOT_NS/battery -r cmd_vel:=/$ROBOT_NS/cmd_vel \
+-r motor_temperature:=/$ROBOT_NS/motor_temperature -r diagnostics:=/$ROBOT_NS/diagnostics"
 tmux select-layout -t "$SESSION:robot" tiled
 
 # Window 2: navigation + command pane

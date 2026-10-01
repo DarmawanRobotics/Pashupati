@@ -15,6 +15,12 @@ Panels:
   - Class: rviz_common/Views
     Name: Views
     Splitter Ratio: 0.5
+  - Class: robot_rviz/ControlPanel
+    Name: Mission
+  - Class: robot_rviz/StatusPanel
+    Name: Status
+  - Class: robot_rviz/TuningPanel
+    Name: Tuning
 Visualization Manager:
   Class: ""
   Displays:
@@ -76,7 +82,7 @@ Visualization Manager:
       Value: true
 
     # From path_follower_node -- lookahead point, nearest point, curvature
-    # arc, and the color-coded status text (FOLLOWING/ALIGNING/DWELLING/...).
+    # arc, and the color-coded status text (FOLLOWING/APPROACHING/DWELLING/...).
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: NavigationMarkers
@@ -98,6 +104,32 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /perception/obstacles
+      Value: true
+
+    # Recorded route before smoothing, to judge how much smoothing moved it.
+    - Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 170; 0
+      Enabled: false
+      Name: PathRaw
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /navigation/path_raw
+      Value: false
+
+    # From localization_node -- known AprilTag poses (arrow = tag x axis) with labels.
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: TagMarkers
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /localization/tag_markers
       Value: true
 
     # RealSense color feed, off by default (bandwidth) -- tick the checkbox
