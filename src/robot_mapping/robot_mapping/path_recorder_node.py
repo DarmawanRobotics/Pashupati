@@ -127,6 +127,7 @@ class PathRecorderNode(Node):
 
         x, y, yaw_deg = pose
         self._waypoints.append((x, y, yaw_deg, request.dwell_sec))
+        self.write_csv()
 
         response.success = True
         response.message = f'stop point marked at ({x:.2f}, {y:.2f}), dwell {request.dwell_sec:.1f}s'
