@@ -184,6 +184,14 @@ class PathFollowerNode(Node):
             'mppi.angular_std': 1.0,
             'mppi.temperature': 1.0,
             'mppi.window_points': 60,
+            'lqr.goal_tolerance': 0.3,
+            'lqr.q_lateral': 1.0,
+            'lqr.q_heading': 0.5,
+            'lqr.r_angular': 0.5,
+            'stanley.goal_tolerance': 0.3,
+            'stanley.k_cross_track': 1.0,
+            'stanley.k_soft': 0.2,
+            'stanley.k_heading': 1.5,
             'speed_regulator_enabled': False,
             'speed_regulator.kp': 0.3,
             'speed_regulator.ki': 0.0,
@@ -218,6 +226,19 @@ class PathFollowerNode(Node):
             params['angular_std'] = float(p('mppi.angular_std').value)
             params['temperature'] = float(p('mppi.temperature').value)
             params['window_points'] = int(p('mppi.window_points').value)
+            params['max_angular_velocity'] = self._max_angular_velocity
+        elif name == 'lqr':
+            params['goal_tolerance'] = float(p('lqr.goal_tolerance').value)
+            params['q_lateral'] = float(p('lqr.q_lateral').value)
+            params['q_heading'] = float(p('lqr.q_heading').value)
+            params['r_angular'] = float(p('lqr.r_angular').value)
+            params['dt'] = 1.0 / self._control_rate
+            params['max_angular_velocity'] = self._max_angular_velocity
+        elif name == 'stanley':
+            params['goal_tolerance'] = float(p('stanley.goal_tolerance').value)
+            params['k_cross_track'] = float(p('stanley.k_cross_track').value)
+            params['k_soft'] = float(p('stanley.k_soft').value)
+            params['k_heading'] = float(p('stanley.k_heading').value)
             params['max_angular_velocity'] = self._max_angular_velocity
         return params
 

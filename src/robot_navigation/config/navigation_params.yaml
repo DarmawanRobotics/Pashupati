@@ -44,7 +44,7 @@ path_follower_node:
     inspection_services: [""]
     inspection_timeout_sec: 10.0
 
-    controller: pure_pursuit          # pure_pursuit | pid | mppi
+    controller: pure_pursuit          # pure_pursuit | pid | mppi | lqr | stanley
 
     pure_pursuit.lookahead_distance: 1.0
     pure_pursuit.goal_tolerance: 0.3
@@ -62,6 +62,16 @@ path_follower_node:
     mppi.angular_std: 1.0             # rad/s, sampling noise
     mppi.temperature: 0.05            # softmax sharpness for the normalized cost
     mppi.window_points: 60            # path points ahead used for the tracking cost
+
+    lqr.goal_tolerance: 0.3
+    lqr.q_lateral: 1.0                # weight on cross-track error
+    lqr.q_heading: 0.5                # weight on heading error
+    lqr.r_angular: 0.5                # weight on angular effort (higher = gentler)
+
+    stanley.goal_tolerance: 0.3
+    stanley.k_cross_track: 1.0        # cross-track gain
+    stanley.k_soft: 0.2               # m/s, softening so low speeds do not over-steer
+    stanley.k_heading: 1.5            # steering angle to yaw-rate gain
 
     speed_regulator_enabled: false    # slow down on sharp turns
     speed_regulator.kp: 0.3
