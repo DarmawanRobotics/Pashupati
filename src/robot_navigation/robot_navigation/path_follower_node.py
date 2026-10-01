@@ -29,6 +29,90 @@ from robot_navigation.utils.safety import SafetySupervisor
 from robot_navigation.utils.speed_regulator import SpeedRegulator
 
 
+DEFAULT_PARAMS = {
+    'control_rate': 20.0,
+    'target_linear_velocity': 0.4,
+    'min_linear_velocity': 0.1,
+    'max_lateral_accel': 0.3,
+    'decel_limit': 0.3,
+    'approach_speed': 0.15,
+    'max_linear_velocity': 0.6,
+    'max_angular_velocity': 1.0,
+    'linear_accel_limit': 0.5,
+    'angular_accel_limit': 1.5,
+    'command_smoothing': 0.4,
+    'arc_visualization_length': 2.0,
+    'marker_lifetime_sec': 0.5,
+    'avoidance_enabled': True,
+    'avoidance_timeout_sec': 0.5,
+    'estop_release_sec': 1.0,
+    'blocked_timeout_sec': 30.0,
+    'off_path_slow_distance': 0.6,
+    'off_path_stop_distance': 1.5,
+    'tf_timeout_sec': 0.5,
+    'loop_route': True,
+    'loop_close_distance': 1.0,
+    'low_battery_percentage': 0.2,
+    'holonomic': True,
+    'avoidance_lateral_enabled': True,
+    'approach_radius': 0.5,
+    'approach_timeout_sec': 20.0,
+    'approach.kp_xy': 1.2,
+    'approach.kp_yaw': 1.5,
+    'approach.max_speed': 0.2,
+    'approach.max_yaw_rate': 0.6,
+    'approach.min_speed': 0.04,
+    'approach.position_tolerance': 0.05,
+    'approach.yaw_tolerance_deg': 3.0,
+    'stop_point_skip_margin': 5,
+    'auto_mode_on_service': '',
+    'auto_mode_off_service': '',
+    'inspection_services': [''],
+    'inspection_timeout_sec': 10.0,
+    'controller': 'pure_pursuit',
+    'speed_regulator_enabled': False,
+    'speed_regulator.kp': 0.3,
+    'speed_regulator.ki': 0.0,
+    'speed_regulator.kd': 0.0,
+    'speed_regulator.min_scale': 0.3,
+}
+
+CONTROLLER_PARAMS = {
+    'pure_pursuit': {
+        'lookahead_distance': 1.0,
+        'goal_tolerance': 0.3,
+    },
+    'pid': {
+        'lookahead_distance': 1.0,
+        'goal_tolerance': 0.3,
+        'kp': 1.5,
+        'ki': 0.0,
+        'kd': 0.2,
+    },
+    'mppi': {
+        'goal_tolerance': 0.3,
+        'horizon_steps': 15,
+        'dt': 0.1,
+        'num_samples': 200,
+        'angular_std': 1.0,
+        'temperature': 0.05,
+        'window_points': 60,
+    },
+    'lqr': {
+        'goal_tolerance': 0.3,
+        'q_lateral': 1.0,
+        'q_heading': 0.5,
+        'r_angular': 0.5,
+    },
+    'stanley': {
+        'goal_tolerance': 0.3,
+        'k_cross_track': 1.0,
+        'k_soft': 0.2,
+        'k_heading': 1.5,
+    },
+}
+
+
 class PathFollowerNode(Node):
     """Patrols a taught route: follows it with a selectable controller, blends reactive avoidance,
     and at each stop point converges onto x/y/yaw, triggers inspection services and dwells."""
@@ -156,118 +240,29 @@ class PathFollowerNode(Node):
         self.create_timer(1.0 / self._control_rate, self.control_loop, callback_group=self._loop_group)
 
     def declare_params(self):
-        """Declare every parameter with its default."""
-        defaults = {
-            'control_rate': 20.0,
-            'target_linear_velocity': 0.4,
-            'min_linear_velocity': 0.1,
-            'max_lateral_accel': 0.3,
-            'decel_limit': 0.3,
-            'approach_speed': 0.15,
-            'max_linear_velocity': 0.6,
-            'max_angular_velocity': 1.0,
-            'linear_accel_limit': 0.5,
-            'angular_accel_limit': 1.5,
-            'command_smoothing': 0.4,
-            'arc_visualization_length': 2.0,
-            'marker_lifetime_sec': 0.5,
-            'avoidance_enabled': True,
-            'avoidance_timeout_sec': 0.5,
-            'estop_release_sec': 1.0,
-            'blocked_timeout_sec': 30.0,
-            'off_path_slow_distance': 0.6,
-            'off_path_stop_distance': 1.5,
-            'tf_timeout_sec': 0.5,
-            'loop_route': True,
-            'loop_close_distance': 1.0,
-            'low_battery_percentage': 0.2,
-            'holonomic': True,
-            'avoidance_lateral_enabled': True,
-            'approach_radius': 0.5,
-            'approach_timeout_sec': 20.0,
-            'approach.kp_xy': 1.2,
-            'approach.kp_yaw': 1.5,
-            'approach.max_speed': 0.2,
-            'approach.max_yaw_rate': 0.6,
-            'approach.min_speed': 0.04,
-            'approach.position_tolerance': 0.05,
-            'approach.yaw_tolerance_deg': 3.0,
-            'stop_point_skip_margin': 5,
-            'auto_mode_on_service': '',
-            'auto_mode_off_service': '',
-            'inspection_services': [''],
-            'inspection_timeout_sec': 10.0,
-            'controller': 'pure_pursuit',
-            'pure_pursuit.lookahead_distance': 1.0,
-            'pure_pursuit.goal_tolerance': 0.3,
-            'pid.lookahead_distance': 1.0,
-            'pid.goal_tolerance': 0.3,
-            'pid.kp': 1.5,
-            'pid.ki': 0.0,
-            'pid.kd': 0.2,
-            'mppi.goal_tolerance': 0.3,
-            'mppi.horizon_steps': 15,
-            'mppi.dt': 0.1,
-            'mppi.num_samples': 200,
-            'mppi.angular_std': 1.0,
-            'mppi.temperature': 1.0,
-            'mppi.window_points': 60,
-            'lqr.goal_tolerance': 0.3,
-            'lqr.q_lateral': 1.0,
-            'lqr.q_heading': 0.5,
-            'lqr.r_angular': 0.5,
-            'stanley.goal_tolerance': 0.3,
-            'stanley.k_cross_track': 1.0,
-            'stanley.k_soft': 0.2,
-            'stanley.k_heading': 1.5,
-            'speed_regulator_enabled': False,
-            'speed_regulator.kp': 0.3,
-            'speed_regulator.ki': 0.0,
-            'speed_regulator.kd': 0.0,
-            'speed_regulator.min_scale': 0.3,
-        }
-        for name, value in defaults.items():
+        """Declare the general parameters and every controller's namespaced parameters."""
+        for name, value in DEFAULT_PARAMS.items():
             self.declare_parameter(name, value)
+        for controller, params in CONTROLLER_PARAMS.items():
+            for name, value in params.items():
+                self.declare_parameter(f'{controller}.{name}', value)
 
     def optional_client(self, name: str):
         """Create a Trigger client, or None when the service name is empty."""
         return self.create_client(Trigger, name, callback_group=self._srv_group) if name else None
 
     def build_controller_params(self, name: str) -> dict:
-        """Collect the constructor kwargs for a controller name from its declared parameters."""
-        p = self.get_parameter
-        params = {}
-        if name == 'pure_pursuit':
-            params['lookahead_distance'] = float(p('pure_pursuit.lookahead_distance').value)
-            params['goal_tolerance'] = float(p('pure_pursuit.goal_tolerance').value)
-        elif name == 'pid':
-            params['lookahead_distance'] = float(p('pid.lookahead_distance').value)
-            params['goal_tolerance'] = float(p('pid.goal_tolerance').value)
-            params['kp'] = float(p('pid.kp').value)
-            params['ki'] = float(p('pid.ki').value)
-            params['kd'] = float(p('pid.kd').value)
-        elif name == 'mppi':
-            params['goal_tolerance'] = float(p('mppi.goal_tolerance').value)
-            params['horizon_steps'] = int(p('mppi.horizon_steps').value)
-            params['dt'] = float(p('mppi.dt').value)
-            params['num_samples'] = int(p('mppi.num_samples').value)
-            params['angular_std'] = float(p('mppi.angular_std').value)
-            params['temperature'] = float(p('mppi.temperature').value)
-            params['window_points'] = int(p('mppi.window_points').value)
+        """Constructor kwargs for a controller from its namespaced parameters."""
+        if name not in CONTROLLER_PARAMS:
+            raise ValueError(f'unknown controller {name!r}, options are {list(CONTROLLER_PARAMS)}')
+        params = {
+            key: type(default)(self.get_parameter(f'{name}.{key}').value)
+            for key, default in CONTROLLER_PARAMS[name].items()
+        }
+        if name in ('mppi', 'lqr', 'stanley'):
             params['max_angular_velocity'] = self._max_angular_velocity
-        elif name == 'lqr':
-            params['goal_tolerance'] = float(p('lqr.goal_tolerance').value)
-            params['q_lateral'] = float(p('lqr.q_lateral').value)
-            params['q_heading'] = float(p('lqr.q_heading').value)
-            params['r_angular'] = float(p('lqr.r_angular').value)
+        if name == 'lqr':
             params['dt'] = 1.0 / self._control_rate
-            params['max_angular_velocity'] = self._max_angular_velocity
-        elif name == 'stanley':
-            params['goal_tolerance'] = float(p('stanley.goal_tolerance').value)
-            params['k_cross_track'] = float(p('stanley.k_cross_track').value)
-            params['k_soft'] = float(p('stanley.k_soft').value)
-            params['k_heading'] = float(p('stanley.k_heading').value)
-            params['max_angular_velocity'] = self._max_angular_velocity
         return params
 
     def switch_controller(self, name: str):
