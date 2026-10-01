@@ -35,6 +35,8 @@ Patrolling a mall corridor doesn't need a full Nav2 stack with a global costmap 
 - **Inspect while patrolling** — a local VLM (Moondream via Ollama) checks the camera feed for `trash`, `spill`, or `fallen_person`, triggered at every stop point.
 - **Relocalize cheaply** — snap `map→odom` to a known AprilTag, an RViz 2D Pose Estimate, or the start marker.
 
+The navigation stack is robot-agnostic: a robot only has to provide `cmd_vel`, `battery`, and a URDF with the Livox and camera frames. The Genisom L1W support lives in the `genisom_l1w_ros2` submodule.
+
 ## Hardware
 
 | Component | Model | Role |
@@ -132,11 +134,13 @@ source install/setup.bash
 ros2 service call /mapping/path_record std_srvs/srv/SetBool "{data: true}"
 # drive the robot manually; at each inspection point:
 ros2 service call /mapping/mark_stop_point robot_interfaces/srv/MarkStopPoint "{dwell_sec: 10.0}"
-# end where you started for a patrol loop, then stop and save
+# stop and save
 ros2 service call /mapping/path_record std_srvs/srv/SetBool "{data: false}"
 ```
 
-Routes are saved to `map/<YYYY-MM-DD>/<HH-MM-SS>_path.csv`.
+Routes are saved to `map/<YYYY-MM-DD>/<HH-MM-SS>_path.csv`. End the route within
+`loop_close_distance` (1 m) of where you started and the robot patrols it in a loop; otherwise it
+stops at the end.
 
 ### Localize
 
@@ -157,6 +161,7 @@ ros2 service call /navigation/load_path robot_interfaces/srv/LoadPath \
 
 ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: true}"
 ros2 service call /navigation/pause     std_srvs/srv/SetBool "{data: true}"   # hold, keep progress
+ros2 service call /navigation/pause     std_srvs/srv/SetBool "{data: false}"  # resume
 ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: false}"
 ```
 
@@ -172,13 +177,26 @@ ros2 service call /l1w/emergency_stop std_srvs/srv/Trigger
 
 | Feature | What it does | Key parameters |
 |---|---|---|
-| Route smoothing | Dedup, resample, gradient smoothing between stop points; stops never move | `resample_spacing`, `smooth_weight_*` |
+| Route smoothing | Dedup, resample, gradient smoothing between stop points; stops never move. Raw and smoothed routes on `navigation/path_raw` / `navigation/path` | `resample_spacing`, `smooth_weight_*` |
 | Speed profile | Curvature speed cap, braking into stops and the route end | `max_lateral_accel`, `approach_speed` |
 | Final approach | x / y / yaw convergence at stop points and the end of open routes | `holonomic`, `approach.*` |
 | Inspection | Calls Trigger services after arriving, waits for them, then dwells | `inspection_services`, `inspection_timeout_sec` |
 | Loop patrol | Restarts closed routes; ends the lap on low battery | `loop_route`, `low_battery_percentage` |
 | Fail-safes | Stops on stale avoidance / odometry, e-stop hysteresis, `BLOCKED`, `OFF_PATH` | `*_timeout_sec`, `off_path_*` |
 | Smooth commands | Slew limits plus low-pass on angular / lateral | `*_accel_limit`, `command_smoothing` |
+
+### Navigation states
+
+| State | Meaning |
+|---|---|
+| `NAV_INACTIVE` / `PAUSED` | Not driving; progress is kept while paused |
+| `FOLLOWING` | Tracking the route |
+| `APPROACHING` → `DWELLING` | Converging onto a stop point, then inspecting and waiting |
+| `GOAL_REACHED` | End of an open route |
+| `EMERGENCY_STOP` | Obstacle inside the emergency cone; resumes after `estop_release_sec` clear |
+| `BLOCKED` | No progress possible for `blocked_timeout_sec` |
+| `OFF_PATH` | Too far from the route; restart navigation after checking the robot |
+| `TF_UNAVAILABLE` / `AVOIDANCE_STALE` / `NO_PATH` | Missing odometry, avoidance or route |
 
 ## Runtime tuning
 
@@ -192,6 +210,14 @@ ros2 param set /obstacle_avoidance_node algorithm potential_field  # braitenberg
 ```
 
 Full parameter reference: [`src/robot_navigation/config/navigation_params.yaml`](src/robot_navigation/config/navigation_params.yaml)
+
+### First run on the robot
+
+1. Check the TF tree is one chain: `ros2 run tf2_tools view_frames`.
+2. Measure the `base_link` height above the floor and set `obstacle_z_min` in `perception_params.yaml` (≈ −height + 0.10).
+3. Record a short route with one stop point, run it at `target_linear_velocity: 0.3` with the remote in hand.
+4. If the robot stalls a few centimetres from a stop point, raise `approach.min_speed` (joystick deadband).
+5. Set `input_type: pointcloud2` in `perception_params.yaml` to cut CPU load once FAST-LIO is stable.
 
 ## File formats
 
@@ -273,6 +299,7 @@ colcon test-result --verbose
 
 The navigation tests drive every controller around a noisy closed loop and an overlapping
 out-and-back corridor, and check smoothing, the speed profile, the final approach and avoidance.
+The other packages run the ament flake8 / pep257 / copyright checks.
 
 ## Repository layout
 
@@ -287,4 +314,4 @@ Pashupati/
 
 ## License
 
-[Apache License 2.0](LICENSE) 
+[Apache License 2.0](LICENSE)
