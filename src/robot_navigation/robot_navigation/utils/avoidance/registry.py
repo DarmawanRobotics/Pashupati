@@ -1,9 +1,13 @@
 from robot_navigation.utils.avoidance.braitenberg_avoidance import BraitenbergAvoidance
+from robot_navigation.utils.avoidance.follow_gap_avoidance import FollowGapAvoidance
+from robot_navigation.utils.avoidance.potential_field_avoidance import PotentialFieldAvoidance
 from robot_navigation.utils.avoidance.vfh_avoidance import VfhAvoidance
 
 AVOIDANCE_ALGORITHMS = {
     'braitenberg': BraitenbergAvoidance,
     'vfh': VfhAvoidance,
+    'potential_field': PotentialFieldAvoidance,
+    'follow_gap': FollowGapAvoidance,
 }
 
 

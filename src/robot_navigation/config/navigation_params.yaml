@@ -24,6 +24,7 @@ path_follower_node:
 
     # Final approach onto stop points and the end of open routes
     holonomic: true                   # true: close x/y/yaw together (legged/omni), false: turn-drive-turn
+    avoidance_lateral_enabled: true   # holonomic only: apply the avoidance sideways push to linear.y
     approach_radius: 0.5              # m, distance to a stop point that switches to the final approach
     approach_timeout_sec: 20.0        # s, give up converging and dwell where the robot is
     approach.kp_xy: 1.2               # P gain on position error
@@ -81,7 +82,7 @@ path_follower_node:
 
 obstacle_avoidance_node:
   ros__parameters:
-    algorithm: vfh                    # braitenberg | vfh
+    algorithm: vfh                    # braitenberg | vfh | potential_field | follow_gap
     safe_distance: 1.5                # m from base_link, obstacles closer than this shape the command
     emergency_distance: 0.75          # m from base_link (~0.4 m from the robot's nose), hard stop
     emergency_cone_deg: 60.0          # deg, frontal cone checked for hard stop / blocked front
@@ -99,6 +100,18 @@ obstacle_avoidance_node:
     vfh.steering_gain: 1.0            # gap-heading-to-steering strength
     vfh.velocity_gain: 1.0            # frontal-obstacle-to-speed strength
     vfh.smoothing: 0.85               # 0-1 output filter (higher = smoother/slower)
+
+    potential_field.repulsion_gain: 0.5
+    potential_field.steering_gain: 0.8
+    potential_field.lateral_gain: 0.3   # repulsion to sideways m/s (holonomic robots)
+    potential_field.max_lateral: 0.2    # m/s cap on the sideways push
+    potential_field.velocity_gain: 1.0
+    potential_field.smoothing: 0.8
+
+    follow_gap.bubble_radius: 0.45    # m, safety bubble around the nearest obstacle
+    follow_gap.steering_gain: 1.0
+    follow_gap.velocity_gain: 1.0
+    follow_gap.smoothing: 0.85
 
 path_loader_node:
   ros__parameters:

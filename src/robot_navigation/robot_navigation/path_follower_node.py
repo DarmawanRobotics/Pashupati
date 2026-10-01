@@ -59,6 +59,7 @@ class PathFollowerNode(Node):
         self._approach_radius = float(p('approach_radius').value)
         self._approach_timeout = float(p('approach_timeout_sec').value)
         self._holonomic = bool(p('holonomic').value)
+        self._avoidance_lateral = bool(p('avoidance_lateral_enabled').value)
         self._stop_point_skip_margin = int(p('stop_point_skip_margin').value)
         self._approach = FinalApproach(
             holonomic=self._holonomic,
@@ -74,6 +75,7 @@ class PathFollowerNode(Node):
 
         self._linear_limiter = SlewLimiter(float(p('linear_accel_limit').value))
         self._angular_limiter = SlewLimiter(float(p('angular_accel_limit').value))
+        self._lateral_limiter = SlewLimiter(float(p('linear_accel_limit').value))
         self._speed_regulator = SpeedRegulator(
             kp=float(p('speed_regulator.kp').value),
             ki=float(p('speed_regulator.ki').value),
@@ -155,6 +157,7 @@ class PathFollowerNode(Node):
             'loop_route': True,
             'loop_close_distance': 1.0,
             'holonomic': True,
+            'avoidance_lateral_enabled': True,
             'approach_radius': 0.5,
             'approach_timeout_sec': 20.0,
             'approach.kp_xy': 1.2,
@@ -359,13 +362,14 @@ class PathFollowerNode(Node):
         return Pose2D(p.x, p.y, yaw_from_quaternion(t.transform.rotation))
 
     def avoidance_signal(self):
-        """Return (steering_bias, velocity_scale, emergency, stale) from the latest avoidance message."""
+        """Return (steering_bias, lateral_bias, velocity_scale, emergency, stale) from avoidance."""
         if not self._avoidance_enabled:
-            return 0.0, 1.0, False, False
+            return 0.0, 0.0, 1.0, False, False
         stale = (self._avoidance_time is None
                  or self.get_clock().now() - self._avoidance_time > self._avoidance_timeout)
         a = self._avoidance
-        return a.steering_bias, a.velocity_scale, a.emergency, stale
+        lateral = a.lateral_bias if self._holonomic and self._avoidance_lateral else 0.0
+        return a.steering_bias, lateral, a.velocity_scale, a.emergency, stale
 
     def publish_status(self, stamp, status, message):
         """Publish NavigationStatus, logging once per state transition."""
@@ -453,7 +457,7 @@ class PathFollowerNode(Node):
             self.publish_markers(stamp, 'DWELLING', f'stop {self._next_stop_index}, inspecting', pose.x, pose.y)
             return
 
-        _, _, emergency, stale = self.avoidance_signal()
+        _, _, _, emergency, stale = self.avoidance_signal()
         if emergency or stale:
             self.publish_stop(hard=True)
             self.publish_markers(stamp, 'EMERGENCY_STOP', 'obstacle during final approach', pose.x, pose.y)
@@ -465,6 +469,7 @@ class PathFollowerNode(Node):
         out.linear.y = cmd.vy
         out.angular.z = cmd.wz
         self._linear_limiter.reset(cmd.vx)
+        self._lateral_limiter.reset(cmd.vy)
         self._angular_limiter.reset(cmd.wz)
         self._cmd_vel_pub.publish(out)
         self.publish_markers(
@@ -560,7 +565,7 @@ class PathFollowerNode(Node):
             self.run_dwelling(pose, stamp)
             return
 
-        steering_bias, velocity_scale, emergency, stale = self.avoidance_signal()
+        steering_bias, lateral_bias, velocity_scale, emergency, stale = self.avoidance_signal()
         if stale:
             self.publish_stop(hard=True)
             self.publish_markers(stamp, 'AVOIDANCE_STALE', 'no fresh navigation/avoidance, stopped', pose.x, pose.y)
@@ -585,6 +590,7 @@ class PathFollowerNode(Node):
             self.publish_stop(hard=True)
         else:
             cmd.linear.x = self._linear_limiter.step(clamp(target_linear, self._max_linear_velocity), dt)
+            cmd.linear.y = self._lateral_limiter.step(lateral_bias, dt)
             cmd.angular.z = self._angular_limiter.step(clamp(target_angular, self._max_angular_velocity), dt)
             self._cmd_vel_pub.publish(cmd)
 
@@ -599,12 +605,15 @@ class PathFollowerNode(Node):
         """Publish zero velocity; hard skips the slew ramp entirely."""
         if hard:
             self._linear_limiter.reset()
+            self._lateral_limiter.reset()
             self._angular_limiter.reset()
             self._cmd_vel_pub.publish(Twist())
             return
+        dt = 1.0 / self._control_rate
         cmd = Twist()
-        cmd.linear.x = self._linear_limiter.step(0.0, 1.0 / self._control_rate)
-        cmd.angular.z = self._angular_limiter.step(0.0, 1.0 / self._control_rate)
+        cmd.linear.x = self._linear_limiter.step(0.0, dt)
+        cmd.linear.y = self._lateral_limiter.step(0.0, dt)
+        cmd.angular.z = self._angular_limiter.step(0.0, dt)
         self._cmd_vel_pub.publish(cmd)
 
 
