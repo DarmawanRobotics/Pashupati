@@ -7,6 +7,7 @@ import os
 import rclpy
 from rclpy.node import Node
 from robot_interfaces.srv import MarkStopPoint
+from std_msgs.msg import String
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformListener
 import tf_transformations
@@ -37,6 +38,7 @@ class PathRecorderNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
+        self._saved_pub = self.create_publisher(String, 'mapping/route_saved', 10)
         self.create_service(SetBool, 'mapping/path_record', self.recording_callback)
         self.create_service(
             MarkStopPoint, 'mapping/mark_stop_point', self.mark_stop_point_callback
@@ -74,6 +76,7 @@ class PathRecorderNode(Node):
 
         self._recording = False
         self.write_csv()
+        self._saved_pub.publish(String(data=self._recording_file))
 
         response.success = True
         response.message = (
