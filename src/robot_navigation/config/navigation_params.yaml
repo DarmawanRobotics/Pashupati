@@ -47,7 +47,7 @@ path_follower_node:
     auto_mode_off_service: ""
 
     # std_srvs/Trigger services called at every stop point after aligning ("" = none),
-    # e.g. ["/anomaly_detector/check_now"]. The robot waits for them up to inspection_timeout_sec.
+    # e.g. ["/anomaly_detector_node/check_now"]. The robot waits for them up to inspection_timeout_sec.
     inspection_services: [""]
     inspection_timeout_sec: 10.0
 
