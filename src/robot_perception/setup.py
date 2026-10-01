@@ -19,12 +19,13 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Lidar sector perception (SectorScan) from Livox CustomMsg with RViz markers',
+    description='Lidar obstacle sectors, AprilTag detection and person detection for crowd maps',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'lidar_sector_node = robot_perception.lidar_sector_node:main',
+            'person_detector_node = robot_perception.person_detector_node:main',
         ],
     },
 )

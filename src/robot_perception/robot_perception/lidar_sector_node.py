@@ -147,12 +147,14 @@ class LidarSectorNode(Node):
         if not {'x', 'y', 'z'} <= offsets.keys():
             self.get_logger().error('PointCloud2 has no x/y/z fields', throttle_duration_sec=5.0)
             return
-        dtype = np.dtype({
-            'names': ['x', 'y', 'z'],
-            'formats': ['<f4' if not msg.is_bigendian else '>f4'] * 3,
-            'offsets': [offsets['x'], offsets['y'], offsets['z']],
-            'itemsize': msg.point_step,
-        })
+        dtype = np.dtype(
+            {
+                'names': ['x', 'y', 'z'],
+                'formats': ['<f4' if not msg.is_bigendian else '>f4'] * 3,
+                'offsets': [offsets['x'], offsets['y'], offsets['z']],
+                'itemsize': msg.point_step,
+            }
+        )
         cloud = np.frombuffer(msg.data, dtype=dtype, count=msg.width * msg.height)
         xyz = np.stack([cloud['x'], cloud['y'], cloud['z']], axis=1).astype(np.float32)
         self.process(msg.header, xyz[np.isfinite(xyz).all(axis=1)])
