@@ -53,10 +53,12 @@ tmux new-window -t "$SESSION" -n nav
 tmux split-window -v -t "$SESSION:nav"
 if [[ "$MODE" == "patrol" ]]; then
     run nav.0 "ros2 launch robot_navigation navigation.launch.py waypoints_file:=$ROUTE \
-cmd_vel_topic:=/$ROBOT_NS/cmd_vel battery_topic:=/$ROBOT_NS/battery"
+cmd_vel_topic:=/bridge/nav_cmd_vel battery_topic:=/$ROBOT_NS/battery"
 fi
-tmux send-keys -t "$SESSION:nav.1" "$SETUP" C-m
-tmux send-keys -t "$SESSION:nav.1" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
+tmux split-window -h -t "$SESSION:nav.0"
+run nav.1 "ros2 launch robot_bridge bridge.launch.py robot_ns:=$ROBOT_NS"
+tmux send-keys -t "$SESSION:nav.2" "$SETUP" C-m
+tmux send-keys -t "$SESSION:nav.2" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
 
 tmux select-window -t "$SESSION:robot"
 if [[ "$DETACH" != "1" ]]; then

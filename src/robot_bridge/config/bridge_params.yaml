@@ -1,0 +1,30 @@
+control_mux_node:
+  ros__parameters:
+    mode: auto                        # auto (navigation drives) | remote (teleop drives)
+    remote_timeout_sec: 0.3           # zero the robot when teleop goes silent
+    pause_nav_on_remote: true         # pause navigation while the remote drives
+
+teleop_udp_node:
+  ros__parameters:
+    port: 9870
+    token: ""                         # shared secret; when set every message must carry "k"
+    client_timeout_sec: 2.0
+    max_vx: 1.0                       # m/s, clamp on teleop commands
+    max_vy: 0.5
+    max_wz: 1.5
+    telemetry_hz: 10.0
+    robot_command_prefix: /l1w/       # Trigger services of the robot driver
+    robot_commands: [stand_up, sit_down, emergency_stop, move_mode, balance_stand_mode,
+                     lock_mode, slow_speed, normal_speed, fast_speed]
+    routes_dir: /home/robot/dev/Pashupati/map
+    map_frame: map
+    base_frame: base_link
+    camera_topic: /camera/camera/color/image_raw/compressed
+    camera_compressed: true           # false: raw rgb8/bgr8 Image, JPEG-encoded here
+    camera_fps: 8.0
+    camera_jpeg_quality: 60
+    camera_max_width: 640
+    lidar_topic: /cloud_registered_body   # FAST-LIO body-frame cloud
+    lidar_hz: 2.0
+    lidar_voxel: 0.1
+    lidar_max_points: 3000
