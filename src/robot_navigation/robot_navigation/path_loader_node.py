@@ -19,7 +19,7 @@ class PathLoaderNode(Node):
     and a WaypointPath (with per-point yaw and dwell metadata, for path_follower_node)."""
 
     def __init__(self):
-        """Declare params, load the waypoint file, and start the periodic republish timer."""
+        """Declare params, load the waypoint file, and publish it latched."""
         super().__init__('path_loader_node')
         self.declare_parameter('waypoints_file', '')
         self.declare_parameter('republish_period', 2.0)
@@ -38,7 +38,8 @@ class PathLoaderNode(Node):
 
         self._waypoints = self.load_waypoints(self._waypoints_file)
         self.publish_all()
-        self.create_timer(republish_period, self.publish_all)
+        if republish_period > 0.0:
+            self.create_timer(republish_period, self.publish_path_viz)
         self.create_service(LoadPath, 'navigation/load_path', self.load_path_callback)
 
     def load_waypoints(self, filepath: str) -> list:
@@ -50,12 +51,16 @@ class PathLoaderNode(Node):
             return waypoints
 
         with open(filepath, 'r') as f:
-            for row in csv.reader(f):
+            for line_no, row in enumerate(csv.reader(f), start=1):
                 if not row or row[0].strip().startswith('#'):
                     continue
-                x, y = float(row[0]), float(row[1])
-                yaw_deg = float(row[2]) if len(row) > 2 else 0.0
-                dwell_sec = float(row[3]) if len(row) > 3 else 0.0
+                try:
+                    x, y = float(row[0]), float(row[1])
+                    yaw_deg = float(row[2]) if len(row) > 2 else 0.0
+                    dwell_sec = float(row[3]) if len(row) > 3 else 0.0
+                except ValueError:
+                    self.get_logger().warn(f'{filepath}:{line_no} skipped malformed row {row}')
+                    continue
                 waypoints.append((x, y, yaw_deg, dwell_sec))
 
         self.get_logger().info(f'Loaded {len(waypoints)} waypoints from {filepath}')
@@ -104,16 +109,17 @@ class PathLoaderNode(Node):
         response.message = f'loaded {len(waypoints)} waypoints from {request.waypoints_file}'
         return response
 
-    def publish_all(self):
-        """Stamp and publish both the Path and WaypointPath representations."""
-        stamp = self.get_clock().now().to_msg()
-
+    def publish_path_viz(self):
+        """Publish the nav_msgs/Path for RViz only."""
         path_msg = self.build_path_msg()
-        path_msg.header.stamp = stamp
+        path_msg.header.stamp = self.get_clock().now().to_msg()
         self._path_pub.publish(path_msg)
 
+    def publish_all(self):
+        """Publish the RViz Path and the latched WaypointPath (only on load, never periodically)."""
+        self.publish_path_viz()
         waypoint_msg = self.build_waypoint_path_msg()
-        waypoint_msg.header.stamp = stamp
+        waypoint_msg.header.stamp = self.get_clock().now().to_msg()
         self._waypoints_pub.publish(waypoint_msg)
 
 

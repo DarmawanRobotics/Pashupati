@@ -4,6 +4,7 @@ import math
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 
 from geometry_msgs.msg import Twist
 from std_srvs.srv import SetBool
@@ -136,7 +137,13 @@ class PathFollowerNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
-        self.create_subscription(WaypointPath, 'navigation/waypoints', self.waypoints_callback, 10)
+        latched = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self.create_subscription(WaypointPath, 'navigation/waypoints', self.waypoints_callback, latched)
         self.create_subscription(AvoidanceCommand, 'navigation/avoidance', self.avoidance_callback, 10)
         self._cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self._markers_pub = self.create_publisher(MarkerArray, 'navigation/markers', 10)
@@ -202,8 +209,11 @@ class PathFollowerNode(Node):
         return None
 
     def waypoints_callback(self, msg: WaypointPath):
-        """Load a new waypoint path into the controller and reset the stop-point state machine."""
-        self._waypoints = [(w.x, w.y, w.yaw, w.dwell_sec) for w in msg.waypoints]
+        """Load a new waypoint path; identical republished paths are ignored so progress is kept."""
+        waypoints = [(w.x, w.y, w.yaw, w.dwell_sec) for w in msg.waypoints]
+        if waypoints == self._waypoints:
+            return
+        self._waypoints = waypoints
         self._current_path_points = [(x, y) for x, y, _, _ in self._waypoints]
         self._controller.set_path(self._current_path_points)
         self._speed_regulator.reset()
