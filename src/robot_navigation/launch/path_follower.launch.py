@@ -18,6 +18,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('params_file', default_value=default_params),
         DeclareLaunchArgument('waypoints_file', default_value=default_waypoints),
+        DeclareLaunchArgument('cmd_vel_topic', default_value='cmd_vel',
+                              description="Robot velocity topic, e.g. '/l1w/cmd_vel'"),
         Node(
             package='robot_navigation', 
             executable='path_loader_node',
@@ -28,8 +30,9 @@ def generate_launch_description():
         Node(
             package='robot_navigation', 
             executable='path_follower_node',
-            name='path_follower_node', 
-            output='screen', 
+            name='path_follower_node',
+            output='screen',
             parameters=[params_file],
+            remappings=[('cmd_vel', LaunchConfiguration('cmd_vel_topic'))],
         ),
     ])
