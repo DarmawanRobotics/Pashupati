@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import math
+import os
+import time
 
 from geometry_msgs.msg import PoseWithCovarianceStamped
 import numpy as np
@@ -18,9 +20,12 @@ from robot_localization.utils.pose_localization import (
     pose_values_to_matrix,
     transform_to_matrix,
 )
+from robot_localization.utils.tag_recording import average_poses, describe_pose, merge_into_file
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
+import tf_transformations as tft
+from visualization_msgs.msg import Marker, MarkerArray
 
 
 class LocalizationNode(Node):
@@ -40,6 +45,9 @@ class LocalizationNode(Node):
         self.declare_parameter('tag_max_age_sec', 0.5)
         self.declare_parameter('auto_localize_on_start', True)
         self.declare_parameter('assume_start_origin', False)
+        self.declare_parameter('tag_frames', ['base_map', 'charging_dock'])
+        self.declare_parameter('tag_record_duration_sec', 2.0)
+        self.declare_parameter('tags_record_file', '')
         self.declare_parameter('auto_correct_period_sec', 0.0)
         self.declare_parameter('max_correction_m', 0.5)
         self.declare_parameter('max_correction_deg', 15.0)
@@ -71,7 +79,14 @@ class LocalizationNode(Node):
         self._assume_start_origin = bool(p('assume_start_origin').value)
         self.publish_status()
 
+        self._tags_file = p('tags_config_file').value
+        self._tag_markers_pub = self.create_publisher(
+            MarkerArray, 'localization/tag_markers', latched
+        )
+        self.publish_tag_markers()
+
         self.create_service(Trigger, 'localization/start', self.localization_callback)
+        self.create_service(Trigger, 'localization/record_tags', self.record_tags_callback)
         self.create_subscription(
             PoseWithCovarianceStamped, '/initialpose', self.pose_estimate_callback, 10
         )
@@ -217,6 +232,85 @@ class LocalizationNode(Node):
             )
             return
         self.set_map_odom(m, f'apriltag "{info}" (auto correct)')
+
+    def record_tags_callback(self, request, response):
+        """Average the map pose of every visible tag in tag_frames and save it to the tag file."""
+        duration = float(self.get_parameter('tag_record_duration_sec').value)
+        frames = [f for f in self.get_parameter('tag_frames').value if f]
+        samples = {frame: [] for frame in frames}
+        end = time.monotonic() + duration
+        while time.monotonic() < end:
+            for frame in frames:
+                m = self.fresh_map_tag(frame)
+                if m is not None:
+                    samples[frame].append(m)
+            time.sleep(0.1)
+
+        poses, lines = {}, []
+        for frame, values in samples.items():
+            if len(values) < 3:
+                lines.append(f'{frame}: not seen')
+                continue
+            mean, pos_std, yaw_std = average_poses(values)
+            poses[frame] = mean
+            lines.append(
+                f'{frame}: {describe_pose(mean)} n={len(values)} '
+                f'std={pos_std * 100:.1f}cm/{yaw_std:.1f}deg'
+            )
+        if not poses:
+            response.success = False
+            response.message = 'no tag seen: ' + '; '.join(lines)
+            return response
+
+        path = self.get_parameter('tags_record_file').value or self._tags_file
+        path = path or os.path.join(os.getcwd(), 'tag_config.json')
+        merged = merge_into_file(path, poses)
+        self._tag_poses = {
+            f: pose_values_to_matrix([v['x'], v['y'], v['z'], v['qx'], v['qy'], v['qz'], v['qw']])
+            for f, v in merged.items()
+        }
+        self.publish_tag_markers()
+        response.success = True
+        response.message = f'saved {len(poses)} tag(s) to {path}\n' + '\n'.join(lines)
+        self.get_logger().info(response.message)
+        return response
+
+    def fresh_map_tag(self, frame: str):
+        """Return map->tag as a 4x4 matrix if the tag was detected within tag_max_age_sec."""
+        try:
+            cam_tag = self._tf_buffer.lookup_transform(self._camera, frame, Time())
+            if self.get_clock().now() - Time.from_msg(cam_tag.header.stamp) > self._tag_max_age:
+                return None
+            return transform_to_matrix(self._tf_buffer.lookup_transform(self._map, frame, Time()))
+        except TransformException:
+            return None
+
+    def publish_tag_markers(self):
+        """Publish the known tag poses as arrows + labels in the map frame (latched)."""
+        markers = MarkerArray()
+        clear = Marker()
+        clear.action = Marker.DELETEALL
+        markers.markers.append(clear)
+        for i, (frame, m) in enumerate(sorted(self._tag_poses.items())):
+            qx, qy, qz, qw = (float(v) for v in tft.quaternion_from_matrix(m))
+            for kind, offset in ((Marker.ARROW, 0), (Marker.TEXT_VIEW_FACING, 1000)):
+                mk = Marker()
+                mk.header.frame_id = self._map
+                mk.ns = 'tags'
+                mk.id = i + offset
+                mk.type = kind
+                mk.pose.position.x, mk.pose.position.y, mk.pose.position.z = map(float, m[:3, 3])
+                mk.pose.orientation.x, mk.pose.orientation.y = qx, qy
+                mk.pose.orientation.z, mk.pose.orientation.w = qz, qw
+                mk.color.r, mk.color.g, mk.color.b, mk.color.a = 1.0, 0.3, 0.9, 1.0
+                if kind == Marker.ARROW:
+                    mk.scale.x, mk.scale.y, mk.scale.z = 0.3, 0.04, 0.04
+                else:
+                    mk.pose.position.z += 0.25
+                    mk.scale.z = 0.15
+                    mk.text = frame
+                markers.markers.append(mk)
+        self._tag_markers_pub.publish(markers)
 
     def pose_estimate_callback(self, msg: PoseWithCovarianceStamped):
         """Set map->odom so base_link lands on an RViz 2D Pose Estimate."""

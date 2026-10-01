@@ -11,6 +11,11 @@ localization_node:
     tag_max_age_sec: 0.5              # ignore tag TFs older than this
     auto_localize_on_start: true      # retry tag localization every 1 s until it succeeds
     assume_start_origin: false        # true: the start pose is the map origin (no tag needed)
+
+    # localization/record_tags: average the map pose of each visible tag and save it
+    tag_frames: [base_map, charging_dock]   # tag TF frames from perception_params.yaml tag.frames
+    tag_record_duration_sec: 2.0
+    tags_record_file: ""              # empty: overwrite tags_config_file (a .bak is kept)
     auto_correct_period_sec: 0.0      # >0: re-correct drift from any visible tag every N s
     max_correction_m: 0.5             # reject auto corrections larger than this
     max_correction_deg: 15.0
