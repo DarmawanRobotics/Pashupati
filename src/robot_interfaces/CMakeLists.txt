@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/StopPointEvent.msg"
   "srv/MarkStopPoint.srv"
   "srv/LoadPath.srv"
+  "srv/SetMode.srv"
   DEPENDENCIES std_msgs
 )
 
