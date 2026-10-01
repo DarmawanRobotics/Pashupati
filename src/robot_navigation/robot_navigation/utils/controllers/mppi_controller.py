@@ -1,8 +1,7 @@
-import math
-
 import numpy as np
 
 from robot_navigation.utils.controllers.base_controller import ControllerOutput, PathController
+from robot_navigation.utils.path_progress import PathProgress
 from robot_navigation.utils.pose2d import Pose2D
 
 
@@ -30,20 +29,23 @@ class MppiController(PathController):
         self._angular_std = angular_std
         self._temperature = temperature
         self._max_angular_velocity = max_angular_velocity
+        self._progress = PathProgress()
         self._path = np.zeros((0, 2))
         self._last_angular = 0.0
         self._last_rollout = None
 
-    def set_path(self, path_xy):
+    def set_path(self, path_xy, start_index=None):
         """Replace the tracked path as a numpy array for vectorized distance queries."""
+        self._progress.set_path(path_xy, start_index)
         self._path = np.array(path_xy) if path_xy else np.zeros((0, 2))
 
     def is_finished(self, pose: Pose2D) -> bool:
-        """Return True once the robot is within goal_tolerance of the path's last point."""
-        if self._path.shape[0] == 0:
-            return True
-        gx, gy = self._path[-1]
-        return math.hypot(gx - pose.x, gy - pose.y) < self._goal_tolerance
+        """Return True once progress reached the end and the robot is within goal_tolerance."""
+        return self._progress.is_finished(pose, self._goal_tolerance)
+
+    def progress_index(self) -> int:
+        """Return the current progress index along the path."""
+        return self._progress.index
 
     def path_cost(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
         """Sum, over the horizon, of each rolled-out point's squared distance to its nearest path point."""
@@ -56,6 +58,7 @@ class MppiController(PathController):
         """Sample control sequences, roll them out, and return a cost-weighted-average command."""
         if self._path.shape[0] == 0:
             return ControllerOutput(0.0, 0.0)
+        self._progress.update(pose)
 
         angular_samples = np.random.normal(self._last_angular, self._angular_std, size=(self._num_samples, self._horizon_steps))
         angular_samples = np.clip(angular_samples, -self._max_angular_velocity, self._max_angular_velocity)
