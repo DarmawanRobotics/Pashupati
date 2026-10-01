@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>Native RViz2 panel (C++/Qt) for battery monitoring, one-click localization trigger, path recording/stop-point marking, path loading, and navigate_route control.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
-  <license>MIT</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

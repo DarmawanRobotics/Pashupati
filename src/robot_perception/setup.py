@@ -20,7 +20,7 @@ setup(
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
     description='Lidar sector perception (SectorScan) from Livox CustomMsg with RViz markers',
-    license='MIT',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [

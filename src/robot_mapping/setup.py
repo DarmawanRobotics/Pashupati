@@ -20,7 +20,7 @@ setup(
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
     description='FAST-LIO2 mapping and teach-and-repeat route recording with stop points',
-    license='MIT',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',

@@ -20,7 +20,7 @@ setup(
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
     description='AprilTag-based map->odom localization stitched onto FAST-LIO TF',
-    license='MIT',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',

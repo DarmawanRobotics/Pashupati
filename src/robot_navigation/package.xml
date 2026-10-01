@@ -5,7 +5,7 @@
   <version>0.5.0</version>
   <description>Selectable path-following controllers (pure pursuit, PID, MPPI) and selectable reactive obstacle avoidance (Braitenberg, VFH) for the robot, with inspection stop-point support (align + dwell) and RViz debug visualization.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
-  <license>MIT</license>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>

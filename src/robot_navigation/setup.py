@@ -21,7 +21,7 @@ setup(
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
     description='Patrol route following, obstacle avoidance and inspection stop points',
-    license='MIT',
+    license='Apache-2.0',
     entry_points={
         'console_scripts': [
             'path_follower_node = robot_navigation.path_follower_node:main',
