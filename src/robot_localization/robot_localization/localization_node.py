@@ -4,7 +4,7 @@ import math
 import os
 import time
 
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 import numpy as np
 import rclpy
 from rclpy.duration import Duration
@@ -48,6 +48,7 @@ class LocalizationNode(Node):
         self.declare_parameter('tag_frames', ['base_map', 'charging_dock'])
         self.declare_parameter('tag_record_duration_sec', 2.0)
         self.declare_parameter('tags_record_file', '')
+        self.declare_parameter('tag_marker_size', 0.15)
         self.declare_parameter('auto_correct_period_sec', 0.0)
         self.declare_parameter('max_correction_m', 0.5)
         self.declare_parameter('max_correction_deg', 15.0)
@@ -286,31 +287,51 @@ class LocalizationNode(Node):
             return None
 
     def publish_tag_markers(self):
-        """Publish the known tag poses as arrows + labels in the map frame (latched)."""
+        """Publish known tags as plates with x/y/z axes, a label and a ground line (latched)."""
         markers = MarkerArray()
         clear = Marker()
         clear.action = Marker.DELETEALL
         markers.markers.append(clear)
+        size = float(self.get_parameter('tag_marker_size').value)
+        axes = (
+            (np.eye(4), (1.0, 0.1, 0.1)),
+            (tft.euler_matrix(0.0, 0.0, math.pi / 2), (0.1, 1.0, 0.1)),
+            (tft.euler_matrix(0.0, -math.pi / 2, 0.0), (0.2, 0.4, 1.0)),
+        )
         for i, (frame, m) in enumerate(sorted(self._tag_poses.items())):
-            qx, qy, qz, qw = (float(v) for v in tft.quaternion_from_matrix(m))
-            for kind, offset in ((Marker.ARROW, 0), (Marker.TEXT_VIEW_FACING, 1000)):
-                mk = Marker()
-                mk.header.frame_id = self._map
-                mk.ns = 'tags'
-                mk.id = i + offset
-                mk.type = kind
-                mk.pose.position.x, mk.pose.position.y, mk.pose.position.z = map(float, m[:3, 3])
-                mk.pose.orientation.x, mk.pose.orientation.y = qx, qy
-                mk.pose.orientation.z, mk.pose.orientation.w = qz, qw
-                mk.color.r, mk.color.g, mk.color.b, mk.color.a = 1.0, 0.3, 0.9, 1.0
-                if kind == Marker.ARROW:
-                    mk.scale.x, mk.scale.y, mk.scale.z = 0.3, 0.04, 0.04
-                else:
-                    mk.pose.position.z += 0.25
-                    mk.scale.z = 0.15
-                    mk.text = frame
-                markers.markers.append(mk)
+            mid = 10 * i
+            plate = self.tag_marker(Marker.CUBE, mid, m, (1.0, 1.0, 1.0, 0.9))
+            plate.scale.x, plate.scale.y, plate.scale.z = size, size, 0.005
+            markers.markers.append(plate)
+            for k, (rot, rgb) in enumerate(axes):
+                axis = self.tag_marker(Marker.ARROW, mid + 1 + k, m @ rot, (*rgb, 1.0))
+                axis.scale.x, axis.scale.y, axis.scale.z = 0.25, 0.02, 0.02
+                markers.markers.append(axis)
+            text = self.tag_marker(Marker.TEXT_VIEW_FACING, mid + 4, m, (1.0, 0.3, 0.9, 1.0))
+            text.pose.position.z += 0.25
+            text.scale.z = 0.15
+            text.text = frame
+            markers.markers.append(text)
+            drop = self.tag_marker(Marker.LINE_LIST, mid + 5, np.eye(4), (1.0, 0.3, 0.9, 0.6))
+            drop.scale.x = 0.01
+            x, y, z = (float(v) for v in m[:3, 3])
+            drop.points = [Point(x=x, y=y, z=z), Point(x=x, y=y, z=0.0)]
+            markers.markers.append(drop)
         self._tag_markers_pub.publish(markers)
+
+    def tag_marker(self, kind: int, mid: int, m: np.ndarray, rgba: tuple) -> Marker:
+        """Return a map-frame marker posed at the 4x4 matrix m."""
+        mk = Marker()
+        mk.header.frame_id = self._map
+        mk.ns = 'tags'
+        mk.id = mid
+        mk.type = kind
+        mk.pose.position.x, mk.pose.position.y, mk.pose.position.z = (float(v) for v in m[:3, 3])
+        q = tft.quaternion_from_matrix(m)
+        mk.pose.orientation.x, mk.pose.orientation.y = float(q[0]), float(q[1])
+        mk.pose.orientation.z, mk.pose.orientation.w = float(q[2]), float(q[3])
+        mk.color.r, mk.color.g, mk.color.b, mk.color.a = rgba
+        return mk
 
     def pose_estimate_callback(self, msg: PoseWithCovarianceStamped):
         """Set map->odom so base_link lands on an RViz 2D Pose Estimate."""
