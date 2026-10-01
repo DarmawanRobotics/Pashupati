@@ -2,7 +2,7 @@
 
 # PASHUPATI
 
-**Autonomous patrol & inspection stack for the Genisom L1W wheel-legged quadruped — LiDAR-inertial mapping, teach-and-repeat waypoint navigation, reactive obstacle avoidance, and VLM-based anomaly detection.**
+**Autonomous patrol & inspection stack for the Genisom L1W wheel-legged quadruped — LiDAR-inertial teach-and-repeat navigation, reactive avoidance, on-robot VLM inspection, crowd sensing, handheld teleop and the NETRA command center.**
 
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-22314E?style=for-the-badge&logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
@@ -13,233 +13,162 @@
 
 ---
 
-## Demo
+## What it does
 
-<!-- record a GIF/MP4 of: record path → localize → start_nav → robot dwelling at a stop point in RViz, save it to docs/demo.gif, then re-add the embed below -->
+Mall corridors are patrolled on fixed routes every shift, so Pashupati uses **teach and repeat**
+instead of a global planner:
 
-<div align="center">
+- **Teach** — drive the robot once (handheld or RViz) while FAST-LIO2 tracks it, mark inspection
+  stops, record the AprilTags that anchor the map. The route is uploaded to NETRA automatically.
+- **Repeat** — routes are resampled and smoothed, followed by a swappable controller with a
+  curvature-aware speed profile, blended with reactive avoidance on a 32-sector LiDAR scan; at
+  every stop the robot converges to 5 cm / 3° and inspects.
+- **Inspect** — Moondream (local VLM via Ollama) checks each stop for trash, spills, floor damage
+  or a fallen person; findings go to NETRA for final detection, validation and Telegram alerts.
+- **Sense crowds** — people seen by the camera are placed on the floor plan and aggregated into
+  per-minute crowd heatmaps.
+- **Operate** — schedules and live control from NETRA, manual control from a Retroid handheld
+  over UDP, one supervised systemd service on the robot with self-respawning nodes.
 
-*Drive the route once, mark inspection stops, then let the robot repeat it — dodging people and flagging trash, spills, or fallen persons along the way.*
+## System
 
-</div>
+```mermaid
+flowchart LR
+    subgraph Robot[Robot — Jetson, ROS 2 Humble]
+        DRV[l1w_driver] --- SENS[Livox MID-360 + RealSense D435i]
+        SENS --> FL[FAST-LIO2] --> LOC[localization]
+        SENS --> PER[lidar sectors · AprilTag · people]
+        LOC --> NAV[path follower + avoidance]
+        PER --> NAV
+        NAV --> MUX[control mux] --> DRV
+        INS[VLM inspection<br/>Moondream] --> UP[fleet uplink]
+        NAV --> UP
+        PER --> UP
+        HL[health] --> UP
+        TEL[teleop UDP gateway] --> MUX
+    end
+    PAD[Retroid teleop<br/>flutter_teleop] <-- UDP --> TEL
+    UP <-- WebSocket + HTTPS --> NETRA[NETRA command center<br/>Go · PostgreSQL · Next.js]
+    NETRA --> TG[Telegram groups]
+```
 
----
-
-## Why this exists
-
-Patrolling a mall corridor doesn't need a full Nav2 stack with a global costmap — the route is fixed, known, and repeated every shift. Pashupati takes a **teach-and-repeat** approach instead:
-
-- **Teach once** — drive the robot manually while FAST-LIO2 tracks its pose, record the path, and mark inspection stop points with a dwell time.
-- **Repeat autonomously** — the recording is resampled and smoothed, then followed by a swappable controller (`pure_pursuit` / `pid` / `mppi` / `lqr` / `stanley`) with a curvature-aware speed profile, blended with reactive avoidance (`braitenberg` / `vfh` / `potential_field` / `follow_gap`) on a 32-sector LiDAR scan.
-- **Stop exactly** — at each stop point the robot converges onto x / y / yaw (strafing on the legged base) to within 5 cm / 3°, so every inspection is taken from the same pose.
-- **Inspect while patrolling** — a local VLM (Moondream via Ollama) checks the camera feed for `trash`, `spill`, or `fallen_person`, triggered at every stop point.
-- **Relocalize cheaply** — snap `map→odom` to a known AprilTag, an RViz 2D Pose Estimate, or the start marker.
-
-The navigation stack is robot-agnostic: a robot only has to provide `cmd_vel`, `battery`, and a URDF with the Livox and camera frames. The Genisom L1W support lives in the `genisom_l1w_ros2` submodule.
+| Repository | |
+|---|---|
+| **Pashupati** (this) | robot workspace |
+| [`genisom_l1w_ros2`](src/xtras/drivers/genisom_l1w_ros2) | L1W driver, URDF, sensor bringup, SDK installer (submodule) |
+| `netra` | command center: backend, dashboard, VPS deployment |
+| `flutter_teleop` | handheld teleop app (Retroid Pocket / Android) |
 
 ## Hardware
 
 | Component | Model | Role |
 |---|---|---|
-| Robot base | ZSBot **Genisom L1W** (wheel-legged quadruped) | `genisom_l1w_ros2` driver (zsibot SDK, UDP) |
-| LiDAR | Livox **MID-360** | FAST-LIO2 odometry + obstacle sectors |
-| Camera | Intel RealSense **D435i** | AprilTag relocalization + anomaly detection |
-| Compute | NVIDIA Jetson (aarch64) | ROS2 Humble, Ollama |
-
-## Architecture
-
-```mermaid
-flowchart LR
-    subgraph Sensors
-        L[Livox MID-360]
-        C[RealSense D435i]
-    end
-
-    L -->|/livox/lidar| FL[FAST-LIO2]
-    L -->|/livox/lidar| LS[lidar_sector_node]
-    C --> AT[apriltag_node]
-    C --> AD[anomaly_detector_node]
-
-    FL -->|camera_init→body TF| LOC[localization_node]
-    AT -->|tag TF| LOC
-    LOC -->|map→odom TF + localization/status| PF
-
-    PL[path_loader_node] -->|navigation/waypoints| PF[path_follower_node]
-    LS -->|perception/sector_scan| OA[obstacle_avoidance_node]
-    OA -->|navigation/avoidance| PF
-    PF -->|check_now at stop points| AD
-    PF -->|/l1w/cmd_vel| DRV[l1w_driver_node]
-    DRV -->|UDP SDK| ROBOT[Genisom L1W]
-
-    AD -->|anomaly_detector/result| OUT[(Operator / GCS)]
-```
+| Robot base | ZSBot **Genisom L1W** | `genisom_l1w_ros2` (zsibot SDK, UDP) |
+| LiDAR | Livox **MID-360** | FAST-LIO2 odometry, obstacle sectors, teleop lidar view |
+| Camera | Intel RealSense **D435i** | AprilTags, VLM inspection, people, teleop video |
+| Compute | NVIDIA Jetson (aarch64) | ROS 2 Humble, Ollama, TensorRT |
 
 ## Packages
 
-| Package | Type | Description |
-|---|---|---|
-| `robot_interfaces` | CMake | Msgs (`Waypoint`, `WaypointPath`, `SectorScan`, `AvoidanceCommand`, `NavigationStatus`, `MissionStatus`, `StopPointEvent`) and srvs (`LoadPath`, `MarkStopPoint`) |
-| `robot_mapping` | Python | FAST-LIO2 bringup + `path_recorder_node` (TF → waypoint CSV) |
-| `robot_localization` | Python | `localization_node` — FAST-LIO frame bridge, `map→odom` from AprilTag / RViz / start marker |
-| `robot_navigation` | Python | `path_loader_node` (smoothing), `path_follower_node` (controllers, final approach, safety), `obstacle_avoidance_node` |
-| `robot_perception` | Python | `lidar_sector_node` (Livox or PointCloud2 → `SectorScan`), AprilTag bringup |
-| `robot_rviz` | C++ | RViz panel — localize, record, mark stop, load path, start/stop/pause, mission & battery |
-| `xtras/drivers/genisom_l1w_ros2` | submodule | L1W driver, URDF and sensor bringup (`l1w_bringup`) |
-
-## Quickstart
-
-### 1. Prerequisites
-
-- Ubuntu 22.04 + [ROS2 Humble](https://docs.ros.org/en/humble/Installation.html)
-- zsibot SDK installed (`sudo make install` of [genisom_l1_sdk](https://github.com/zsibot/genisom_l1_sdk))
-- [Livox-SDK2](https://github.com/Livox-SDK/Livox-SDK2) (required by `livox_ros_driver2`)
-- [Ollama](https://ollama.com/) running locally for anomaly detection
-
-### 2. Clone & build
-
-```bash
-mkdir -p ~/dev && cd ~/dev
-git clone --recursive https://github.com/DarmawanRobotics/Pashupati.git
-cd Pashupati
-
-sudo apt install -y ros-humble-apriltag-ros ros-humble-tf-transformations \
-                    ros-humble-cv-bridge python3-transforms3d
-
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install --packages-select robot_interfaces
-colcon build --symlink-install
-source install/setup.bash
-```
-
-### 3. Launch
-
-```bash
-./script/start_tmux.sh mapping   # teach: FAST-LIO saves the map, record a route
-./script/start_tmux.sh patrol    # repeat: map saving off, navigation ready
-```
-
-`WS`, `ROUTE`, `TAGS` and `ROBOT_NS` can be overridden from the environment, e.g.
-`ROUTE=map/2026-10-02/09-00-00_path.csv ./script/start_tmux.sh patrol`.
-
-| Window | Panes |
+| Package | Role |
 |---|---|
-| `robot` | `l1w_bringup`, FAST-LIO + localization, perception, RViz |
-| `nav` | navigation (patrol mode), command pane |
+| [`robot_interfaces`](src/robot_interfaces) | messages and services |
+| [`robot_mapping`](src/robot_mapping) | FAST-LIO2 bringup, route recording |
+| [`robot_localization`](src/robot_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
+| [`robot_perception`](src/robot_perception) | LiDAR sectors, AprilTag, person detection |
+| [`robot_navigation`](src/robot_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
+| [`robot_bridge`](src/robot_bridge) | auto/remote control mux, UDP teleop gateway ([protocol](src/robot_bridge/PROTOCOL.md)) |
+| [`robot_fleet`](src/robot_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/robot_fleet/API.md)) |
+| [`robot_inspection`](src/robot_inspection) | Moondream anomaly detection at stop points |
+| [`robot_health`](src/robot_health) | sensor-rate and computer health |
+| [`robot_rviz`](src/robot_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
+| [`pashupati_bringup`](src/pashupati_bringup) | production launch with respawning nodes |
+
+## Install on the robot
+
+```bash
+git clone --recursive https://github.com/DarmawanRobotics/Pashupati.git ~/dev/Pashupati
+cd ~/dev/Pashupati
+script/setup.sh                 # what is installed / missing
+script/setup.sh install         # tools, submodules, Livox-SDK2, zsibot SDK, rosdep, udev, Ollama + moondream, build
+script/setup.sh install service # systemd service, /etc/pashupati/pashupati.env
+sudoedit /etc/pashupati/pashupati.env   # route, tags, NETRA url + token
+sudo systemctl start pashupati && journalctl -fu pashupati
+```
+
+The service runs `pashupati_bringup/robot.launch.py` (`script/run_robot.sh`) with
+`Restart=always`; every Pashupati node respawns on its own, the last loaded route is reloaded after a
+restart. Person detection needs Ultralytics and a TensorRT engine (`script/setup.sh install
+people_model` prints the Jetson steps) or `PEOPLE=false`.
+
+## Develop (macOS / Linux)
+
+```bash
+script/dev.sh up      # Docker: ROS 2 Humble + all deps + XFCE desktop over VNC
+script/dev.sh build   # colcon build (symlink-install, Release)
+script/dev.sh test
+script/dev.sh vnc     # TigerVNC localhost:5901 or http://localhost:6080/vnc.html
+```
+
+On the robot during development: `script/start_tmux.sh mapping|patrol` (one pane per part, RViz).
 
 ## Workflow
 
-### Teach — record a route
+### Teach
+
+1. Start in mapping mode (`MODE=mapping` in the env file, or `start_tmux.sh mapping`).
+2. Take the handheld, switch to **REMOTE**, hold the deadman and drive the route; **Rekam rute**
+   starts recording, **Titik stop** marks inspection stops with a dwell time (or the RViz Mission
+   panel, or `mapping/path_record` / `mapping/mark_stop_point`).
+3. Stand still in view of each AprilTag and **Record Tag Poses** (AprilTags panel or
+   `localization/record_tags`) — tags recorded in the same session anchor the same map frame.
+4. Stop recording: the route is saved under `map/<date>/` and uploaded to NETRA. End near the start
+   for a looping patrol.
+
+### Repeat
+
+- **Localize** from a tag (teleop, panel or `localization/start`); navigation refuses to start
+  until `localization/status` reports a source.
+- **Start** from NETRA (now or weekly schedule), the handheld (**Rute** → load, **Mulai nav**) or:
 
 ```bash
-ros2 service call /mapping/path_record std_srvs/srv/SetBool "{data: true}"
-# drive the robot manually; at each inspection point:
-ros2 service call /mapping/mark_stop_point robot_interfaces/srv/MarkStopPoint "{dwell_sec: 10.0}"
-# stop and save
-ros2 service call /mapping/path_record std_srvs/srv/SetBool "{data: false}"
-```
-
-Routes are saved to `map/<YYYY-MM-DD>/<HH-MM-SS>_path.csv`. End the route within
-`loop_close_distance` (1 m) of where you started and the robot patrols it in a loop; otherwise it
-stops at the end.
-
-### Localize
-
-Navigation refuses to start until `localization/status` reports a source:
-
-```bash
-ros2 service call /localization/start std_srvs/srv/Trigger   # snap to a visible AprilTag
-```
-
-or use **2D Pose Estimate** in RViz. To treat the start marker as the map origin without a tag,
-set `assume_start_origin: true` in `localization_params.yaml`.
-
-### Repeat — run the route
-
-```bash
-ros2 service call /navigation/load_path robot_interfaces/srv/LoadPath \
-  "{waypoints_file: '/home/robot/dev/Pashupati/map/<date>/<time>_path.csv'}"
-
+ros2 service call /navigation/load_path robot_interfaces/srv/LoadPath "{waypoints_file: '/home/robot/dev/Pashupati/map/<date>/<time>_path.csv'}"
 ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: true}"
-ros2 service call /navigation/pause     std_srvs/srv/SetBool "{data: true}"   # hold, keep progress
-ros2 service call /navigation/pause     std_srvs/srv/SetBool "{data: false}"  # resume
-ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: false}"
 ```
 
-All of the above is also available from the **robot_rviz** panel.
+- At every stop the robot converges, calls `/anomaly_detector_node/check_now`, dwells and moves on;
+  anomalies, crowd windows and stop events flow to NETRA.
 
 ### Emergency stop
 
-```bash
-ros2 service call /l1w/emergency_stop std_srvs/srv/Trigger
-```
+Handheld **E-STOP** (screen or gamepad B), or `ros2 service call /l1w/emergency_stop std_srvs/srv/Trigger`.
 
 ## Patrol behaviour
 
 | Feature | What it does | Key parameters |
 |---|---|---|
-| Route smoothing | Dedup, resample, gradient smoothing between stop points; stops never move. Raw and smoothed routes on `navigation/path_raw` / `navigation/path` | `resample_spacing`, `smooth_weight_*` |
-| Speed profile | Curvature speed cap, braking into stops and the route end | `max_lateral_accel`, `approach_speed` |
-| Final approach | x / y / yaw convergence at stop points and the end of open routes | `holonomic`, `approach.*` |
-| Inspection | Calls Trigger services after arriving, waits for them, then dwells | `inspection_services`, `inspection_timeout_sec` |
-| Loop patrol | Restarts closed routes; ends the lap on low battery | `loop_route`, `low_battery_percentage` |
-| Fail-safes | Stops on stale avoidance / odometry, e-stop hysteresis, `BLOCKED`, `OFF_PATH` | `*_timeout_sec`, `off_path_*` |
-| Smooth commands | Slew limits plus low-pass on angular / lateral | `*_accel_limit`, `command_smoothing` |
+| Route processing | dedup, resample, gradient smoothing between stop points; stops never move | `resample_spacing`, `smooth_weight_*` |
+| Controllers | `pure_pursuit`, `pid`, `mppi`, `lqr`, `stanley`, switchable live | `controller`, `<controller>.*` |
+| Speed profile | curvature speed cap, braking into stops and the route end | `max_lateral_accel`, `approach_speed` |
+| Avoidance | `braitenberg`, `vfh`, `potential_field` (lateral push), `follow_gap` | `algorithm`, `safe_distance` |
+| Final approach | x / y / yaw convergence (strafing) to 5 cm / 3° | `holonomic`, `approach.*` |
+| Inspection | VLM check at each stop, waits for the result, then dwells | `inspection_services`, `inspection_timeout_sec` |
+| Loop patrol | restarts closed routes, ends the lap on low battery | `loop_route`, `low_battery_percentage` |
+| Safety | stops on stale avoidance / odometry, e-stop hysteresis, `BLOCKED`, `OFF_PATH`, teleop watchdog | `*_timeout_sec`, `off_path_*` |
+| Control mux | AUTO (navigation) or REMOTE (handheld); remote pauses navigation | `bridge/set_mode` |
+| Resilience | respawning nodes, supervised service, route remembered, uploads spooled offline | — |
 
-### Navigation states
+Every navigation and avoidance parameter applies live (**Tuning** panel or `ros2 param set`); save
+the tuned values with **Save YAML**.
 
-| State | Meaning |
+## Operations
+
+| | |
 |---|---|
-| `NAV_INACTIVE` / `PAUSED` | Not driving; progress is kept while paused |
-| `FOLLOWING` | Tracking the route |
-| `APPROACHING` → `DWELLING` | Converging onto a stop point, then inspecting and waiting |
-| `GOAL_REACHED` | End of an open route |
-| `EMERGENCY_STOP` | Obstacle inside the emergency cone; resumes after `estop_release_sec` clear |
-| `BLOCKED` | No progress possible for `blocked_timeout_sec` |
-| `OFF_PATH` | Too far from the route; restart navigation after checking the robot |
-| `TF_UNAVAILABLE` / `AVOIDANCE_STALE` / `NO_PATH` | Missing odometry, avoidance or route |
-
-## Runtime tuning
-
-Controllers and avoidance algorithms are swappable live — no relaunch:
-
-```bash
-ros2 param set /path_follower_node controller lqr                  # pure_pursuit | pid | mppi | lqr | stanley
-ros2 param set /path_follower_node avoidance_enabled false
-ros2 param set /path_follower_node loop_route false
-ros2 param set /obstacle_avoidance_node algorithm potential_field  # braitenberg | vfh | potential_field | follow_gap
-```
-
-Full parameter reference: [`src/robot_navigation/config/navigation_params.yaml`](src/robot_navigation/config/navigation_params.yaml)
-
-### First run on the robot
-
-1. Check the TF tree is one chain: `ros2 run tf2_tools view_frames`.
-2. Measure the `base_link` height above the floor and set `obstacle_z_min` in `perception_params.yaml` (≈ −height + 0.10).
-3. Record a short route with one stop point, run it at `target_linear_velocity: 0.3` with the remote in hand.
-4. If the robot stalls a few centimetres from a stop point, raise `approach.min_speed` (joystick deadband).
-5. Set `input_type: pointcloud2` in `perception_params.yaml` to cut CPU load once FAST-LIO is stable.
-
-## File formats
-
-**Waypoint CSV** — `x, y, yaw_deg, dwell_sec` in the `map` frame. `dwell_sec > 0` marks an inspection stop (robot converges onto `x, y, yaw_deg`, inspects, then holds).
-
-```csv
-# x,y,yaw_deg,dwell_sec
-0.0,0.0,0,0
-1.0,0.0,0,0
-2.0,0.5,45,5.0
-```
-
-**Tag config JSON** — known map pose per AprilTag TF frame:
-
-```json
-{
-  "base_map":      { "x": 0.0, "y": 0.0, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0 },
-  "charging_dock": { "x": 2.5, "y": 1.0, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0 }
-}
-```
-
-Tag IDs → frame names are mapped in [`perception_params.yaml`](src/robot_perception/config/perception_params.yaml) (`tag.ids` / `tag.frames`).
+| Health | `ros2 topic echo /health/status` — sensor rates, CPU temperature, memory, disk; also on the handheld and in NETRA |
+| Logs | `journalctl -fu pashupati`; ROS logs older than 7 days are pruned at start |
+| Debug view | RViz `robot_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
+| Update | `git pull && git submodule update --init --recursive && script/setup.sh install build && sudo systemctl restart pashupati` |
 
 ## Interfaces
 
@@ -250,12 +179,12 @@ Tag IDs → frame names are mapped in [`perception_params.yaml`](src/robot_perce
 |---|---|---|
 | `/mapping/path_record` | `std_srvs/SetBool` | path_recorder_node |
 | `/mapping/mark_stop_point` | `robot_interfaces/MarkStopPoint` | path_recorder_node |
-| `/localization/start` | `std_srvs/Trigger` | localization_node |
+| `/localization/start`, `/localization/record_tags` | `std_srvs/Trigger` | localization_node |
 | `/navigation/load_path` | `robot_interfaces/LoadPath` | path_loader_node |
-| `/navigation/start_nav` | `std_srvs/SetBool` | path_follower_node |
-| `/navigation/pause` | `std_srvs/SetBool` | path_follower_node |
-| `/l1w/<command>` | `std_srvs/Trigger` | l1w_driver_node (`stand_up`, `emergency_stop`, ...) |
+| `/navigation/start_nav`, `/navigation/pause` | `std_srvs/SetBool` | path_follower_node |
+| `/bridge/set_mode` | `robot_interfaces/SetMode` | control_mux_node |
 | `/anomaly_detector_node/check_now` | `std_srvs/Trigger` | anomaly_detector_node |
+| `/l1w/<command>` | `std_srvs/Trigger` | l1w_driver_node |
 
 </details>
 
@@ -264,19 +193,18 @@ Tag IDs → frame names are mapped in [`perception_params.yaml`](src/robot_perce
 
 | Topic | Type | Publisher |
 |---|---|---|
-| `/l1w/cmd_vel` | `geometry_msgs/Twist` | path_follower_node |
-| `/l1w/battery` | `sensor_msgs/BatteryState` | l1w_driver_node |
+| `/l1w/cmd_vel` | `geometry_msgs/Twist` | control_mux_node |
+| `/bridge/nav_cmd_vel`, `/bridge/remote_cmd_vel` | `geometry_msgs/Twist` | path_follower_node, teleop_udp_node |
+| `/bridge/mode` | `std_msgs/String` (latched) | control_mux_node |
 | `/localization/status` | `std_msgs/String` (latched) | localization_node |
-| `/navigation/path`, `/navigation/path_raw` | `nav_msgs/Path` | path_loader_node |
 | `/navigation/waypoints` | `robot_interfaces/WaypointPath` (latched) | path_loader_node |
-| `/navigation/avoidance` | `robot_interfaces/AvoidanceCommand` | obstacle_avoidance_node |
-| `/navigation/status` | `robot_interfaces/NavigationStatus` | path_follower_node |
-| `/navigation/mission_status` | `robot_interfaces/MissionStatus` (1 Hz) | path_follower_node |
-| `/navigation/stop_point_event` | `robot_interfaces/StopPointEvent` | path_follower_node |
-| `/navigation/markers` | `visualization_msgs/MarkerArray` | path_follower_node |
+| `/navigation/status`, `/navigation/mission_status`, `/navigation/stop_point_event` | robot_interfaces | path_follower_node |
+| `/navigation/markers`, `/navigation/route_markers`, `/navigation/avoidance_markers` | `MarkerArray` | navigation |
 | `/perception/sector_scan` | `robot_interfaces/SectorScan` | lidar_sector_node |
-| `/perception/obstacles` | `visualization_msgs/MarkerArray` | lidar_sector_node |
+| `/perception/people` | `geometry_msgs/PoseArray` | person_detector_node |
 | `/anomaly_detector/result` | `std_msgs/String` (JSON) | anomaly_detector_node |
+| `/health/status` | `std_msgs/String` (JSON, latched) | health_monitor_node |
+| `/mapping/route_saved` | `std_msgs/String` | path_recorder_node |
 
 </details>
 
@@ -285,31 +213,46 @@ Tag IDs → frame names are mapped in [`perception_params.yaml`](src/robot_perce
 
 ```
 map → odom → camera_init → body → base_link ─┬─ livox_frame → livox_imu_frame
- (localization_node)  (FAST-LIO2)  (bridge)   └─ camera_link → camera_*_optical_frame (realsense)
+ (localization_node)  (FAST-LIO2)  (bridge)   └─ camera_link → camera_*_optical_frame
 ```
 
 </details>
 
+## File formats
+
+**Route CSV** — `x, y, yaw_deg, dwell_sec` in the `map` frame; `dwell_sec > 0` is an inspection stop.
+
+```csv
+# x,y,yaw_deg,dwell_sec
+0.0,0.0,0,0
+2.0,0.5,45,10.0
+```
+
+**Tag config JSON** — map pose per AprilTag TF frame (written by `localization/record_tags`).
+
+```json
+{ "base_map": { "x": 0.0, "y": 0.0, "z": 0.8, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0 } }
+```
+
 ## Tests
 
 ```bash
-colcon test --packages-select robot_navigation robot_localization robot_mapping
-colcon test-result --verbose
+colcon test && colcon test-result --verbose
 ```
 
-The navigation tests drive every controller around a noisy closed loop and an overlapping
-out-and-back corridor, and check smoothing, the speed profile, the final approach and avoidance.
-The other packages run the ament flake8 / pep257 / copyright checks.
+Navigation simulations drive every controller around a noisy loop and an out-and-back corridor;
+bridge, fleet, inspection, health and perception have unit tests for their protocol and logic.
 
 ## Repository layout
 
 ```
 Pashupati/
-├── map/                   # recorded routes (map/<date>/<time>_path.csv) + example/
-├── script/start_tmux.sh   # bringup in a tmux session (mapping | patrol)
+├── docker/ docker-compose.yaml   # dev container (VNC desktop, shared workspace)
+├── map/                          # recorded routes + example/
+├── script/                       # setup.sh, run_robot.sh (service), start_tmux.sh (dev), dev.sh
 └── src/
-    ├── robot_*/           # first-party packages (see table above)
-    └── xtras/             # submodules: genisom_l1w_ros2, livox_ros_driver2, realsense-ros, FAST_LIO
+    ├── robot_* pashupati_bringup # first-party packages
+    └── xtras/                    # submodules: genisom_l1w_ros2, livox_ros_driver2, realsense-ros, FAST_LIO
 ```
 
 ## License
