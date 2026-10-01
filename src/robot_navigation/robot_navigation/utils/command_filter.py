@@ -19,3 +19,20 @@ class SlewLimiter:
     def reset(self, value: float = 0.0):
         """Jump straight to value, bypassing the rate limit."""
         self._value = value
+
+
+class LowPassFilter:
+    """First-order low-pass: alpha = 1 passes the input through, smaller values smooth more."""
+
+    def __init__(self, alpha: float):
+        self._alpha = max(0.0, min(1.0, alpha))
+        self._value = 0.0
+
+    def step(self, target: float) -> float:
+        """Blend target into the filtered value and return it."""
+        self._value += self._alpha * (target - self._value)
+        return self._value
+
+    def reset(self, value: float = 0.0):
+        """Set the filter state directly."""
+        self._value = value

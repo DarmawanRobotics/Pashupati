@@ -10,6 +10,7 @@ path_follower_node:
     max_angular_velocity: 1.0         # rad/s, hard cap
     linear_accel_limit: 0.5           # m/s^2, ramp limit (emergency stops bypass it)
     angular_accel_limit: 1.5          # rad/s^2, ramp limit
+    command_smoothing: 0.4            # 0-1 low-pass on angular/lateral commands (1 = off, lower = smoother)
     arc_visualization_length: 2.0     # m, RViz curvature arc length
     marker_lifetime_sec: 0.5          # s, RViz marker lifetime
 

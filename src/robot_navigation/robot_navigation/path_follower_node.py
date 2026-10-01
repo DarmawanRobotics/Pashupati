@@ -18,7 +18,7 @@ from visualization_msgs.msg import MarkerArray
 from robot_interfaces.msg import AvoidanceCommand, NavigationStatus, StopPointEvent, WaypointPath
 
 from robot_navigation.utils import visualization
-from robot_navigation.utils.command_filter import SlewLimiter
+from robot_navigation.utils.command_filter import LowPassFilter, SlewLimiter
 from robot_navigation.utils.controllers.registry import create_controller
 from robot_navigation.utils.final_approach import FinalApproach
 from robot_navigation.utils.geometry import clamp, yaw_from_quaternion
@@ -77,6 +77,9 @@ class PathFollowerNode(Node):
         self._linear_limiter = SlewLimiter(float(p('linear_accel_limit').value))
         self._angular_limiter = SlewLimiter(float(p('angular_accel_limit').value))
         self._lateral_limiter = SlewLimiter(float(p('linear_accel_limit').value))
+        alpha = float(p('command_smoothing').value)
+        self._angular_filter = LowPassFilter(alpha)
+        self._lateral_filter = LowPassFilter(alpha)
         self._safety = SafetySupervisor(
             estop_release_sec=float(p('estop_release_sec').value),
             blocked_timeout_sec=float(p('blocked_timeout_sec').value),
@@ -156,6 +159,7 @@ class PathFollowerNode(Node):
             'max_angular_velocity': 1.0,
             'linear_accel_limit': 0.5,
             'angular_accel_limit': 1.5,
+            'command_smoothing': 0.4,
             'arc_visualization_length': 2.0,
             'marker_lifetime_sec': 0.5,
             'avoidance_enabled': True,
@@ -615,8 +619,10 @@ class PathFollowerNode(Node):
         else:
             cmd = Twist()
             cmd.linear.x = self._linear_limiter.step(clamp(target_linear, self._max_linear_velocity), dt)
-            cmd.linear.y = self._lateral_limiter.step(lateral_bias, dt)
-            cmd.angular.z = self._angular_limiter.step(clamp(target_angular, self._max_angular_velocity), dt)
+            lateral = self._lateral_filter.step(lateral_bias)
+            angular = self._angular_filter.step(clamp(target_angular, self._max_angular_velocity))
+            cmd.linear.y = self._lateral_limiter.step(lateral, dt)
+            cmd.angular.z = self._angular_limiter.step(angular, dt)
             self._cmd_vel_pub.publish(cmd)
 
         status = 'BLOCKED' if blocked else 'EMERGENCY_STOP' if estop else 'FOLLOWING'
@@ -635,9 +641,9 @@ class PathFollowerNode(Node):
     def publish_stop(self, hard: bool = False):
         """Publish zero velocity; hard skips the slew ramp entirely."""
         if hard:
-            self._linear_limiter.reset()
-            self._lateral_limiter.reset()
-            self._angular_limiter.reset()
+            for limiter in (self._linear_limiter, self._lateral_limiter, self._angular_limiter,
+                            self._angular_filter, self._lateral_filter):
+                limiter.reset()
             self._cmd_vel_pub.publish(Twist())
             return
         dt = 1.0 / self._control_rate
