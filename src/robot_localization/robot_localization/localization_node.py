@@ -7,6 +7,7 @@ import numpy as np
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
 from robot_localization.utils.pose_localization import (
     map_base_from_tag,
@@ -17,6 +18,7 @@ from robot_localization.utils.pose_localization import (
     pose_values_to_matrix,
     transform_to_matrix,
 )
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
@@ -37,6 +39,7 @@ class LocalizationNode(Node):
         self.declare_parameter('camera_frame', 'camera_color_optical_frame')
         self.declare_parameter('tag_max_age_sec', 0.5)
         self.declare_parameter('auto_localize_on_start', True)
+        self.declare_parameter('assume_start_origin', False)
         self.declare_parameter('auto_correct_period_sec', 0.0)
         self.declare_parameter('max_correction_m', 0.5)
         self.declare_parameter('max_correction_deg', 15.0)
@@ -62,6 +65,11 @@ class LocalizationNode(Node):
         self._m_map_odom = np.eye(4)
         self._localized = False
         self._active_source = 'none'
+
+        latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self._status_pub = self.create_publisher(String, 'localization/status', latched)
+        self._assume_start_origin = bool(p('assume_start_origin').value)
+        self.publish_status()
 
         self.create_service(Trigger, 'localization/start', self.localization_callback)
         self.create_subscription(
@@ -104,8 +112,16 @@ class LocalizationNode(Node):
         self._bridge_timer.cancel()
         self.broadcast_static()
         self.get_logger().info('frame bridge up: map->odom->camera_init, body->base_link')
+        if self._assume_start_origin:
+            self._localized = True
+            self._active_source = 'start position'
+            self.publish_status()
         if self._auto_start and self._tag_poses:
             self._auto_timer = self.create_timer(1.0, self.auto_start_tick)
+
+    def publish_status(self):
+        """Publish the active map->odom source ('none' until localized), latched."""
+        self._status_pub.publish(String(data=self._active_source if self._localized else 'none'))
 
     def broadcast_static(self):
         """Publish map->odom, odom->camera_init (= base->imu) and body->base_link (= imu->base)."""
@@ -126,6 +142,7 @@ class LocalizationNode(Node):
         self._localized = True
         self._active_source = source
         self.broadcast_static()
+        self.publish_status()
         t = m_map_odom[:3, 3]
         yaw = math.degrees(math.atan2(m_map_odom[1, 0], m_map_odom[0, 0]))
         self.get_logger().info(f'map->odom from {source}: x={t[0]:.3f} y={t[1]:.3f} yaw={yaw:.1f}')

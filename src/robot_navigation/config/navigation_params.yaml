@@ -51,6 +51,8 @@ path_follower_node:
     inspection_services: [""]
     inspection_timeout_sec: 10.0
 
+    require_localization: true        # refuse start_nav until localization/status reports a source
+
     controller: pure_pursuit          # pure_pursuit | pid | mppi | lqr | stanley
 
     pure_pursuit.lookahead_distance: 1.0

@@ -28,6 +28,7 @@ from robot_navigation.utils.pose2d import Pose2D
 from robot_navigation.utils.safety import SafetySupervisor
 from robot_navigation.utils.speed_regulator import SpeedRegulator
 from sensor_msgs.msg import BatteryState
+from std_msgs.msg import String
 from std_srvs.srv import SetBool, Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import MarkerArray
@@ -72,6 +73,7 @@ DEFAULT_PARAMS = {
     'auto_mode_off_service': '',
     'inspection_services': [''],
     'inspection_timeout_sec': 10.0,
+    'require_localization': True,
     'controller': 'pure_pursuit',
     'speed_regulator_enabled': False,
     'speed_regulator.kp': 0.3,
@@ -268,6 +270,15 @@ class PathFollowerNode(Node):
             BatteryState, 'battery', self.battery_callback, 10, callback_group=self._loop_group
         )
         self._mission_pub = self.create_publisher(MissionStatus, 'navigation/mission_status', 10)
+        self._require_localization = bool(p('require_localization').value)
+        self._localization_source = 'none'
+        self.create_subscription(
+            String,
+            'localization/status',
+            self.localization_status_callback,
+            latched,
+            callback_group=self._loop_group,
+        )
         self.create_timer(1.0, self.publish_mission_status, callback_group=self._loop_group)
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
@@ -384,6 +395,13 @@ class PathFollowerNode(Node):
     def start_nav_callback(self, request, response):
         """Enable or disable navigation, switching the robot's control mode along with it."""
         if request.data:
+            if self._require_localization and self._localization_source == 'none':
+                response.success = False
+                response.message = (
+                    "not localized: call 'localization/start' or set an RViz 2D Pose Estimate"
+                )
+                self.get_logger().error(response.message)
+                return response
             ok, message = self.call_trigger(self._auto_on_client)
             if not ok:
                 response.success = False
@@ -407,6 +425,12 @@ class PathFollowerNode(Node):
         response.message = 'navigation stopped'
         self.get_logger().info(response.message)
         return response
+
+    def localization_status_callback(self, msg: String):
+        """Track which source set map->odom ('none' until localized)."""
+        if msg.data != self._localization_source:
+            self.get_logger().info(f'localization source: {msg.data}')
+        self._localization_source = msg.data
 
     def pause_callback(self, request, response):
         """Pause (hold position, keep progress) or resume navigation."""
