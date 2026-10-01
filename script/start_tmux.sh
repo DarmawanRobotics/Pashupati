@@ -2,7 +2,8 @@
 # Usage: script/start_tmux.sh [mapping|patrol]
 #   mapping: FAST-LIO saves the PCD map, record a route with the RViz panel
 #   patrol:  map saving off, route loaded, navigation ready (start it from the panel)
-# Env: WS, ROUTE, TAGS, ROBOT_NS, RVIZ=0 (headless), DETACH=1 (do not attach, e.g. systemd)
+# Env: WS, ROUTE, TAGS, ROBOT_NS, CC_URL + CC_TOKEN (command center), RVIZ=0 (headless),
+#      DETACH=1 (do not attach, e.g. systemd)
 set -euo pipefail
 
 MODE="${1:-patrol}"
@@ -10,6 +11,8 @@ WS="${WS:-/home/robot/dev/Pashupati}"
 ROUTE="${ROUTE:-$WS/map/example/example_waypoint.csv}"
 TAGS="${TAGS:-$WS/map/example/tag_config.json}"
 ROBOT_NS="${ROBOT_NS:-l1w}"
+CC_URL="${CC_URL:-}"
+CC_TOKEN="${CC_TOKEN:-}"
 RVIZ="${RVIZ:-1}"
 DETACH="${DETACH:-0}"
 SESSION=pashupati
@@ -57,8 +60,11 @@ cmd_vel_topic:=/bridge/nav_cmd_vel battery_topic:=/$ROBOT_NS/battery"
 fi
 tmux split-window -h -t "$SESSION:nav.0"
 run nav.1 "ros2 launch robot_bridge bridge.launch.py robot_ns:=$ROBOT_NS"
-tmux send-keys -t "$SESSION:nav.2" "$SETUP" C-m
-tmux send-keys -t "$SESSION:nav.2" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
+tmux split-window -v -t "$SESSION:nav.1"
+run nav.2 "ros2 launch robot_fleet fleet.launch.py robot_ns:=$ROBOT_NS server_url:='$CC_URL' \
+token:='$CC_TOKEN'"
+tmux send-keys -t "$SESSION:nav.3" "$SETUP" C-m
+tmux send-keys -t "$SESSION:nav.3" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
 
 tmux select-window -t "$SESSION:robot"
 if [[ "$DETACH" != "1" ]]; then

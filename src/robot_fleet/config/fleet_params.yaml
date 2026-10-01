@@ -1,0 +1,17 @@
+fleet_uplink_node:
+  ros__parameters:
+    server_url: ""                    # e.g. https://netra.example.com (empty: spool only)
+    token: ""                         # robot token issued by the command center
+    robot_id: l1w-01
+    verify_tls: true
+    telemetry_hz: 1.0
+    upload_period_sec: 5.0
+    spool_dir: ~/.pashupati/spool     # anomalies and routes wait here until the server accepts them
+    routes_dir: /home/robot/dev/Pashupati/map
+    map_frame: map
+    base_frame: base_link
+    crowd_cell_size: 1.0              # m, heatmap grid in the map frame
+    crowd_window_sec: 60.0            # one crowd sample per window (peak people per cell)
+    anomaly_topic: /anomaly_detector/result
+    anomaly_image_topic: /camera/camera/color/image_raw/compressed
+    anomaly_min_confidence: 0.5

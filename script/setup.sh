@@ -172,6 +172,7 @@ User=$user
 Environment=WS=$ROOT
 Environment=RVIZ=0
 Environment=DETACH=1
+EnvironmentFile=-/etc/pashupati/pashupati.env
 ExecStart=$ROOT/script/start_tmux.sh $SERVICE_MODE
 ExecStop=/usr/bin/tmux kill-session -t $SERVICE_NAME
 
@@ -180,6 +181,7 @@ WantedBy=multi-user.target
 EOF
     $SUDO systemctl daemon-reload
     $SUDO systemctl enable "$SERVICE_NAME.service"
+    log "command center: put CC_URL=... and CC_TOKEN=... in /etc/pashupati/pashupati.env"
     log "start now with: sudo systemctl start $SERVICE_NAME, attach with: tmux attach -t $SERVICE_NAME"
 }
 
