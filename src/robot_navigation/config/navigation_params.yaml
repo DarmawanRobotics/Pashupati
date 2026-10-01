@@ -20,10 +20,19 @@ path_follower_node:
     loop_route: true                  # patrol: restart the route when it ends (closed routes only)
     loop_close_distance: 1.0          # m, first/last waypoint gap that still counts as a closed loop
 
-    stop_point_tolerance: 0.3         # m, distance to a dwell_sec>0 waypoint that triggers ALIGNING
     stop_point_skip_margin: 5         # waypoints, progress past a stop point before it is skipped
-    yaw_tolerance_deg: 5.0            # deg, heading error considered aligned before DWELLING
-    align_kp: 1.5                     # P gain for in-place rotation during ALIGNING
+
+    # Final approach onto stop points and the end of open routes
+    holonomic: true                   # true: close x/y/yaw together (legged/omni), false: turn-drive-turn
+    approach_radius: 0.5              # m, distance to a stop point that switches to the final approach
+    approach_timeout_sec: 20.0        # s, give up converging and dwell where the robot is
+    approach.kp_xy: 1.2               # P gain on position error
+    approach.kp_yaw: 1.5              # P gain on yaw error
+    approach.max_speed: 0.2           # m/s
+    approach.max_yaw_rate: 0.6        # rad/s
+    approach.min_speed: 0.04          # m/s, floor to beat the robot's joystick deadband
+    approach.position_tolerance: 0.05 # m
+    approach.yaw_tolerance_deg: 3.0   # deg
 
     # std_srvs/Trigger services called on navigation start/stop ("" = skip).
     # Genisom L1W example: /l1w/sdk_control_right and /l1w/remote_control_right

@@ -20,7 +20,8 @@ from robot_interfaces.msg import AvoidanceCommand, NavigationStatus, StopPointEv
 from robot_navigation.utils import visualization
 from robot_navigation.utils.command_filter import SlewLimiter
 from robot_navigation.utils.controllers.registry import create_controller
-from robot_navigation.utils.geometry import angle_diff, clamp, yaw_from_quaternion
+from robot_navigation.utils.final_approach import FinalApproach
+from robot_navigation.utils.geometry import clamp, yaw_from_quaternion
 from robot_navigation.utils.path_processing import velocity_profile
 from robot_navigation.utils.pose2d import Pose2D
 from robot_navigation.utils.speed_regulator import SpeedRegulator
@@ -28,7 +29,7 @@ from robot_navigation.utils.speed_regulator import SpeedRegulator
 
 class PathFollowerNode(Node):
     """Patrols a taught route: follows it with a selectable controller, blends reactive avoidance,
-    and at each stop point aligns, triggers inspection services and dwells."""
+    and at each stop point converges onto x/y/yaw, triggers inspection services and dwells."""
 
     _WARN_STATES = {'NO_PATH', 'TF_UNAVAILABLE', 'EMERGENCY_STOP', 'AVOIDANCE_STALE'}
 
@@ -55,10 +56,20 @@ class PathFollowerNode(Node):
         self._loop_route = bool(p('loop_route').value)
         self._loop_close_distance = float(p('loop_close_distance').value)
 
-        self._stop_point_tolerance = float(p('stop_point_tolerance').value)
+        self._approach_radius = float(p('approach_radius').value)
+        self._approach_timeout = float(p('approach_timeout_sec').value)
+        self._holonomic = bool(p('holonomic').value)
         self._stop_point_skip_margin = int(p('stop_point_skip_margin').value)
-        self._yaw_tolerance = math.radians(float(p('yaw_tolerance_deg').value))
-        self._align_kp = float(p('align_kp').value)
+        self._approach = FinalApproach(
+            holonomic=self._holonomic,
+            kp_xy=float(p('approach.kp_xy').value),
+            kp_yaw=float(p('approach.kp_yaw').value),
+            max_speed=float(p('approach.max_speed').value),
+            max_yaw_rate=float(p('approach.max_yaw_rate').value),
+            min_speed=float(p('approach.min_speed').value),
+            position_tolerance=float(p('approach.position_tolerance').value),
+            yaw_tolerance=math.radians(float(p('approach.yaw_tolerance_deg').value)),
+        )
         self._inspection_timeout = float(p('inspection_timeout_sec').value)
 
         self._linear_limiter = SlewLimiter(float(p('linear_accel_limit').value))
@@ -77,7 +88,9 @@ class PathFollowerNode(Node):
         self._speed_profile: list[float] = []
         self._next_stop_index = None
         self._follower_state = 'FOLLOWING'
-        self._align_target_yaw = 0.0
+        self._approach_start_time = None
+        self._approach_index = 0
+        self._approach_is_goal = False
         self._dwell_duration = 0.0
         self._dwell_start_time = None
         self._inspection_pending = 0
@@ -141,10 +154,17 @@ class PathFollowerNode(Node):
             'tf_timeout_sec': 0.5,
             'loop_route': True,
             'loop_close_distance': 1.0,
-            'stop_point_tolerance': 0.3,
+            'holonomic': True,
+            'approach_radius': 0.5,
+            'approach_timeout_sec': 20.0,
+            'approach.kp_xy': 1.2,
+            'approach.kp_yaw': 1.5,
+            'approach.max_speed': 0.2,
+            'approach.max_yaw_rate': 0.6,
+            'approach.min_speed': 0.04,
+            'approach.position_tolerance': 0.05,
+            'approach.yaw_tolerance_deg': 3.0,
             'stop_point_skip_margin': 5,
-            'yaw_tolerance_deg': 5.0,
-            'align_kp': 1.5,
             'auto_mode_on_service': '',
             'auto_mode_off_service': '',
             'inspection_services': [''],
@@ -392,22 +412,44 @@ class PathFollowerNode(Node):
         if self._inspection_pending == 0 and self._next_stop_index is not None:
             self.publish_stop_event('inspected', ' | '.join(self._inspection_results))
 
-    def run_aligning(self, pose: Pose2D, dt: float, stamp):
-        """Rotate in place toward the stop point's recorded yaw, then start inspection and dwell."""
-        error = angle_diff(self._align_target_yaw, pose.yaw)
-        if abs(error) < self._yaw_tolerance:
+    def run_approaching(self, pose: Pose2D, stamp):
+        """Converge exactly onto the target x, y, yaw, then dwell (stop point) or hold (route end)."""
+        x, y, yaw_deg, _ = self._waypoints[self._approach_index]
+        cmd = self._approach.update(pose, x, y, math.radians(yaw_deg))
+        elapsed = (self.get_clock().now() - self._approach_start_time).nanoseconds / 1e9
+        if cmd.done or elapsed > self._approach_timeout:
             self.publish_stop(hard=True)
+            note = '' if cmd.done else f'approach timeout, error {cmd.position_error:.2f} m'
+            if note:
+                self.get_logger().warn(note)
+            if self._approach_is_goal:
+                self._follower_state = 'GOAL_HOLD'
+                return
             self._follower_state = 'DWELLING'
             self._dwell_start_time = self.get_clock().now()
-            self.publish_stop_event('arrived')
+            self.publish_stop_event('arrived', note)
             self.start_inspection()
             self.publish_markers(stamp, 'DWELLING', f'stop {self._next_stop_index}, inspecting', pose.x, pose.y)
             return
 
-        cmd = Twist()
-        cmd.angular.z = self._angular_limiter.step(clamp(self._align_kp * error, self._max_angular_velocity), dt)
-        self._cmd_vel_pub.publish(cmd)
-        self.publish_markers(stamp, 'ALIGNING', f'heading error {math.degrees(error):.1f} deg', pose.x, pose.y)
+        _, _, emergency, stale = self.avoidance_signal()
+        if emergency or stale:
+            self.publish_stop(hard=True)
+            self.publish_markers(stamp, 'EMERGENCY_STOP', 'obstacle during final approach', pose.x, pose.y)
+            return
+
+        target = 'goal' if self._approach_is_goal else f'stop {self._approach_index}'
+        out = Twist()
+        out.linear.x = cmd.vx
+        out.linear.y = cmd.vy
+        out.angular.z = cmd.wz
+        self._linear_limiter.reset(cmd.vx)
+        self._angular_limiter.reset(cmd.wz)
+        self._cmd_vel_pub.publish(out)
+        self.publish_markers(
+            stamp, 'APPROACHING',
+            f'{target}: {cmd.position_error * 100:.1f} cm, '
+            f'{math.degrees(cmd.yaw_error):.1f} deg', pose.x, pose.y)
 
     def run_dwelling(self, pose: Pose2D, stamp):
         """Hold until dwell time passed and inspections finished (or timed out), then move on."""
@@ -428,16 +470,14 @@ class PathFollowerNode(Node):
         self._next_stop_index = self.find_next_stop_index(self._next_stop_index + 1)
 
     def check_stop_point(self, pose: Pose2D, stamp) -> bool:
-        """Enter ALIGNING at the next stop point, or skip it if progress already passed it."""
+        """Enter APPROACHING near the next stop point, or skip it if progress already passed it."""
         if self._next_stop_index is None:
             return False
-        sx, sy, syaw_deg, sdwell = self._waypoints[self._next_stop_index]
-        if math.hypot(sx - pose.x, sy - pose.y) < self._stop_point_tolerance:
-            self._follower_state = 'ALIGNING'
-            self._align_target_yaw = math.radians(syaw_deg)
+        sx, sy, _, sdwell = self._waypoints[self._next_stop_index]
+        if math.hypot(sx - pose.x, sy - pose.y) < self._approach_radius:
             self._dwell_duration = sdwell
-            self.publish_stop(hard=True)
-            self.publish_markers(stamp, 'ALIGNING', f'reached stop point {self._next_stop_index}', pose.x, pose.y)
+            self.start_approach(self._next_stop_index, is_goal=False)
+            self.publish_markers(stamp, 'APPROACHING', f'stop point {self._next_stop_index}', pose.x, pose.y)
             return True
         if self._controller.progress_index() > self._next_stop_index + self._stop_point_skip_margin:
             self.get_logger().warn(f'stop point {self._next_stop_index} missed, skipping')
@@ -445,8 +485,16 @@ class PathFollowerNode(Node):
             self._next_stop_index = self.find_next_stop_index(self._next_stop_index + 1)
         return False
 
-    def handle_route_end(self, pose: Pose2D, stamp):
-        """At the end of the route: start the next lap if the route is a closed loop, else hold."""
+    def start_approach(self, index: int, is_goal: bool):
+        """Switch to the final approach toward waypoint index."""
+        self._follower_state = 'APPROACHING'
+        self._approach_index = index
+        self._approach_is_goal = is_goal
+        self._approach.reset()
+        self._approach_start_time = self.get_clock().now()
+
+    def handle_route_end(self):
+        """At the route end: start the next lap on a closed loop, else approach the last point and hold."""
         first_x, first_y = self._waypoints[0][0], self._waypoints[0][1]
         last_x, last_y = self._waypoints[-1][0], self._waypoints[-1][1]
         closed = math.hypot(first_x - last_x, first_y - last_y) < self._loop_close_distance
@@ -455,9 +503,7 @@ class PathFollowerNode(Node):
             self.get_logger().info(f'lap {self._lap} complete, restarting route')
             self.restart_route(from_start=True)
             return
-        self.publish_stop(hard=True)
-        note = '' if closed or not self._loop_route else ' (route not closed, loop disabled)'
-        self.publish_markers(stamp, 'GOAL_REACHED', f'holding position{note}', pose.x, pose.y)
+        self.start_approach(len(self._waypoints) - 1, is_goal=True)
 
     def control_loop(self):
         """Run one control tick: safety checks, stop-point state machine, then path following."""
@@ -482,8 +528,12 @@ class PathFollowerNode(Node):
             self.publish_markers(stamp, 'TF_UNAVAILABLE', 'waiting for fresh map->base_link', 0.0, 0.0)
             return
 
-        if self._follower_state == 'ALIGNING':
-            self.run_aligning(pose, dt, stamp)
+        if self._follower_state == 'GOAL_HOLD':
+            self.publish_stop(hard=True)
+            self.publish_markers(stamp, 'GOAL_REACHED', 'holding position at the route end', pose.x, pose.y)
+            return
+        if self._follower_state == 'APPROACHING':
+            self.run_approaching(pose, stamp)
             return
         if self._follower_state == 'DWELLING':
             self.run_dwelling(pose, stamp)
@@ -496,7 +546,7 @@ class PathFollowerNode(Node):
             return
 
         if self._controller.is_finished(pose):
-            self.handle_route_end(pose, stamp)
+            self.handle_route_end()
             return
         if self.check_stop_point(pose, stamp):
             return
