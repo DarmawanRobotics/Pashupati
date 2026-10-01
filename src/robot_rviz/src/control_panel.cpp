@@ -1,5 +1,7 @@
 #include "robot_rviz/control_panel.hpp"
 
+#include <cmath>
+
 #include <QFileDialog>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -11,7 +13,7 @@ namespace robot_rviz
 {
 
 ControlPanel::ControlPanel(QWidget * parent)
-: rviz_common::Panel(parent), is_recording_(false), is_navigating_(false)
+: rviz_common::Panel(parent), is_recording_(false), is_navigating_(false), is_paused_(false)
 {
   // Hard cap on the panel's own width -- this is what actually stops it
   // ballooning when a status label gets a long string (e.g. "loaded 90
@@ -116,12 +118,21 @@ ControlPanel::ControlPanel(QWidget * parent)
   nav_layout->setContentsMargins(4, 4, 4, 4);
   nav_layout->setSpacing(2);
   nav_button_ = new QPushButton("Start Navigation");
+  pause_button_ = new QPushButton("Pause");
+  pause_button_->setEnabled(false);
+  auto * nav_buttons = new QHBoxLayout;
+  nav_buttons->setSpacing(4);
+  nav_buttons->addWidget(nav_button_);
+  nav_buttons->addWidget(pause_button_);
+  mission_label_ = new QLabel("no mission status");
+  mission_label_->setWordWrap(true);
   nav_status_label_ = new QLabel("NAV_INACTIVE");
   nav_status_label_->setAutoFillBackground(true);
   nav_status_label_->setWordWrap(true);
   nav_status_label_->setFixedHeight(28);
-  nav_layout->addWidget(nav_button_);
+  nav_layout->addLayout(nav_buttons);
   nav_layout->addWidget(nav_status_label_);
+  nav_layout->addWidget(mission_label_);
   nav_group->setLayout(nav_layout);
 
   // --- Cmd Vel group ---
@@ -154,6 +165,7 @@ ControlPanel::ControlPanel(QWidget * parent)
   connect(browse_button_, &QPushButton::clicked, this, &ControlPanel::onBrowseWaypointsFile);
   connect(load_button_, &QPushButton::clicked, this, &ControlPanel::onLoadPath);
   connect(nav_button_, &QPushButton::clicked, this, &ControlPanel::onToggleNavigation);
+  connect(pause_button_, &QPushButton::clicked, this, &ControlPanel::onTogglePause);
 }
 
 ControlPanel::~ControlPanel() = default;
@@ -168,13 +180,24 @@ void ControlPanel::onInitialize()
     node_->create_client<robot_interfaces::srv::MarkStopPoint>("mapping/mark_stop_point");
   load_path_client_ = node_->create_client<robot_interfaces::srv::LoadPath>("navigation/load_path");
   nav_client_ = node_->create_client<std_srvs::srv::SetBool>("navigation/start_nav");
+  pause_client_ = node_->create_client<std_srvs::srv::SetBool>("navigation/pause");
+
+  // Latched topics: match the publishers' transient-local durability to get the last value.
+  auto latched = rclcpp::QoS(1).transient_local();
+  localization_status_sub_ = node_->create_subscription<std_msgs::msg::String>(
+    "localization/status", latched,
+    std::bind(&ControlPanel::localizationStatusCallback, this, std::placeholders::_1));
+  mission_status_sub_ = node_->create_subscription<robot_interfaces::msg::MissionStatus>(
+    "navigation/mission_status", 10,
+    std::bind(&ControlPanel::missionStatusCallback, this, std::placeholders::_1));
 
   nav_status_sub_ = node_->create_subscription<robot_interfaces::msg::NavigationStatus>(
     "navigation/status", 10,
     std::bind(&ControlPanel::navStatusCallback, this, std::placeholders::_1));
 
+  // Remap from the rviz2 command line, e.g. -r battery:=/l1w/battery -r cmd_vel:=/l1w/cmd_vel
   battery_sub_ = node_->create_subscription<sensor_msgs::msg::BatteryState>(
-    "drivers/battery", 10,
+    "battery", 10,
     std::bind(&ControlPanel::batteryCallback, this, std::placeholders::_1));
 
   cmd_vel_sub_ = node_->create_subscription<geometry_msgs::msg::Twist>(
@@ -308,26 +331,72 @@ void ControlPanel::onToggleNavigation()
     });
 }
 
+void ControlPanel::onTogglePause()
+{
+  if (!pause_client_->service_is_ready()) {
+    setStatusLabel(nav_status_label_, "pause service not available", "#ffcc00");
+    return;
+  }
+  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
+  request->data = !is_paused_;
+  pause_client_->async_send_request(
+    request,
+    [this](rclcpp::Client<std_srvs::srv::SetBool>::SharedFuture future) {
+      if (future.get()->success) {
+        is_paused_ = !is_paused_;
+        pause_button_->setText(is_paused_ ? "Resume" : "Pause");
+      }
+    });
+}
+
 void ControlPanel::navStatusCallback(const robot_interfaces::msg::NavigationStatus::SharedPtr msg)
 {
+  const std::string & s = msg->state;
   std::string color = "#cccccc";
-  if (msg->state == "FOLLOWING") {
+  if (s == "FOLLOWING") {
     color = "#88ff88";
-  } else if (msg->state == "GOAL_REACHED") {
+  } else if (s == "GOAL_REACHED") {
     color = "#88bbff";
-  } else if (msg->state == "EMERGENCY_STOP" || msg->state == "TF_UNAVAILABLE") {
-    color = "#ff8888";
-  } else if (msg->state == "NO_PATH") {
-    color = "#ffaa55";
-  } else if (msg->state == "ALIGNING" || msg->state == "DWELLING") {
+  } else if (s == "APPROACHING" || s == "DWELLING" || s == "PAUSED") {
     color = "#ffff88";
+  } else if (s == "NO_PATH" || s == "BLOCKED") {
+    color = "#ffaa55";
+  } else if (s == "EMERGENCY_STOP" || s == "TF_UNAVAILABLE" || s == "AVOIDANCE_STALE" ||
+    s == "OFF_PATH")
+  {
+    color = "#ff8888";
   }
 
-  setStatusLabel(nav_status_label_, msg->state + ": " + msg->message, color);
+  // Keep the buttons in sync when navigation is started/stopped from elsewhere.
+  is_navigating_ = s != "NAV_INACTIVE";
+  is_paused_ = s == "PAUSED";
+  nav_button_->setText(is_navigating_ ? "Stop Navigation" : "Start Navigation");
+  pause_button_->setEnabled(is_navigating_);
+  pause_button_->setText(is_paused_ ? "Resume" : "Pause");
+
+  setStatusLabel(nav_status_label_, s + ": " + msg->message, color);
+}
+
+void ControlPanel::missionStatusCallback(
+  const robot_interfaces::msg::MissionStatus::SharedPtr msg)
+{
+  mission_label_->setText(QString::fromStdString(msg->active_behavior));
+}
+
+void ControlPanel::localizationStatusCallback(const std_msgs::msg::String::SharedPtr msg)
+{
+  const bool localized = msg->data != "none";
+  setStatusLabel(
+    localization_status_label_, localized ? "localized: " + msg->data : "not localized",
+    localized ? "#88ff88" : "#ffcc00");
 }
 
 void ControlPanel::batteryCallback(const sensor_msgs::msg::BatteryState::SharedPtr msg)
 {
+  if (!std::isfinite(msg->percentage)) {
+    battery_label_->setText("Battery: unknown");
+    return;
+  }
   int percent = static_cast<int>(msg->percentage * 100.0f);
   battery_progress_bar_->setValue(percent);
   battery_label_->setText(QString("Battery: %1%").arg(percent));
