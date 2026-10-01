@@ -21,7 +21,6 @@ lidar_sector_node:
     corridor_y_min: -1.0         # minimum Y boundary in base_link frame in meters
     corridor_y_max: 1.0          # maximum Y boundary in base_link frame in meters
 
-
 apriltag:
   ros__parameters:
     # Input image configuration

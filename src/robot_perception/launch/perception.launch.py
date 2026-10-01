@@ -39,8 +39,8 @@ def generate_launch_description():
 
         Node(
             package="apriltag_draw",
-            executable="apriltag_draw",
-            name="apriltag_draw",
+            executable="apriltag_draw_node",
+            name="apriltag_draw_node",
             output="screen",
             remappings=[
                 ("tags", "/perception/apriltag/detections"),
