@@ -124,6 +124,8 @@ obstacle_avoidance_node:
 path_loader_node:
   ros__parameters:
     waypoints_file: ""                # route CSV (x,y,yaw_deg,dwell_sec)
+    route_state_file: ~/.pashupati/last_route   # last route loaded via navigation/load_path,
+                                      # reloaded at start when waypoints_file is empty
     republish_period: 2.0             # s, RViz-only Path republish (0 = off); waypoints are latched
     smoothing_enabled: true           # resample + smooth between stop points (stop points never move)
     resample_spacing: 0.1             # m, uniform point spacing after resampling

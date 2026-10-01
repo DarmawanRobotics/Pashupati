@@ -20,6 +20,7 @@ class PathLoaderNode(Node):
         """Declare params, load and process the route, and publish it."""
         super().__init__('path_loader_node')
         self.declare_parameter('waypoints_file', '')
+        self.declare_parameter('route_state_file', '~/.pashupati/last_route')
         self.declare_parameter('republish_period', 2.0)
         self.declare_parameter('smoothing_enabled', True)
         self.declare_parameter('resample_spacing', 0.1)
@@ -46,7 +47,9 @@ class PathLoaderNode(Node):
 
         self._raw: list = []
         self._route: list = []
-        self.load(p('waypoints_file').value)
+        self._state_file = os.path.expanduser(p('route_state_file').value)
+        if not self.load(p('waypoints_file').value or self.remembered_route()):
+            self.get_logger().info('no route loaded yet, call navigation/load_path')
 
         period = float(p('republish_period').value)
         if period > 0.0:
@@ -102,12 +105,31 @@ class PathLoaderNode(Node):
     def load_path_callback(self, request, response):
         """Service: load another route file without relaunching."""
         response.success = self.load(request.waypoints_file)
+        if response.success:
+            self.remember_route(request.waypoints_file)
         response.message = (
             f'loaded {len(self._route)} points from {request.waypoints_file}'
             if response.success
             else f'no waypoints loaded from "{request.waypoints_file}"'
         )
         return response
+
+    def remembered_route(self) -> str:
+        """Return the last route loaded through the service (survives restarts), or ''."""
+        try:
+            with open(self._state_file) as f:
+                return f.read().strip()
+        except OSError:
+            return ''
+
+    def remember_route(self, filepath: str):
+        """Store the route path so a restarted robot comes back with the same route."""
+        try:
+            os.makedirs(os.path.dirname(self._state_file), exist_ok=True)
+            with open(self._state_file, 'w') as f:
+                f.write(os.path.abspath(filepath))
+        except OSError as error:
+            self.get_logger().warn(f'cannot remember route: {error}')
 
     def to_path(self, waypoints: list) -> Path:
         """Build a nav_msgs/Path in the map frame."""
