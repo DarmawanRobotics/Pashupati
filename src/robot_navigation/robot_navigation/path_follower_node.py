@@ -7,6 +7,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.time import Time
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 
 from geometry_msgs.msg import Twist
@@ -15,7 +16,7 @@ from visualization_msgs.msg import MarkerArray
 
 from rcl_interfaces.msg import SetParametersResult
 
-from tf2_ros import Buffer, TransformListener
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from robot_interfaces.msg import AvoidanceCommand, NavigationStatus, WaypointPath
 
@@ -47,6 +48,10 @@ class SlewLimiter:
         self._value += delta
         return self._value
 
+    def reset(self, value: float = 0.0):
+        """Jump straight to value, bypassing the rate limit (hard stop)."""
+        self._value = value
+
 
 class PathFollowerNode(Node):
     """Drives the robot along a received waypoint path using a selectable controller, blended
@@ -55,7 +60,7 @@ class PathFollowerNode(Node):
     handful of discrete goals, so a plain always-on control loop is a better fit here than
     a goal/feedback/result action."""
 
-    _WARN_STATES = {'NO_PATH', 'TF_UNAVAILABLE', 'EMERGENCY_STOP'}
+    _WARN_STATES = {'NO_PATH', 'TF_UNAVAILABLE', 'EMERGENCY_STOP', 'AVOIDANCE_STALE'}
 
     def __init__(self):
         """Declare params, set up TF, build the initial controller, and wire subscriptions/outputs."""
@@ -69,6 +74,8 @@ class PathFollowerNode(Node):
         self.declare_parameter('arc_visualization_length', 2.0)
         self.declare_parameter('marker_lifetime_sec', 0.5)
         self.declare_parameter('avoidance_enabled', True)
+        self.declare_parameter('avoidance_timeout_sec', 0.5)
+        self.declare_parameter('tf_timeout_sec', 0.5)
         self.declare_parameter('auto_mode_on_service', '')
         self.declare_parameter('auto_mode_off_service', '')
 
@@ -105,6 +112,8 @@ class PathFollowerNode(Node):
         self._arc_length = float(self.get_parameter('arc_visualization_length').value)
         self._marker_lifetime = Duration(seconds=float(self.get_parameter('marker_lifetime_sec').value)).to_msg()
         self._avoidance_enabled = bool(self.get_parameter('avoidance_enabled').value)
+        self._avoidance_timeout = Duration(seconds=float(self.get_parameter('avoidance_timeout_sec').value))
+        self._tf_timeout = Duration(seconds=float(self.get_parameter('tf_timeout_sec').value))
         self._speed_regulator_enabled = bool(self.get_parameter('speed_regulator_enabled').value)
 
         self._stop_point_tolerance = float(self.get_parameter('stop_point_tolerance').value)
@@ -123,6 +132,7 @@ class PathFollowerNode(Node):
         self._avoidance_steering_bias = 0.0
         self._avoidance_velocity_scale = 1.0
         self._avoidance_emergency = False
+        self._avoidance_time = None
         self._have_path = False
         self._nav_active = False
         self._current_path_points: list[tuple[float, float]] = []
@@ -236,6 +246,7 @@ class PathFollowerNode(Node):
         self._avoidance_steering_bias = msg.steering_bias
         self._avoidance_velocity_scale = msg.velocity_scale
         self._avoidance_emergency = msg.emergency
+        self._avoidance_time = self.get_clock().now()
 
     def optional_client(self, name: str):
         """Create a Trigger client, or None when the service name is empty."""
@@ -270,7 +281,7 @@ class PathFollowerNode(Node):
             return response
 
         self._nav_active = False
-        self.publish_stop()
+        self.publish_stop(hard=True)
         ok, message = self.call_trigger(self._auto_off_client)
         if not ok:
             self.get_logger().error(f'failed to switch back to manual mode: {message}')
@@ -282,9 +293,13 @@ class PathFollowerNode(Node):
     def current_pose(self):
         """Look up the robot's current map->base_link pose, or None if TF isn't ready."""
         try:
-            t = self._tf_buffer.lookup_transform('map', 'base_link', rclpy.time.Time())
-        except Exception as error:
+            t = self._tf_buffer.lookup_transform('map', 'base_link', Time())
+        except TransformException as error:
             self.get_logger().warn(f'TF lookup map->base_link failed: {error}', throttle_duration_sec=2.0)
+            return None
+        stamp = Time.from_msg(t.header.stamp)
+        if stamp.nanoseconds > 0 and self.get_clock().now() - stamp > self._tf_timeout:
+            self.get_logger().warn('TF map->base_link is stale (odometry stopped?)', throttle_duration_sec=2.0)
             return None
         p = t.transform.translation
         return Pose2D(p.x, p.y, yaw_from_quaternion(t.transform.rotation))
@@ -381,13 +396,13 @@ class PathFollowerNode(Node):
             return
 
         if not self._have_path:
-            self.publish_stop()
+            self.publish_stop(hard=True)
             self.publish_markers(stamp, 'NO_PATH', 'waiting for a path on navigation/waypoints', 0.0, 0.0)
             return
 
         pose = self.current_pose()
         if pose is None:
-            self.publish_stop()
+            self.publish_stop(hard=True)
             self.publish_markers(stamp, 'TF_UNAVAILABLE', 'waiting for map->base_link TF', 0.0, 0.0)
             return
 
@@ -414,6 +429,13 @@ class PathFollowerNode(Node):
                 self.publish_markers(stamp, 'ALIGNING', f'reached stop point {self._next_stop_index}', pose.x, pose.y)
                 return
 
+        if self._avoidance_enabled and (
+                self._avoidance_time is None
+                or self.get_clock().now() - self._avoidance_time > self._avoidance_timeout):
+            self.publish_stop(hard=True)
+            self.publish_markers(stamp, 'AVOIDANCE_STALE', 'no fresh navigation/avoidance, stopped', pose.x, pose.y)
+            return
+
         controller_output = self._controller.update(pose, dt)
 
         steering_bias = self._avoidance_steering_bias if self._avoidance_enabled else 0.0
@@ -426,16 +448,16 @@ class PathFollowerNode(Node):
         if self._speed_regulator_enabled:
             target_linear *= self._speed_regulator.scale_for(target_angular, dt)
 
-        if emergency:
-            target_linear = 0.0
-
         target_linear = max(-self._max_linear_velocity, min(self._max_linear_velocity, target_linear))
         target_angular = max(-self._max_angular_velocity, min(self._max_angular_velocity, target_angular))
 
-        cmd = Twist()
-        cmd.linear.x = self._linear_limiter.step(target_linear, dt)
-        cmd.angular.z = self._angular_limiter.step(target_angular, dt)
-        self._cmd_vel_pub.publish(cmd)
+        if emergency:
+            self.publish_stop(hard=True)
+        else:
+            cmd = Twist()
+            cmd.linear.x = self._linear_limiter.step(target_linear, dt)
+            cmd.angular.z = self._angular_limiter.step(target_angular, dt)
+            self._cmd_vel_pub.publish(cmd)
 
         status = 'EMERGENCY_STOP' if emergency else 'FOLLOWING'
         message = (
@@ -452,8 +474,13 @@ class PathFollowerNode(Node):
             rollout_xy=debug.get('rollout_xy'),
         )
 
-    def publish_stop(self):
-        """Ramp linear and angular velocity down to zero and publish."""
+    def publish_stop(self, hard: bool = False):
+        """Publish zero velocity; hard skips the slew ramp entirely."""
+        if hard:
+            self._linear_limiter.reset()
+            self._angular_limiter.reset()
+            self._cmd_vel_pub.publish(Twist())
+            return
         cmd = Twist()
         cmd.linear.x = self._linear_limiter.step(0.0, 1.0 / self._control_rate)
         cmd.angular.z = self._angular_limiter.step(0.0, 1.0 / self._control_rate)

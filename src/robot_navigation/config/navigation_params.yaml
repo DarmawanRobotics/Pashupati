@@ -9,6 +9,8 @@ path_follower_node:
     arc_visualization_length: 2.0     # meters, RViz curvature arc length
     marker_lifetime_sec: 0.5          # seconds, RViz marker lifetime
     avoidance_enabled: true           # apply obstacle avoidance to cmd_vel
+    avoidance_timeout_sec: 0.5        # s, stop if navigation/avoidance goes silent
+    tf_timeout_sec: 0.5               # s, stop if map->base_link stops updating
 
     # std_srvs/Trigger called on navigation start/stop ("" = skip),
     # e.g. Genisom L1W: /l1w/sdk_control_right and /l1w/remote_control_right
