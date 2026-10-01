@@ -12,7 +12,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     """Launch FAST-LIO mapping with optional path recording."""
     package_dir = get_package_share_directory('robot_mapping')
-    params_file = os.path.join(package_dir, 'config', 'mapping_params.yaml')
+    params_file = os.path.join(package_dir, 'config', 'mapping_param.yaml')
 
     return LaunchDescription([
         DeclareLaunchArgument(

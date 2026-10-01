@@ -1,4 +1,4 @@
-fast_lio:
+fastlio_mapping_node:   # must match the node name in mapping.launch.py
     ros__parameters:
         feature_extract_enable: false
         point_filter_num: 3
