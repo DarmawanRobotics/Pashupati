@@ -50,8 +50,8 @@ path_follower_node:
 obstacle_avoidance_node:
   ros__parameters:
     algorithm: vfh              # braitenberg | vfh
-    safe_distance: 3.0          # meters, danger starts below this range
-    emergency_distance: 0.4     # meters, hard-stop range
+    safe_distance: 1.5          # m from base_link, obstacles closer than this shape the command
+    emergency_distance: 0.75    # m from base_link (~0.4 m from the robot's nose), hard stop
     emergency_cone_deg: 60.0    # deg, frontal cone checked for hard-stop
 
     braitenberg.steering_gain: 1.5              # obstacle-to-steering strength
