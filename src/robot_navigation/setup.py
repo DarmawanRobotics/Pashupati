@@ -1,5 +1,6 @@
-import os
 from glob import glob
+import os
+
 from setuptools import find_packages, setup
 
 package_name = 'robot_navigation'
@@ -19,7 +20,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Selectable path controllers, obstacle avoidance algorithms, and inspection stop points',
+    description='Patrol route following, obstacle avoidance and inspection stop points',
     license='MIT',
     entry_points={
         'console_scripts': [

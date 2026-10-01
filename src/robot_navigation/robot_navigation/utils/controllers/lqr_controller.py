@@ -1,15 +1,21 @@
 import numpy as np
-
 from robot_navigation.utils.controllers.base_controller import ControllerOutput, PathController
 from robot_navigation.utils.path_progress import PathProgress
 from robot_navigation.utils.pose2d import Pose2D
 
 
 class LqrController(PathController):
-    """Discrete LQR on the path-relative error state [lateral, heading] with curvature feedforward."""
+    """Discrete LQR on the path error [lateral, heading] with curvature feedforward."""
 
-    def __init__(self, goal_tolerance=0.3, q_lateral=1.0, q_heading=0.5, r_angular=0.5,
-                 dt=0.05, max_angular_velocity=1.0):
+    def __init__(
+        self,
+        goal_tolerance=0.3,
+        q_lateral=1.0,
+        q_heading=0.5,
+        r_angular=0.5,
+        dt=0.05,
+        max_angular_velocity=1.0,
+    ):
         self._goal_tolerance = goal_tolerance
         self._Q = np.diag([q_lateral, q_heading])
         self._R = np.array([[r_angular]])

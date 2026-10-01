@@ -1,6 +1,11 @@
 import math
 
-from robot_navigation.utils.path_processing import curvatures, process_route, resample, velocity_profile
+from robot_navigation.utils.path_processing import (
+    curvatures,
+    process_route,
+    resample,
+    velocity_profile,
+)
 from sim_utils import LOOP, noisy_route
 
 
@@ -28,8 +33,9 @@ def test_velocity_profile_brakes_into_stops():
     """Speed is capped at stop points and ramps down before them."""
     route, _ = process_route(noisy_route(LOOP), 0.1, 0.05, 0.4)
     pts = [(w[0], w[1]) for w in route]
-    v = velocity_profile(pts, [50], cruise=0.4, min_speed=0.1, max_lateral_accel=0.3,
-                         decel=0.3, approach_speed=0.15)
+    v = velocity_profile(
+        pts, [50], cruise=0.4, min_speed=0.1, max_lateral_accel=0.3, decel=0.3, approach_speed=0.15
+    )
     assert v[50] <= 0.15 + 1e-9
     assert v[48] < v[45] <= 0.4
     assert v[-1] <= 0.15 + 1e-9

@@ -7,7 +7,9 @@ class PurePursuitController(PathController):
     """Pure pursuit adapter: curvature-based steering at a constant cruise speed."""
 
     def __init__(self, lookahead_distance=1.0, goal_tolerance=0.3):
-        self._pure_pursuit = PurePursuit(lookahead_distance=lookahead_distance, goal_tolerance=goal_tolerance)
+        self._pure_pursuit = PurePursuit(
+            lookahead_distance=lookahead_distance, goal_tolerance=goal_tolerance
+        )
         self._last_curvature = 0.0
 
     def set_path(self, path_xy, start_index=None):

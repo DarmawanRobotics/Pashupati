@@ -1,7 +1,6 @@
 import math
 
 import pytest
-
 from robot_navigation.utils.final_approach import FinalApproach
 from robot_navigation.utils.pose2d import Pose2D
 

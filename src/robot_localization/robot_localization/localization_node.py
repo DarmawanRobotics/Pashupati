@@ -2,15 +2,12 @@
 import json
 import math
 
+from geometry_msgs.msg import PoseWithCovarianceStamped
 import numpy as np
 import rclpy
-from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.time import Time
-from std_srvs.srv import Trigger
-from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
-
 from robot_localization.utils.pose_localization import (
     map_base_from_tag,
     map_odom_from_map_base,
@@ -20,6 +17,8 @@ from robot_localization.utils.pose_localization import (
     pose_values_to_matrix,
     transform_to_matrix,
 )
+from std_srvs.srv import Trigger
+from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
 
 class LocalizationNode(Node):
@@ -65,7 +64,9 @@ class LocalizationNode(Node):
         self._active_source = 'none'
 
         self.create_service(Trigger, 'localization/start', self.localization_callback)
-        self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.pose_estimate_callback, 10)
+        self.create_subscription(
+            PoseWithCovarianceStamped, '/initialpose', self.pose_estimate_callback, 10
+        )
 
         self._bridge_timer = self.create_timer(0.5, self.try_start_bridge)
         self._auto_start = bool(p('auto_localize_on_start').value)
@@ -83,7 +84,9 @@ class LocalizationNode(Node):
         with open(filepath, 'r') as f:
             raw = json.load(f)
         return {
-            frame: pose_values_to_matrix([v['x'], v['y'], v['z'], v['qx'], v['qy'], v['qz'], v['qw']])
+            frame: pose_values_to_matrix(
+                [v['x'], v['y'], v['z'], v['qx'], v['qy'], v['qz'], v['qw']]
+            )
             for frame, v in raw.items()
         }
 
@@ -92,8 +95,10 @@ class LocalizationNode(Node):
         try:
             tf = self._tf_buffer.lookup_transform(self._base, self._imu, Time())
         except TransformException as error:
-            self.get_logger().warn(f'waiting for URDF TF {self._base}->{self._imu}: {error}',
-                                   throttle_duration_sec=5.0)
+            self.get_logger().warn(
+                f'waiting for URDF TF {self._base}->{self._imu}: {error}',
+                throttle_duration_sec=5.0,
+            )
             return
         self._m_base_imu = transform_to_matrix(tf)
         self._bridge_timer.cancel()
@@ -105,11 +110,15 @@ class LocalizationNode(Node):
     def broadcast_static(self):
         """Publish map->odom, odom->camera_init (= base->imu) and body->base_link (= imu->base)."""
         stamp = self.get_clock().now().to_msg()
-        self._static_broadcaster.sendTransform([
-            matrix_to_transform(self._m_map_odom, self._map, self._odom, stamp),
-            matrix_to_transform(self._m_base_imu, self._odom, self._lio_odom, stamp),
-            matrix_to_transform(np.linalg.inv(self._m_base_imu), self._lio_body, self._base, stamp),
-        ])
+        self._static_broadcaster.sendTransform(
+            [
+                matrix_to_transform(self._m_map_odom, self._map, self._odom, stamp),
+                matrix_to_transform(self._m_base_imu, self._odom, self._lio_odom, stamp),
+                matrix_to_transform(
+                    np.linalg.inv(self._m_base_imu), self._lio_body, self._base, stamp
+                ),
+            ]
+        )
 
     def set_map_odom(self, m_map_odom: np.ndarray, source: str):
         """Store and broadcast a new map->odom."""
@@ -122,7 +131,7 @@ class LocalizationNode(Node):
         self.get_logger().info(f'map->odom from {source}: x={t[0]:.3f} y={t[1]:.3f} yaw={yaw:.1f}')
 
     def fresh_tag(self):
-        """Return (tag_frame, cam->tag TF) for the first configured tag seen within tag_max_age_sec."""
+        """Return (tag_frame, cam->tag TF) for the first tag seen within tag_max_age_sec."""
         now = self.get_clock().now()
         for frame in self._tag_poses:
             try:
@@ -134,7 +143,7 @@ class LocalizationNode(Node):
         return None, None
 
     def map_odom_from_visible_tag(self):
-        """Compute map->odom from a fresh tag detection; returns (matrix, tag_frame) or (None, reason)."""
+        """Compute map->odom from a fresh tag: (matrix, tag_frame) or (None, reason)."""
         if self._m_base_imu is None:
             return None, 'frame bridge not ready'
         if not self._tag_poses:
@@ -145,11 +154,14 @@ class LocalizationNode(Node):
         stamp = Time.from_msg(cam_tag.header.stamp)
         try:
             base_cam = self._tf_buffer.lookup_transform(self._base, self._camera, Time())
-            odom_base = self._tf_buffer.lookup_transform(self._odom, self._base, stamp, Duration(seconds=0.2))
+            odom_base = self._tf_buffer.lookup_transform(
+                self._odom, self._base, stamp, Duration(seconds=0.2)
+            )
         except TransformException as error:
             return None, f'TF lookup failed: {error}'
         m_map_base = map_base_from_tag(
-            self._tag_poses[frame], transform_to_matrix(base_cam), transform_to_matrix(cam_tag))
+            self._tag_poses[frame], transform_to_matrix(base_cam), transform_to_matrix(cam_tag)
+        )
         return map_odom_from_map_base(m_map_base, transform_to_matrix(odom_base)), frame
 
     def localization_callback(self, request, response):
@@ -184,12 +196,13 @@ class LocalizationNode(Node):
         dist, dyaw = planar_delta(m, self._m_map_odom)
         if dist > self._max_corr_m or dyaw > self._max_corr_rad:
             self.get_logger().warn(
-                f'rejected correction from "{info}": {dist:.2f} m / {math.degrees(dyaw):.1f} deg')
+                f'rejected correction from "{info}": {dist:.2f} m / {math.degrees(dyaw):.1f} deg'
+            )
             return
         self.set_map_odom(m, f'apriltag "{info}" (auto correct)')
 
     def pose_estimate_callback(self, msg: PoseWithCovarianceStamped):
-        """RViz 2D Pose Estimate: set map->odom so base_link lands on the clicked pose."""
+        """Set map->odom so base_link lands on an RViz 2D Pose Estimate."""
         if self._m_base_imu is None:
             self.get_logger().error('2D Pose Estimate ignored, frame bridge not ready')
             return
@@ -198,7 +211,9 @@ class LocalizationNode(Node):
         except TransformException as error:
             self.get_logger().error(f'2D Pose Estimate ignored, TF not ready: {error}')
             return
-        m = map_odom_from_map_base(pose_msg_to_matrix(msg.pose.pose), transform_to_matrix(odom_base))
+        m = map_odom_from_map_base(
+            pose_msg_to_matrix(msg.pose.pose), transform_to_matrix(odom_base)
+        )
         self.set_map_odom(m, 'RViz 2D Pose Estimate')
 
 

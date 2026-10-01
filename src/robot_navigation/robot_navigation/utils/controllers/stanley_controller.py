@@ -6,10 +6,16 @@ from robot_navigation.utils.pose2d import Pose2D
 
 
 class StanleyController(PathController):
-    """Stanley steering law adapted to a unicycle: heading + atan cross-track term, curvature feedforward."""
+    """Stanley steering law adapted to a unicycle, with curvature feedforward."""
 
-    def __init__(self, goal_tolerance=0.3, k_cross_track=1.0, k_soft=0.2, k_heading=1.5,
-                 max_angular_velocity=1.0):
+    def __init__(
+        self,
+        goal_tolerance=0.3,
+        k_cross_track=1.0,
+        k_soft=0.2,
+        k_heading=1.5,
+        max_angular_velocity=1.0,
+    ):
         self._goal_tolerance = goal_tolerance
         self._k_cross_track = k_cross_track
         self._k_soft = k_soft
@@ -35,8 +41,10 @@ class StanleyController(PathController):
             return ControllerOutput(0.0, 0.0)
         self._progress.update(pose)
         ref = self._progress.reference(pose)
-        steer = -(ref.heading_error
-                  + math.atan2(self._k_cross_track * ref.lateral_error, target_speed + self._k_soft))
+        steer = -(
+            ref.heading_error
+            + math.atan2(self._k_cross_track * ref.lateral_error, target_speed + self._k_soft)
+        )
         angular = target_speed * ref.curvature + self._k_heading * steer
         angular = max(-self._max_angular_velocity, min(self._max_angular_velocity, angular))
         return ControllerOutput(linear=target_speed, angular=angular)

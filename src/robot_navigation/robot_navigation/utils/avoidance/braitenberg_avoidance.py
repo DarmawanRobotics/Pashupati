@@ -51,7 +51,9 @@ class BraitenbergAvoidance(AvoidanceAlgorithm):
         self._smoothing = smoothing
         self._filtered = AvoidanceResult()
 
-    def update(self, ranges: list[float], angle_min: float, angle_increment: float, range_max: float) -> AvoidanceResult:
+    def update(
+        self, ranges: list[float], angle_min: float, angle_increment: float, range_max: float
+    ) -> AvoidanceResult:
         """Compute a new avoidance result from one sector scan and blend it with the last one."""
         if len(ranges) == 0:
             return self._filtered
@@ -67,7 +69,10 @@ class BraitenbergAvoidance(AvoidanceAlgorithm):
             theta = angle_min + (i + 0.5) * angle_increment
             danger = max(0.0, 1.0 - min(r, self._safe_distance) / self._safe_distance)
 
-            if r < self._emergency_distance and abs(angle_diff(theta, 0.0)) < self._emergency_half_cone:
+            if (
+                r < self._emergency_distance
+                and abs(angle_diff(theta, 0.0)) < self._emergency_half_cone
+            ):
                 emergency = True
 
             w_l = tent_weight(theta, self._steering_zone_center, self._steering_zone_half)
@@ -76,11 +81,16 @@ class BraitenbergAvoidance(AvoidanceAlgorithm):
             w_vr = tent_weight(theta, -self._velocity_zone_center, self._velocity_zone_half)
             w_f = tent_weight(theta, 0.0, self._following_half_width)
 
-            num_l += w_l * danger; den_l += w_l
-            num_r += w_r * danger; den_r += w_r
-            num_vl += w_vl * danger; den_vl += w_vl
-            num_vr += w_vr * danger; den_vr += w_vr
-            num_f += w_f * danger; den_f += w_f
+            num_l += w_l * danger
+            den_l += w_l
+            num_r += w_r * danger
+            den_r += w_r
+            num_vl += w_vl * danger
+            den_vl += w_vl
+            num_vr += w_vr * danger
+            den_vr += w_vr
+            num_f += w_f * danger
+            den_f += w_f
 
         danger_left = num_l / den_l if den_l > 1e-6 else 0.0
         danger_right = num_r / den_r if den_r > 1e-6 else 0.0
@@ -90,7 +100,9 @@ class BraitenbergAvoidance(AvoidanceAlgorithm):
 
         steering_bias = self._steering_gain * (danger_right - danger_left)
         lateral_danger = max(danger_vel_left, danger_vel_right)
-        velocity_scale = max(0.0, (1.0 - self._velocity_gain * lateral_danger) * (1.0 - danger_following))
+        velocity_scale = max(
+            0.0, (1.0 - self._velocity_gain * lateral_danger) * (1.0 - danger_following)
+        )
 
         raw = AvoidanceResult(steering_bias, velocity_scale, emergency)
         a = self._smoothing

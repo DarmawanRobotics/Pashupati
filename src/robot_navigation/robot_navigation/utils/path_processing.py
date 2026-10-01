@@ -37,8 +37,13 @@ def resample(points: list[tuple[float, float]], spacing: float) -> list[tuple[fl
     return out
 
 
-def smooth(points: list[tuple[float, float]], weight_data: float, weight_smooth: float,
-           tolerance: float = 1e-5, max_iterations: int = 2000) -> list[tuple[float, float]]:
+def smooth(
+    points: list[tuple[float, float]],
+    weight_data: float,
+    weight_smooth: float,
+    tolerance: float = 1e-5,
+    max_iterations: int = 2000,
+) -> list[tuple[float, float]]:
     """Gradient-descent smoothing with both endpoints fixed."""
     if len(points) < 3:
         return list(points)
@@ -84,15 +89,18 @@ def curvatures(points: list[tuple[float, float]], span: int = 3) -> list[float]:
     return out
 
 
-def process_route(waypoints: list[Waypoint], spacing: float, weight_data: float,
-                  weight_smooth: float) -> tuple[list[Waypoint], float]:
+def process_route(
+    waypoints: list[Waypoint], spacing: float, weight_data: float, weight_smooth: float
+) -> tuple[list[Waypoint], float]:
     """Resample and smooth a recorded route between anchors (ends and stop points).
 
     Returns the processed route and the maximum deviation from the recording in metres.
     """
     if len(waypoints) < 3:
         return list(waypoints), 0.0
-    anchors = [0] + [i for i, w in enumerate(waypoints) if w[3] > 0.0 and 0 < i < len(waypoints) - 1]
+    anchors = [0] + [
+        i for i, w in enumerate(waypoints) if w[3] > 0.0 and 0 < i < len(waypoints) - 1
+    ]
     anchors.append(len(waypoints) - 1)
 
     route: list[Waypoint] = []
@@ -118,7 +126,11 @@ def point_segment_distance(p, a, b) -> float:
     """Distance from point p to segment ab."""
     dx, dy = b[0] - a[0], b[1] - a[1]
     length_sq = dx * dx + dy * dy
-    t = 0.0 if length_sq < 1e-12 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length_sq))
+    t = (
+        0.0
+        if length_sq < 1e-12
+        else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length_sq))
+    )
     return math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
 
 
@@ -130,15 +142,24 @@ def max_deviation(path: list[tuple[float, float]], reference: list[tuple[float, 
     return max(min(point_segment_distance(p, a, b) for a, b in segments) for p in path)
 
 
-def velocity_profile(points: list[tuple[float, float]], stop_indices: list[int], cruise: float,
-                     min_speed: float, max_lateral_accel: float, decel: float,
-                     approach_speed: float) -> list[float]:
-    """Speed limit per point: curvature limit, then a backward pass to brake into stops and the end."""
+def velocity_profile(
+    points: list[tuple[float, float]],
+    stop_indices: list[int],
+    cruise: float,
+    min_speed: float,
+    max_lateral_accel: float,
+    decel: float,
+    approach_speed: float,
+) -> list[float]:
+    """Return the speed limit per point: curvature cap, then braking into stops and the end."""
     n = len(points)
     if n == 0:
         return []
     kappa = curvatures(points)
-    v = [max(min_speed, min(cruise, math.sqrt(max_lateral_accel / k) if k > 1e-6 else cruise)) for k in kappa]
+    v = [
+        max(min_speed, min(cruise, math.sqrt(max_lateral_accel / k) if k > 1e-6 else cruise))
+        for k in kappa
+    ]
     for i in stop_indices:
         v[i] = min(v[i], approach_speed)
     v[-1] = min(v[-1], approach_speed)

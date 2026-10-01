@@ -1,6 +1,5 @@
-import math
-
 from dataclasses import dataclass
+import math
 
 from robot_navigation.utils.geometry import wrap_angle
 from robot_navigation.utils.pose2d import Pose2D
@@ -64,7 +63,9 @@ class PathProgress:
             self._initialized = True
             return self._index
         end = min(len(self._path), self._index + self._search_window)
-        self._index = min(range(self._index, end), key=lambda i: self.score(i, pose, tracking=True))
+        self._index = min(
+            range(self._index, end), key=lambda i: self.score(i, pose, tracking=True)
+        )
         while self._index < len(self._path) - 2 and self.segment_fraction(self._index, pose) > 1.0:
             self._index += 1
         return self._index
@@ -81,7 +82,11 @@ class PathProgress:
         n = len(self._path)
         out = [0.0] * n
         for i in range(span, n - span):
-            (ax, ay), (bx, by), (cx, cy) = self._path[i - span], self._path[i], self._path[i + span]
+            (ax, ay), (bx, by), (cx, cy) = (
+                self._path[i - span],
+                self._path[i],
+                self._path[i + span],
+            )
             h1 = math.atan2(by - ay, bx - ax)
             h2 = math.atan2(cy - by, cx - bx)
             length = math.hypot(bx - ax, by - ay) + math.hypot(cx - bx, cy - by)
@@ -90,7 +95,7 @@ class PathProgress:
         return out
 
     def reference(self, pose: Pose2D) -> PathReference:
-        """Lateral error (+ left of path), heading error, curvature and path yaw at the progress index."""
+        """Return lateral error (+left), heading error, curvature and path yaw at the index."""
         i = min(self._index, len(self._path) - 2)
         (ax, ay), (bx, by) = self._path[i], self._path[i + 1]
         path_yaw = math.atan2(by - ay, bx - ax)
@@ -115,7 +120,7 @@ class PathProgress:
         return self._path[self._index:self._index + count]
 
     def is_finished(self, pose: Pose2D, tolerance: float, end_margin: int = 3) -> bool:
-        """True when progress reached the last points and the robot is within tolerance of the goal."""
+        """Return True once progress reached the end and the robot is within tolerance."""
         if not self._path:
             return True
         if self._index < len(self._path) - 1 - end_margin:

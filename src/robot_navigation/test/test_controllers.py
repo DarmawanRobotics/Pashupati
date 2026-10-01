@@ -1,9 +1,8 @@
 import numpy as np
 import pytest
-
 from robot_navigation.utils.controllers.registry import CONTROLLERS, create_controller
 from robot_navigation.utils.path_processing import process_route
-from sim_utils import LOOP, OUT_AND_BACK, drive, noisy_route
+from sim_utils import drive, LOOP, noisy_route, OUT_AND_BACK
 
 PARAMS = {
     'pure_pursuit': {'lookahead_distance': 1.0},
@@ -38,4 +37,5 @@ def test_closed_loop_not_finished_at_start():
     path = smoothed(LOOP)
     controller.set_path(path)
     from robot_navigation.utils.pose2d import Pose2D
+
     assert not controller.is_finished(Pose2D(0.0, 0.1, 0.0))

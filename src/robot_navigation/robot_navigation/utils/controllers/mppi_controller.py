@@ -1,13 +1,15 @@
 import numpy as np
-
 from robot_navigation.utils.controllers.base_controller import ControllerOutput, PathController
 from robot_navigation.utils.path_progress import PathProgress
 from robot_navigation.utils.pose2d import Pose2D
 
 
 class MppiController(PathController):
-    """Simplified MPPI: samples angular-velocity sequences at cruise speed, rolls out a unicycle
-    model and returns the cost-weighted first control (local path window + lookahead terminal cost)."""
+    """Simplified Model Predictive Path Integral controller.
+
+    Samples angular-velocity sequences at the requested speed, rolls out a unicycle model and
+    returns the cost-weighted first control (local path window + lookahead terminal cost).
+    """
 
     def __init__(
         self,
@@ -48,7 +50,7 @@ class MppiController(PathController):
         return self._progress.index
 
     def path_cost(self, xs: np.ndarray, ys: np.ndarray, target) -> np.ndarray:
-        """Mean squared distance to the local path window plus terminal distance to the lookahead target."""
+        """Return the squared path-window distance plus the terminal lookahead distance."""
         dx = xs[:, :, None] - self._path[None, None, :, 0]
         dy = ys[:, :, None] - self._path[None, None, :, 1]
         tracking = (dx * dx + dy * dy).min(axis=2).mean(axis=1)
@@ -65,8 +67,12 @@ class MppiController(PathController):
         horizon_length = speed * self._rollout_dt * self._horizon_steps
         target = self._progress.lookahead_point(pose, horizon_length)
 
-        angular_samples = np.random.normal(self._last_angular, self._angular_std, size=(self._num_samples, self._horizon_steps))
-        angular_samples = np.clip(angular_samples, -self._max_angular_velocity, self._max_angular_velocity)
+        angular_samples = np.random.normal(
+            self._last_angular, self._angular_std, size=(self._num_samples, self._horizon_steps)
+        )
+        angular_samples = np.clip(
+            angular_samples, -self._max_angular_velocity, self._max_angular_velocity
+        )
 
         x = np.full(self._num_samples, pose.x)
         y = np.full(self._num_samples, pose.y)
@@ -81,7 +87,7 @@ class MppiController(PathController):
             xs[:, step] = x
             ys[:, step] = y
 
-        costs = self.path_cost(xs, ys, target) + 0.01 * np.mean(angular_samples ** 2, axis=1)
+        costs = self.path_cost(xs, ys, target) + 0.01 * np.mean(angular_samples**2, axis=1)
         weights = np.exp(-(costs - costs.min()) / self._temperature)
         weights /= np.sum(weights) + 1e-9
 

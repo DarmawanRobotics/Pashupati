@@ -1,7 +1,6 @@
 import math
 
 import pytest
-
 from robot_navigation.utils.avoidance.registry import AVOIDANCE_ALGORITHMS, create_avoidance
 
 N, ANGLE_MIN = 32, -math.pi / 2
@@ -15,15 +14,24 @@ def scan(fn):
 
 def make(name):
     """Avoidance instance with smoothing disabled."""
-    return create_avoidance(name, {'safe_distance': 1.5, 'emergency_distance': 0.75,
-                                   'emergency_cone_deg': 60.0, 'smoothing': 0.0})
+    return create_avoidance(
+        name,
+        {
+            'safe_distance': 1.5,
+            'emergency_distance': 0.75,
+            'emergency_cone_deg': 60.0,
+            'smoothing': 0.0,
+        },
+    )
 
 
 @pytest.mark.parametrize('name', sorted(AVOIDANCE_ALGORITHMS))
 def test_clear_path_is_untouched(name):
     """No obstacle: no steering, no slowdown, no emergency."""
     r = make(name).update(scan(lambda a: 8.0), ANGLE_MIN, INC, 8.0)
-    assert abs(r.steering_bias) < 1e-6 and r.velocity_scale == pytest.approx(1.0) and not r.emergency
+    assert (
+        abs(r.steering_bias) < 1e-6 and r.velocity_scale == pytest.approx(1.0) and not r.emergency
+    )
 
 
 @pytest.mark.parametrize('name', sorted(AVOIDANCE_ALGORITHMS))

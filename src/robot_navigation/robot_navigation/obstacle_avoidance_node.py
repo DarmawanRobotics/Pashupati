@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-import rclpy
 from rcl_interfaces.msg import SetParametersResult
+import rclpy
 from rclpy.node import Node
-
 from robot_interfaces.msg import AvoidanceCommand, SectorScan
-
 from robot_navigation.utils.avoidance.registry import create_avoidance
 
 ALGORITHM_PARAMS = {
@@ -42,7 +40,7 @@ ALGORITHM_PARAMS = {
 
 
 class ObstacleAvoidanceNode(Node):
-    """Runs a selectable reactive avoidance algorithm on SectorScan and publishes AvoidanceCommand."""
+    """Runs a selectable reactive avoidance algorithm on SectorScan."""
 
     def __init__(self):
         """Declare params, build the initial algorithm, and wire the scan subscription/output."""
@@ -56,16 +54,20 @@ class ObstacleAvoidanceNode(Node):
                 self.declare_parameter(f'{algorithm}.{name}', value)
 
         self._algorithm_name = self.get_parameter('algorithm').value
-        self._avoidance = create_avoidance(self._algorithm_name, self.build_params(self._algorithm_name))
+        self._avoidance = create_avoidance(
+            self._algorithm_name, self.build_params(self._algorithm_name)
+        )
 
         self.create_subscription(SectorScan, 'perception/sector_scan', self.scan_callback, 10)
         self._avoidance_pub = self.create_publisher(AvoidanceCommand, 'navigation/avoidance', 10)
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
     def build_params(self, name: str) -> dict:
-        """Constructor kwargs for an algorithm: shared distances plus its own namespaced params."""
+        """Build constructor kwargs: shared distances plus the algorithm's namespaced params."""
         if name not in ALGORITHM_PARAMS:
-            raise ValueError(f'unknown avoidance algorithm {name!r}, options are {list(ALGORITHM_PARAMS)}')
+            raise ValueError(
+                f'unknown avoidance algorithm {name!r}, options are {list(ALGORITHM_PARAMS)}'
+            )
         params = {
             key: float(self.get_parameter(key).value)
             for key in ('safe_distance', 'emergency_distance', 'emergency_cone_deg')
@@ -88,7 +90,9 @@ class ObstacleAvoidanceNode(Node):
 
     def scan_callback(self, msg: SectorScan):
         """Run one avoidance update from the sector scan and publish the result."""
-        result = self._avoidance.update(list(msg.ranges), msg.angle_min, msg.angle_increment, msg.range_max)
+        result = self._avoidance.update(
+            list(msg.ranges), msg.angle_min, msg.angle_increment, msg.range_max
+        )
         out = AvoidanceCommand()
         out.header = msg.header
         out.steering_bias = float(result.steering_bias)

@@ -1,8 +1,8 @@
 import math
 
+from geometry_msgs.msg import TransformStamped
 import numpy as np
 import tf_transformations as tft
-from geometry_msgs.msg import TransformStamped
 
 
 def transform_to_matrix(t: TransformStamped) -> np.ndarray:
@@ -14,7 +14,9 @@ def transform_to_matrix(t: TransformStamped) -> np.ndarray:
     return m
 
 
-def matrix_to_transform(m: np.ndarray, parent_frame: str, child_frame: str, stamp) -> TransformStamped:
+def matrix_to_transform(
+    m: np.ndarray, parent_frame: str, child_frame: str, stamp
+) -> TransformStamped:
     """Convert a 4x4 homogeneous matrix into a TransformStamped."""
     t = TransformStamped()
     t.header.stamp = stamp
@@ -53,7 +55,9 @@ def map_odom_from_map_base(m_map_base: np.ndarray, m_odom_base: np.ndarray) -> n
     return flatten_to_yaw(m_map_base) @ tft.inverse_matrix(flatten_to_yaw(m_odom_base))
 
 
-def map_base_from_tag(m_map_tag: np.ndarray, m_base_cam: np.ndarray, m_cam_tag: np.ndarray) -> np.ndarray:
+def map_base_from_tag(
+    m_map_tag: np.ndarray, m_base_cam: np.ndarray, m_cam_tag: np.ndarray
+) -> np.ndarray:
     """map->base_link implied by seeing a tag whose map pose is known."""
     return m_map_tag @ tft.inverse_matrix(m_base_cam @ m_cam_tag)
 
@@ -65,7 +69,7 @@ def pose_msg_to_matrix(pose) -> np.ndarray:
 
 
 def planar_delta(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
-    """Translation distance (m) and absolute yaw difference (rad) between two poses."""
+    """Return the translation (m) and absolute yaw (rad) difference between two poses."""
     dist = math.hypot(a[0, 3] - b[0, 3], a[1, 3] - b[1, 3])
     dyaw = math.atan2(a[1, 0], a[0, 0]) - math.atan2(b[1, 0], b[0, 0])
     dyaw = abs(math.atan2(math.sin(dyaw), math.cos(dyaw)))

@@ -1,5 +1,5 @@
-import math
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -22,7 +22,9 @@ def sector_angle(index: int, angle_min: float, angle_increment: float) -> float:
     return angle_min + (index + 0.5) * angle_increment
 
 
-def smooth_result(previous: AvoidanceResult, raw: AvoidanceResult, alpha: float) -> AvoidanceResult:
+def smooth_result(
+    previous: AvoidanceResult, raw: AvoidanceResult, alpha: float
+) -> AvoidanceResult:
     """Exponential smoothing of the continuous outputs; the emergency flag is never delayed."""
     return AvoidanceResult(
         steering_bias=alpha * previous.steering_bias + (1 - alpha) * raw.steering_bias,
@@ -35,7 +37,8 @@ def smooth_result(previous: AvoidanceResult, raw: AvoidanceResult, alpha: float)
 class AvoidanceAlgorithm:
     """Common interface every reactive obstacle-avoidance algorithm implements."""
 
-    def update(self, ranges: list[float], angle_min: float, angle_increment: float,
-               range_max: float) -> AvoidanceResult:
+    def update(
+        self, ranges: list[float], angle_min: float, angle_increment: float, range_max: float
+    ) -> AvoidanceResult:
         """Compute a new avoidance result from one sector scan."""
         raise NotImplementedError

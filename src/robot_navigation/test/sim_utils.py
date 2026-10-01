@@ -12,7 +12,14 @@ def noisy_route(corners, spacing=0.2, noise=0.03, seed=0):
         n = int(math.hypot(bx - ax, by - ay) / spacing)
         for i in range(n):
             t = i / n
-            route.append((ax + t * (bx - ax) + rng.gauss(0, noise), ay + t * (by - ay) + rng.gauss(0, noise), 0.0, 0.0))
+            route.append(
+                (
+                    ax + t * (bx - ax) + rng.gauss(0, noise),
+                    ay + t * (by - ay) + rng.gauss(0, noise),
+                    0.0,
+                    0.0,
+                )
+            )
     route.append((corners[-1][0], corners[-1][1], 0.0, 0.0))
     return route
 

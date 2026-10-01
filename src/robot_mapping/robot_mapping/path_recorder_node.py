@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 import csv
+from datetime import datetime
 import math
 import os
-from datetime import datetime
 
 import rclpy
-import tf_transformations
-
 from rclpy.node import Node
+from robot_interfaces.srv import MarkStopPoint
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformListener
-from robot_interfaces.srv import MarkStopPoint
+import tf_transformations
 
 
 class PathRecorderNode(Node):
@@ -39,7 +38,9 @@ class PathRecorderNode(Node):
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self.create_service(SetBool, 'mapping/path_record', self.recording_callback)
-        self.create_service(MarkStopPoint, 'mapping/mark_stop_point', self.mark_stop_point_callback)
+        self.create_service(
+            MarkStopPoint, 'mapping/mark_stop_point', self.mark_stop_point_callback
+        )
         self.create_timer(1.0 / record_rate, self.record_tick)
 
     def recording_callback(self, request, response):
@@ -75,16 +76,23 @@ class PathRecorderNode(Node):
         self.write_csv()
 
         response.success = True
-        response.message = f'recording stopped, {len(self._waypoints)} waypoints saved to {self._recording_file}'
+        response.message = (
+            f'recording stopped, {len(self._waypoints)} waypoints saved to {self._recording_file}'
+        )
         self.get_logger().info(response.message)
         return response
 
     def lookup_current_pose(self):
         """Look up the current map->base_link pose."""
         try:
-            transform = self._tf_buffer.lookup_transform(self._map_frame, self._base_frame, rclpy.time.Time())
+            transform = self._tf_buffer.lookup_transform(
+                self._map_frame, self._base_frame, rclpy.time.Time()
+            )
         except Exception as error:
-            self.get_logger().warning(f'TF lookup {self._map_frame}->{self._base_frame} failed: {error}', throttle_duration_sec=2.0)
+            self.get_logger().warning(
+                f'TF lookup {self._map_frame}->{self._base_frame} failed: {error}',
+                throttle_duration_sec=2.0,
+            )
             return None
 
         x = transform.transform.translation.x
@@ -130,7 +138,9 @@ class PathRecorderNode(Node):
         self.write_csv()
 
         response.success = True
-        response.message = f'stop point marked at ({x:.2f}, {y:.2f}), dwell {request.dwell_sec:.1f}s'
+        response.message = (
+            f'stop point marked at ({x:.2f}, {y:.2f}), dwell {request.dwell_sec:.1f}s'
+        )
         self.get_logger().info(response.message)
         return response
 

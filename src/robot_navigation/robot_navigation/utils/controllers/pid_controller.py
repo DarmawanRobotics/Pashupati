@@ -7,7 +7,7 @@ from robot_navigation.utils.pose2d import Pose2D
 
 
 class PidController(PathController):
-    """Heading-error PID path follower: steers toward a lookahead point at a constant cruise speed."""
+    """Heading-error PID path follower that steers toward a lookahead point."""
 
     def __init__(self, lookahead_distance=1.0, goal_tolerance=0.3, kp=1.5, ki=0.0, kd=0.2):
         self._lookahead_distance = lookahead_distance
@@ -54,4 +54,7 @@ class PidController(PathController):
 
     def debug_info(self) -> dict:
         """Expose the lookahead point for visualization."""
-        return {'lookahead_xy': self._last_lookahead, 'lookahead_distance': self._lookahead_distance}
+        return {
+            'lookahead_xy': self._last_lookahead,
+            'lookahead_distance': self._lookahead_distance,
+        }

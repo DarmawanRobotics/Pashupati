@@ -3,20 +3,18 @@ import csv
 import math
 import os
 
-import rclpy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
+import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
-
 from robot_interfaces.msg import Waypoint, WaypointPath
 from robot_interfaces.srv import LoadPath
-
 from robot_navigation.utils.path_processing import process_route
 
 
 class PathLoaderNode(Node):
-    """Loads a recorded route CSV, smooths it and publishes it latched for the follower and RViz."""
+    """Loads a recorded route CSV, smooths it and publishes it latched."""
 
     def __init__(self):
         """Declare params, load and process the route, and publish it."""
@@ -80,17 +78,23 @@ class PathLoaderNode(Node):
         raw = self.read_csv(filepath)
         if not raw:
             return False
-        route, deviation = (process_route(raw, self._spacing, self._weight_data, self._weight_smooth)
-                            if self._smoothing else (raw, 0.0))
+        route, deviation = (
+            process_route(raw, self._spacing, self._weight_data, self._weight_smooth)
+            if self._smoothing
+            else (raw, 0.0)
+        )
         if deviation > self._max_deviation:
             self.get_logger().warn(
-                f'smoothing moved the route up to {deviation:.2f} m (> {self._max_deviation:.2f} m), '
-                'lower smooth_weight_smooth near walls')
+                f'smoothing moved the route up to {deviation:.2f} m '
+                f'(> {self._max_deviation:.2f} m), '
+                'lower smooth_weight_smooth near walls'
+            )
         self._raw, self._route = raw, route
         stops = sum(1 for w in route if w[3] > 0.0)
         self.get_logger().info(
             f'loaded {filepath}: {len(raw)} -> {len(route)} points, {stops} stop points, '
-            f'max deviation {deviation:.3f} m')
+            f'max deviation {deviation:.3f} m'
+        )
         self.publish_viz()
         self.publish_waypoints()
         return True
@@ -98,8 +102,11 @@ class PathLoaderNode(Node):
     def load_path_callback(self, request, response):
         """Service: load another route file without relaunching."""
         response.success = self.load(request.waypoints_file)
-        response.message = (f'loaded {len(self._route)} points from {request.waypoints_file}'
-                            if response.success else f'no waypoints loaded from "{request.waypoints_file}"')
+        response.message = (
+            f'loaded {len(self._route)} points from {request.waypoints_file}'
+            if response.success
+            else f'no waypoints loaded from "{request.waypoints_file}"'
+        )
         return response
 
     def to_path(self, waypoints: list) -> Path:
@@ -128,7 +135,9 @@ class PathLoaderNode(Node):
         msg.header.frame_id = 'map'
         msg.header.stamp = self.get_clock().now().to_msg()
         for x, y, yaw_deg, dwell_sec in self._route:
-            msg.waypoints.append(Waypoint(x=float(x), y=float(y), yaw=float(yaw_deg), dwell_sec=float(dwell_sec)))
+            msg.waypoints.append(
+                Waypoint(x=float(x), y=float(y), yaw=float(yaw_deg), dwell_sec=float(dwell_sec))
+            )
         self._waypoints_pub.publish(msg)
 
 

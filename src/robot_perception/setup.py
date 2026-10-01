@@ -1,5 +1,6 @@
-import os
 from glob import glob
+import os
+
 from setuptools import find_packages, setup
 
 package_name = 'robot_perception'
@@ -18,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Lidar sector perception (32-sector SectorScan) from Livox CustomMsg, with RViz markers, for robot',
+    description='Lidar sector perception (SectorScan) from Livox CustomMsg with RViz markers',
     license='MIT',
     tests_require=['pytest'],
     entry_points={

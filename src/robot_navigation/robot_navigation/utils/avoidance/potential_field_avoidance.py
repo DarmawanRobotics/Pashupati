@@ -1,7 +1,12 @@
 import math
 
 from robot_navigation.utils.avoidance.base_avoidance import (
-    AvoidanceAlgorithm, AvoidanceResult, clean_ranges, sector_angle, smooth_result)
+    AvoidanceAlgorithm,
+    AvoidanceResult,
+    clean_ranges,
+    sector_angle,
+    smooth_result,
+)
 
 
 class PotentialFieldAvoidance(AvoidanceAlgorithm):
@@ -10,10 +15,18 @@ class PotentialFieldAvoidance(AvoidanceAlgorithm):
     The repulsion yields a steering bias, a sideways push for holonomic robots and a speed scale.
     """
 
-    def __init__(self, safe_distance: float = 1.5, emergency_distance: float = 0.75,
-                 emergency_cone_deg: float = 60.0, repulsion_gain: float = 0.5,
-                 steering_gain: float = 0.8, lateral_gain: float = 0.3, max_lateral: float = 0.2,
-                 velocity_gain: float = 1.0, smoothing: float = 0.8):
+    def __init__(
+        self,
+        safe_distance: float = 1.5,
+        emergency_distance: float = 0.75,
+        emergency_cone_deg: float = 60.0,
+        repulsion_gain: float = 0.5,
+        steering_gain: float = 0.8,
+        lateral_gain: float = 0.3,
+        max_lateral: float = 0.2,
+        velocity_gain: float = 1.0,
+        smoothing: float = 0.8,
+    ):
         self._safe_distance = safe_distance
         self._emergency_distance = emergency_distance
         self._emergency_half_cone = math.radians(emergency_cone_deg) / 2.0
