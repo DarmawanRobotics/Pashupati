@@ -20,6 +20,8 @@ def generate_launch_description():
         DeclareLaunchArgument('waypoints_file', default_value=default_waypoints),
         DeclareLaunchArgument('cmd_vel_topic', default_value='cmd_vel',
                               description="Robot velocity topic, e.g. '/l1w/cmd_vel'"),
+        DeclareLaunchArgument('battery_topic', default_value='battery',
+                              description="sensor_msgs/BatteryState topic, e.g. '/l1w/battery'"),
         Node(
             package='robot_navigation', 
             executable='path_loader_node',
@@ -42,6 +44,9 @@ def generate_launch_description():
             name='path_follower_node',
             output='screen',
             parameters=[params_file],
-            remappings=[('cmd_vel', LaunchConfiguration('cmd_vel_topic'))],
+            remappings=[
+                ('cmd_vel', LaunchConfiguration('cmd_vel_topic')),
+                ('battery', LaunchConfiguration('battery_topic')),
+            ],
         ),
     ])

@@ -4,6 +4,7 @@ import threading
 
 import rclpy
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import BatteryState
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.duration import Duration
@@ -15,7 +16,7 @@ from std_srvs.srv import SetBool, Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import MarkerArray
 
-from robot_interfaces.msg import AvoidanceCommand, NavigationStatus, StopPointEvent, WaypointPath
+from robot_interfaces.msg import AvoidanceCommand, MissionStatus, NavigationStatus, StopPointEvent, WaypointPath
 
 from robot_navigation.utils import visualization
 from robot_navigation.utils.command_filter import LowPassFilter, SlewLimiter
@@ -23,8 +24,8 @@ from robot_navigation.utils.controllers.registry import create_controller
 from robot_navigation.utils.final_approach import FinalApproach
 from robot_navigation.utils.geometry import clamp, yaw_from_quaternion
 from robot_navigation.utils.path_processing import velocity_profile
-from robot_navigation.utils.safety import SafetySupervisor
 from robot_navigation.utils.pose2d import Pose2D
+from robot_navigation.utils.safety import SafetySupervisor
 from robot_navigation.utils.speed_regulator import SpeedRegulator
 
 
@@ -56,6 +57,7 @@ class PathFollowerNode(Node):
         self._tf_timeout = Duration(seconds=float(p('tf_timeout_sec').value))
         self._loop_route = bool(p('loop_route').value)
         self._loop_close_distance = float(p('loop_close_distance').value)
+        self._low_battery = float(p('low_battery_percentage').value)
 
         self._approach_radius = float(p('approach_radius').value)
         self._approach_timeout = float(p('approach_timeout_sec').value)
@@ -96,6 +98,8 @@ class PathFollowerNode(Node):
         self._avoidance = AvoidanceCommand(velocity_scale=1.0)
         self._avoidance_time = None
         self._nav_active = False
+        self._paused = False
+        self._battery_low = False
         self._waypoints: list[tuple[float, float, float, float]] = []
         self._speed_profile: list[float] = []
         self._next_stop_index = None
@@ -141,6 +145,11 @@ class PathFollowerNode(Node):
         ]
         self.create_service(SetBool, 'navigation/start_nav', self.start_nav_callback,
                             callback_group=self._srv_group)
+        self.create_service(SetBool, 'navigation/pause', self.pause_callback, callback_group=self._srv_group)
+        self.create_subscription(BatteryState, 'battery', self.battery_callback, 10,
+                                 callback_group=self._loop_group)
+        self._mission_pub = self.create_publisher(MissionStatus, 'navigation/mission_status', 10)
+        self.create_timer(1.0, self.publish_mission_status, callback_group=self._loop_group)
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
         self._last_time = self.get_clock().now()
@@ -171,6 +180,7 @@ class PathFollowerNode(Node):
             'tf_timeout_sec': 0.5,
             'loop_route': True,
             'loop_close_distance': 1.0,
+            'low_battery_percentage': 0.2,
             'holonomic': True,
             'avoidance_lateral_enabled': True,
             'approach_radius': 0.5,
@@ -347,6 +357,7 @@ class PathFollowerNode(Node):
                 self.get_logger().error(response.message)
                 return response
             self._safety.reset()
+            self._paused = False
             self._nav_active = True
             response.success = True
             response.message = 'navigation started'
@@ -362,6 +373,35 @@ class PathFollowerNode(Node):
         response.message = 'navigation stopped'
         self.get_logger().info(response.message)
         return response
+
+    def pause_callback(self, request, response):
+        """Pause (hold position, keep progress) or resume navigation."""
+        self._paused = bool(request.data)
+        if self._paused:
+            self.publish_stop(hard=True)
+        response.success = True
+        response.message = 'paused' if self._paused else 'resumed'
+        self.get_logger().info(f'navigation {response.message}')
+        return response
+
+    def battery_callback(self, msg: BatteryState):
+        """Flag low battery so the patrol ends at the end of the current lap."""
+        low = 0.0 <= msg.percentage < self._low_battery
+        if low and not self._battery_low:
+            self.get_logger().warn(f'battery {msg.percentage * 100:.0f}%, finishing this lap and stopping')
+        self._battery_low = self._battery_low or low
+
+    def publish_mission_status(self):
+        """Publish a 1 Hz mission summary for dashboards."""
+        msg = MissionStatus()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.active = self._nav_active and not self._paused
+        msg.root_status = self._last_status
+        stops = sum(1 for w in self._waypoints if w[3] > 0.0)
+        flags = ' | battery low' if self._battery_low else ''
+        msg.active_behavior = (f'lap {self._lap} | next stop {self._next_stop_index} of {stops} | '
+                               f'{self._follower_state}{flags}')
+        self._mission_pub.publish(msg)
 
     def current_pose(self):
         """Look up map->base_link; None if unavailable or older than tf_timeout_sec."""
@@ -540,7 +580,7 @@ class PathFollowerNode(Node):
         first_x, first_y = self._waypoints[0][0], self._waypoints[0][1]
         last_x, last_y = self._waypoints[-1][0], self._waypoints[-1][1]
         closed = math.hypot(first_x - last_x, first_y - last_y) < self._loop_close_distance
-        if self._loop_route and closed:
+        if self._loop_route and closed and not self._battery_low:
             self._lap += 1
             self.get_logger().info(f'lap {self._lap} complete, restarting route')
             self.restart_route(from_start=True)
@@ -558,6 +598,10 @@ class PathFollowerNode(Node):
 
         if not self._nav_active:
             self.publish_markers(stamp, 'NAV_INACTIVE', "call 'navigation/start_nav' to begin", 0.0, 0.0)
+            return
+        if self._paused:
+            self.publish_stop(hard=True)
+            self.publish_markers(stamp, 'PAUSED', "call 'navigation/pause' false to resume", 0.0, 0.0)
             return
         if not self._waypoints:
             self.publish_stop(hard=True)

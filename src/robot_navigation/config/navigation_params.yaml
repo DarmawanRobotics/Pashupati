@@ -24,6 +24,7 @@ path_follower_node:
 
     loop_route: true                  # patrol: restart the route when it ends (closed routes only)
     loop_close_distance: 1.0          # m, first/last waypoint gap that still counts as a closed loop
+    low_battery_percentage: 0.2       # 0-1, below this the patrol stops at the end of the current lap
 
     stop_point_skip_margin: 5         # waypoints, progress past a stop point before it is skipped
 
