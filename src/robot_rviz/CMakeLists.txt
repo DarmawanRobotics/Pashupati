@@ -14,6 +14,7 @@ find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(robot_interfaces REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
@@ -22,9 +23,13 @@ set(CMAKE_AUTOMOC ON)
 include_directories(include)
 
 add_library(${PROJECT_NAME} SHARED
+  src/ros_panel.cpp
   src/control_panel.cpp
+  src/status_panel.cpp
   src/cmd_vel_widget.cpp
+  include/robot_rviz/ros_panel.hpp
   include/robot_rviz/control_panel.hpp
+  include/robot_rviz/status_panel.hpp
   include/robot_rviz/cmd_vel_widget.hpp
 )
 
@@ -41,6 +46,7 @@ ament_target_dependencies(${PROJECT_NAME}
   sensor_msgs
   std_msgs
   geometry_msgs
+  diagnostic_msgs
   robot_interfaces
 )
 
@@ -70,6 +76,7 @@ install(
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
 ament_export_dependencies(
-  rclcpp rviz_common pluginlib std_srvs sensor_msgs std_msgs geometry_msgs robot_interfaces)
+  rclcpp rviz_common pluginlib std_srvs sensor_msgs std_msgs geometry_msgs diagnostic_msgs
+  robot_interfaces)
 
 ament_package()
