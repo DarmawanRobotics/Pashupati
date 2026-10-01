@@ -1,5 +1,4 @@
 name: pashupati
-
 services:
   dev:
     build:
