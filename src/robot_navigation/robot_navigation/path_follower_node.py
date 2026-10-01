@@ -206,6 +206,10 @@ class PathFollowerNode(Node):
         )
         self._cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self._markers_pub = self.create_publisher(MarkerArray, 'navigation/markers', 10)
+        self._route_markers_pub = self.create_publisher(
+            MarkerArray, 'navigation/route_markers', latched
+        )
+        self._route_markers_key = None
         self._status_pub = self.create_publisher(NavigationStatus, 'navigation/status', 10)
         self._stop_event_pub = self.create_publisher(
             StopPointEvent, 'navigation/stop_point_event', 10
@@ -301,6 +305,7 @@ class PathFollowerNode(Node):
         self._low_battery = float(p('low_battery_percentage').value)
         self._approach_radius = float(p('approach_radius').value)
         self._approach_timeout = float(p('approach_timeout_sec').value)
+        self._approach_tolerance = float(p('approach.position_tolerance').value)
         self._holonomic = bool(p('holonomic').value)
         self._stop_point_skip_margin = int(p('stop_point_skip_margin').value)
         self._inspection_timeout = float(p('inspection_timeout_sec').value)
@@ -565,36 +570,165 @@ class PathFollowerNode(Node):
         self._status_pub.publish(msg)
 
     def publish_markers(self, stamp, status, message, pose_x, pose_y, debug=None):
-        """Publish the status and the controller debug MarkerArray."""
+        """Publish the status and the per-tick debug drawing (no status text)."""
         self.publish_status(stamp, status, message)
         debug = debug or {}
-        markers = MarkerArray()
-        items = [
-            visualization.status_text_marker(
-                'map',
-                stamp,
-                pose_x,
-                pose_y,
-                f'{status}\n{message}',
-                visualization.status_color(status),
+        v = visualization
+        ns, items = 'follower', []
+        color = v.state_color(status)
+        if status not in ('NAV_INACTIVE', 'NO_PATH', 'TF_UNAVAILABLE'):
+            items.append(v.disc('map', stamp, ns, 0, pose_x, pose_y, 0.35, color, alpha=0.25))
+            items.append(v.circle('map', stamp, ns, 1, pose_x, pose_y, 0.35, color, width=0.03))
+        lookahead = debug.get('lookahead_xy')
+        if lookahead is not None:
+            lx, ly = lookahead
+            items.append(
+                v.line('map', stamp, ns, 2, [(pose_x, pose_y), (lx, ly)], (0.1, 0.9, 1.0))
             )
-        ]
-        if debug.get('lookahead_xy') is not None:
-            items.append(visualization.lookahead_marker('map', stamp, *debug['lookahead_xy']))
-        if debug.get('nearest_xy') is not None:
-            items.append(visualization.nearest_point_marker('map', stamp, *debug['nearest_xy']))
+            items.append(v.sphere('map', stamp, ns, 3, lx, ly, 0.16, (0.1, 0.9, 1.0)))
+            if debug.get('lookahead_distance'):
+                items.append(
+                    v.circle(
+                        'map',
+                        stamp,
+                        ns,
+                        4,
+                        pose_x,
+                        pose_y,
+                        debug['lookahead_distance'],
+                        (0.1, 0.9, 1.0),
+                        width=0.01,
+                        alpha=0.35,
+                    )
+                )
+        nearest = debug.get('nearest_xy')
+        if nearest is not None:
+            nx, ny = nearest
+            items.append(v.sphere('map', stamp, ns, 5, nx, ny, 0.1, (1.0, 0.6, 0.1)))
+            items.append(
+                v.line(
+                    'map',
+                    stamp,
+                    ns,
+                    6,
+                    [(pose_x, pose_y), (nx, ny)],
+                    visualization.ALARM,
+                    width=0.015,
+                    alpha=0.7,
+                )
+            )
         if debug.get('curvature') is not None:
             items.append(
-                visualization.curvature_arc_marker(
-                    'base_link', stamp, debug['curvature'], self._arc_length
+                v.arc_from_curvature(
+                    'base_link',
+                    stamp,
+                    ns,
+                    7,
+                    debug['curvature'],
+                    self._arc_length,
+                    (0.3, 0.6, 1.0),
                 )
             )
         if debug.get('rollout_xy') is not None:
-            items.append(visualization.rollout_marker('map', stamp, debug['rollout_xy']))
+            items.append(
+                v.line(
+                    'map',
+                    stamp,
+                    ns,
+                    8,
+                    debug['rollout_xy'],
+                    (1.0, 0.4, 0.9),
+                    width=0.02,
+                    alpha=0.8,
+                )
+            )
+        target = debug.get('approach')
+        if target is not None:
+            tx, ty, tyaw, tolerance, progress = target
+            items.append(
+                v.disc(
+                    'map', stamp, ns, 9, tx, ty, max(tolerance, 0.03), (1.0, 0.85, 0.1), alpha=0.5
+                )
+            )
+            items.append(v.arrow('map', stamp, ns, 10, tx, ty, tyaw, 0.4, (1.0, 0.85, 0.1)))
+            items.append(
+                v.line(
+                    'map',
+                    stamp,
+                    ns,
+                    11,
+                    [(pose_x, pose_y), (tx, ty)],
+                    (1.0, 0.85, 0.1),
+                    width=0.015,
+                    alpha=0.6,
+                )
+            )
+            if progress > 0.0:
+                items.append(
+                    v.circle(
+                        'map',
+                        stamp,
+                        ns,
+                        12,
+                        tx,
+                        ty,
+                        0.3,
+                        (0.2, 0.6, 1.0),
+                        width=0.05,
+                        start=math.pi / 2,
+                        sweep=-2 * math.pi * min(progress, 1.0),
+                    )
+                )
+        markers = MarkerArray()
         for m in items:
             m.lifetime = self._marker_lifetime
             markers.markers.append(m)
         self._markers_pub.publish(markers)
+
+    def publish_route_markers(self):
+        """Publish the latched route drawing: speed-coloured path, start/end and stop points."""
+        key = (
+            len(self._waypoints),
+            self._next_stop_index,
+            self._lap,
+            self._target_linear_velocity,
+        )
+        if key == self._route_markers_key:
+            return
+        self._route_markers_key = key
+        v, stamp, ns = visualization, self.get_clock().now().to_msg(), 'route'
+        markers = MarkerArray()
+        markers.markers.append(v.delete_all('map', stamp))
+        if self._waypoints:
+            path = v.base('map', stamp, ns, 0, v.Marker.LINE_STRIP)
+            path.scale.x = 0.06
+            vmax = max(self._speed_profile) if self._speed_profile else 1.0
+            for i, w in enumerate(self._waypoints):
+                path.points.append(v.pt(w[0], w[1], 0.01))
+                speed = self._speed_profile[i] if i < len(self._speed_profile) else vmax
+                path.colors.append(v.speed_color(speed, vmax))
+            markers.markers.append(path)
+            sx, sy = self._waypoints[0][:2]
+            ex, ey = self._waypoints[-1][:2]
+            markers.markers.append(v.sphere('map', stamp, ns, 1, sx, sy, 0.25, (0.2, 0.9, 0.3)))
+            markers.markers.append(v.sphere('map', stamp, ns, 2, ex, ey, 0.2, (0.9, 0.2, 0.2)))
+            stops = [i for i, w in enumerate(self._waypoints) if w[3] > 0.0]
+            for n, i in enumerate(stops):
+                x, y, yaw_deg, dwell = self._waypoints[i]
+                nxt = self._next_stop_index
+                rgb = (
+                    (0.5, 0.5, 0.5)
+                    if nxt is not None and i < nxt
+                    else (1.0, 0.85, 0.1) if i == nxt else (0.3, 0.6, 1.0)
+                )
+                markers.markers.append(v.disc('map', stamp, ns, 10 + 3 * n, x, y, 0.25, rgb, 0.6))
+                markers.markers.append(
+                    v.arrow('map', stamp, ns, 11 + 3 * n, x, y, math.radians(yaw_deg), 0.45, rgb)
+                )
+                markers.markers.append(
+                    v.label('map', stamp, ns, 12 + 3 * n, x, y, f'S{n + 1} {dwell:.0f}s', rgb)
+                )
+        self._route_markers_pub.publish(markers)
 
     def publish_stop_event(self, event: str, message: str = ''):
         """Publish a StopPointEvent for the current stop point."""
@@ -679,6 +813,7 @@ class PathFollowerNode(Node):
             f'{math.degrees(cmd.yaw_error):.1f} deg',
             pose.x,
             pose.y,
+            {'approach': (x, y, math.radians(yaw_deg), self._approach_tolerance, 0.0)},
         )
 
     def run_dwelling(self, pose: Pose2D, stamp):
@@ -696,8 +831,15 @@ class PathFollowerNode(Node):
                 if self._inspection_pending
                 else ''
             )
+            x, y, yaw_deg, _ = self._waypoints[self._next_stop_index]
+            progress = elapsed / self._dwell_duration if self._dwell_duration > 0 else 1.0
             self.publish_markers(
-                stamp, 'DWELLING', f'resuming in {remaining:.1f}s{note}', pose.x, pose.y
+                stamp,
+                'DWELLING',
+                f'resuming in {remaining:.1f}s{note}',
+                pose.x,
+                pose.y,
+                {'approach': (x, y, math.radians(yaw_deg), self._approach_tolerance, progress)},
             )
             return
 
@@ -757,6 +899,7 @@ class PathFollowerNode(Node):
             changed, self._pending_params = self._pending_params, set()
         if changed:
             self.load_tunables(changed)
+        self.publish_route_markers()
         now = self.get_clock().now()
         dt = (now - self._last_time).nanoseconds / 1e9
         self._last_time = now

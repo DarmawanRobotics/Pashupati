@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
+import math
+
 from rcl_interfaces.msg import SetParametersResult
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
 from robot_interfaces.msg import AvoidanceCommand, SectorScan
+from robot_navigation.utils import visualization as viz
 from robot_navigation.utils.avoidance.registry import create_avoidance
+from visualization_msgs.msg import MarkerArray
 
 ALGORITHM_PARAMS = {
     'braitenberg': {
@@ -61,6 +66,7 @@ class ObstacleAvoidanceNode(Node):
 
         self.create_subscription(SectorScan, 'perception/sector_scan', self.scan_callback, 10)
         self._avoidance_pub = self.create_publisher(AvoidanceCommand, 'navigation/avoidance', 10)
+        self._markers_pub = self.create_publisher(MarkerArray, 'navigation/avoidance_markers', 10)
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
     def build_params(self, name: str) -> dict:
@@ -113,6 +119,75 @@ class ObstacleAvoidanceNode(Node):
         out.velocity_scale = float(result.velocity_scale)
         out.emergency = bool(result.emergency)
         self._avoidance_pub.publish(out)
+        self.publish_markers(msg, result)
+
+    def publish_markers(self, scan: SectorScan, result):
+        """Draw the emergency cone, safe range and avoidance push in the robot frame."""
+        frame, stamp, ns = scan.header.frame_id or 'base_link', scan.header.stamp, 'avoidance'
+        half_cone = math.radians(float(self.get_parameter('emergency_cone_deg').value)) / 2.0
+        emergency = float(self.get_parameter('emergency_distance').value)
+        safe = float(self.get_parameter('safe_distance').value)
+        markers = MarkerArray()
+        markers.markers.append(
+            viz.cone(
+                frame,
+                stamp,
+                ns,
+                0,
+                half_cone,
+                emergency,
+                viz.ALARM,
+                alpha=0.6 if result.emergency else 0.15,
+            )
+        )
+        markers.markers.append(
+            viz.circle(
+                frame,
+                stamp,
+                ns,
+                1,
+                0.0,
+                0.0,
+                safe,
+                (1.0, 0.6, 0.1),
+                width=0.015,
+                alpha=0.5,
+                start=-math.pi / 2,
+                sweep=math.pi,
+            )
+        )
+        if abs(result.steering_bias) > 0.02:
+            markers.markers.append(
+                viz.arrow(
+                    frame,
+                    stamp,
+                    ns,
+                    2,
+                    0.0,
+                    0.0,
+                    max(-1.2, min(1.2, result.steering_bias)),
+                    0.3 + 0.5 * result.velocity_scale,
+                    (1.0, 0.6, 0.1),
+                )
+            )
+        if abs(result.lateral_bias) > 0.01:
+            markers.markers.append(
+                viz.arrow(
+                    frame,
+                    stamp,
+                    ns,
+                    3,
+                    0.0,
+                    0.0,
+                    math.copysign(math.pi / 2, result.lateral_bias),
+                    3.0 * abs(result.lateral_bias),
+                    (0.8, 0.3, 1.0),
+                )
+            )
+        lifetime = Duration(seconds=0.3).to_msg()
+        for m in markers.markers:
+            m.lifetime = lifetime
+        self._markers_pub.publish(markers)
 
 
 def main(args=None):
