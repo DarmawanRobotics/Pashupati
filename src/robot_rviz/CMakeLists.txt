@@ -26,10 +26,12 @@ add_library(${PROJECT_NAME} SHARED
   src/ros_panel.cpp
   src/control_panel.cpp
   src/status_panel.cpp
+  src/tuning_panel.cpp
   src/cmd_vel_widget.cpp
   include/robot_rviz/ros_panel.hpp
   include/robot_rviz/control_panel.hpp
   include/robot_rviz/status_panel.hpp
+  include/robot_rviz/tuning_panel.hpp
   include/robot_rviz/cmd_vel_widget.hpp
 )
 
