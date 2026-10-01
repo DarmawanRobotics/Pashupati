@@ -81,3 +81,8 @@ path_loader_node:
   ros__parameters:
     waypoints_file: ""                # route CSV (x,y,yaw_deg,dwell_sec)
     republish_period: 2.0             # s, RViz-only Path republish (0 = off); waypoints are latched
+    smoothing_enabled: true           # resample + smooth between stop points (stop points never move)
+    resample_spacing: 0.1             # m, uniform point spacing after resampling
+    smooth_weight_data: 0.05          # pull toward the recording (higher = closer, noisier)
+    smooth_weight_smooth: 0.4         # pull toward neighbours (higher = smoother), keep < 0.5
+    max_smoothing_deviation: 0.3      # m, warn when smoothing moves the route further than this
