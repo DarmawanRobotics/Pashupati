@@ -53,6 +53,7 @@ class ObstacleAvoidanceNode(Node):
             for name, value in params.items():
                 self.declare_parameter(f'{algorithm}.{name}', value)
 
+        self._pending = False
         self._algorithm_name = self.get_parameter('algorithm').value
         self._avoidance = create_avoidance(
             self._algorithm_name, self.build_params(self._algorithm_name)
@@ -77,19 +78,31 @@ class ObstacleAvoidanceNode(Node):
         return params
 
     def on_parameters_changed(self, params):
-        """Switch algorithm at runtime."""
+        """Validate a parameter change; the algorithm is rebuilt on the next scan."""
         for param in params:
-            if param.name == 'algorithm':
-                try:
-                    self._avoidance = create_avoidance(param.value, self.build_params(param.value))
-                except ValueError as error:
-                    return SetParametersResult(successful=False, reason=str(error))
-                self._algorithm_name = param.value
-                self.get_logger().info(f'switched avoidance algorithm to {param.value}')
+            if param.name == 'algorithm' and param.value not in ALGORITHM_PARAMS:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f'unknown algorithm {param.value!r}, use {list(ALGORITHM_PARAMS)}',
+                )
+        self._pending = True
         return SetParametersResult(successful=True)
+
+    def rebuild(self):
+        """Recreate the avoidance algorithm from the current parameters."""
+        name = self.get_parameter('algorithm').value
+        self._avoidance = create_avoidance(name, self.build_params(name))
+        if name != self._algorithm_name:
+            self.get_logger().info(f'switched avoidance algorithm to {name}')
+        else:
+            self.get_logger().info(f'applied {name} parameters')
+        self._algorithm_name = name
 
     def scan_callback(self, msg: SectorScan):
         """Run one avoidance update from the sector scan and publish the result."""
+        if self._pending:
+            self._pending = False
+            self.rebuild()
         result = self._avoidance.update(
             list(msg.ranges), msg.angle_min, msg.angle_increment, msg.range_max
         )
