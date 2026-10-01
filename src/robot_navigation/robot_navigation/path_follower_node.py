@@ -117,6 +117,13 @@ CONTROLLER_PARAMS = {
     },
 }
 
+STARTUP_ONLY_PARAMS = {
+    'control_rate',
+    'auto_mode_on_service',
+    'auto_mode_off_service',
+    'inspection_services',
+}
+
 
 class PathFollowerNode(Node):
     """Patrol a taught route with inspection stop points.
@@ -141,58 +148,15 @@ class PathFollowerNode(Node):
         p = self.get_parameter
 
         self._control_rate = float(p('control_rate').value)
-        self._target_linear_velocity = float(p('target_linear_velocity').value)
-        self._min_linear_velocity = float(p('min_linear_velocity').value)
-        self._max_lateral_accel = float(p('max_lateral_accel').value)
-        self._decel_limit = float(p('decel_limit').value)
-        self._approach_speed = float(p('approach_speed').value)
-        self._max_linear_velocity = float(p('max_linear_velocity').value)
-        self._max_angular_velocity = float(p('max_angular_velocity').value)
-        self._arc_length = float(p('arc_visualization_length').value)
-        self._marker_lifetime = Duration(seconds=float(p('marker_lifetime_sec').value)).to_msg()
-        self._avoidance_enabled = bool(p('avoidance_enabled').value)
-        self._speed_regulator_enabled = bool(p('speed_regulator_enabled').value)
-        self._avoidance_timeout = Duration(seconds=float(p('avoidance_timeout_sec').value))
-        self._tf_timeout = Duration(seconds=float(p('tf_timeout_sec').value))
-        self._loop_route = bool(p('loop_route').value)
-        self._loop_close_distance = float(p('loop_close_distance').value)
-        self._low_battery = float(p('low_battery_percentage').value)
-
-        self._approach_radius = float(p('approach_radius').value)
-        self._approach_timeout = float(p('approach_timeout_sec').value)
-        self._holonomic = bool(p('holonomic').value)
-        self._avoidance_lateral = bool(p('avoidance_lateral_enabled').value)
-        self._stop_point_skip_margin = int(p('stop_point_skip_margin').value)
-        self._approach = FinalApproach(
-            holonomic=self._holonomic,
-            kp_xy=float(p('approach.kp_xy').value),
-            kp_yaw=float(p('approach.kp_yaw').value),
-            max_speed=float(p('approach.max_speed').value),
-            max_yaw_rate=float(p('approach.max_yaw_rate').value),
-            min_speed=float(p('approach.min_speed').value),
-            position_tolerance=float(p('approach.position_tolerance').value),
-            yaw_tolerance=math.radians(float(p('approach.yaw_tolerance_deg').value)),
-        )
-        self._inspection_timeout = float(p('inspection_timeout_sec').value)
-
-        self._linear_limiter = SlewLimiter(float(p('linear_accel_limit').value))
-        self._angular_limiter = SlewLimiter(float(p('angular_accel_limit').value))
-        self._lateral_limiter = SlewLimiter(float(p('linear_accel_limit').value))
-        alpha = float(p('command_smoothing').value)
-        self._angular_filter = LowPassFilter(alpha)
-        self._lateral_filter = LowPassFilter(alpha)
-        self._safety = SafetySupervisor(
-            estop_release_sec=float(p('estop_release_sec').value),
-            blocked_timeout_sec=float(p('blocked_timeout_sec').value),
-            off_path_slow_distance=float(p('off_path_slow_distance').value),
-            off_path_stop_distance=float(p('off_path_stop_distance').value),
-        )
-        self._speed_regulator = SpeedRegulator(
-            kp=float(p('speed_regulator.kp').value),
-            ki=float(p('speed_regulator.ki').value),
-            kd=float(p('speed_regulator.kd').value),
-            min_scale=float(p('speed_regulator.min_scale').value),
-        )
+        self._controller = None
+        self._controller_name = ''
+        self._approach = None
+        self._linear_limiter = self._angular_limiter = self._lateral_limiter = None
+        self._angular_filter = self._lateral_filter = None
+        self._safety = None
+        self._speed_regulator = None
+        self._pending_params: set[str] = set()
+        self._pending_lock = threading.Lock()
 
         self._avoidance = AvoidanceCommand(velocity_scale=1.0)
         self._avoidance_time = None
@@ -213,10 +177,7 @@ class PathFollowerNode(Node):
         self._lap = 0
         self._last_status = 'NAV_INACTIVE'
 
-        self._controller_name = p('controller').value
-        self._controller = create_controller(
-            self._controller_name, self.build_controller_params(self._controller_name)
-        )
+        self.load_tunables()
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
@@ -270,7 +231,6 @@ class PathFollowerNode(Node):
             BatteryState, 'battery', self.battery_callback, 10, callback_group=self._loop_group
         )
         self._mission_pub = self.create_publisher(MissionStatus, 'navigation/mission_status', 10)
-        self._require_localization = bool(p('require_localization').value)
         self._localization_source = 'none'
         self.create_subscription(
             String,
@@ -313,29 +273,135 @@ class PathFollowerNode(Node):
             params['dt'] = 1.0 / self._control_rate
         return params
 
-    def switch_controller(self, name: str):
-        """Instantiate the requested controller, carrying over the current path if any."""
-        new_controller = create_controller(name, self.build_controller_params(name))
+    def load_tunables(self, changed: set | None = None):
+        """(Re)read runtime-tunable parameters; rebuild only the parts whose parameters changed."""
+        p = self.get_parameter
+        everything = changed is None
+        changed = changed or set()
+
+        def touched(*prefixes):
+            return everything or any(n.startswith(prefixes) for n in changed)
+
+        self._target_linear_velocity = float(p('target_linear_velocity').value)
+        self._min_linear_velocity = float(p('min_linear_velocity').value)
+        self._max_lateral_accel = float(p('max_lateral_accel').value)
+        self._decel_limit = float(p('decel_limit').value)
+        self._approach_speed = float(p('approach_speed').value)
+        self._max_linear_velocity = float(p('max_linear_velocity').value)
+        self._max_angular_velocity = float(p('max_angular_velocity').value)
+        self._arc_length = float(p('arc_visualization_length').value)
+        self._marker_lifetime = Duration(seconds=float(p('marker_lifetime_sec').value)).to_msg()
+        self._avoidance_enabled = bool(p('avoidance_enabled').value)
+        self._avoidance_lateral = bool(p('avoidance_lateral_enabled').value)
+        self._speed_regulator_enabled = bool(p('speed_regulator_enabled').value)
+        self._avoidance_timeout = Duration(seconds=float(p('avoidance_timeout_sec').value))
+        self._tf_timeout = Duration(seconds=float(p('tf_timeout_sec').value))
+        self._loop_route = bool(p('loop_route').value)
+        self._loop_close_distance = float(p('loop_close_distance').value)
+        self._low_battery = float(p('low_battery_percentage').value)
+        self._approach_radius = float(p('approach_radius').value)
+        self._approach_timeout = float(p('approach_timeout_sec').value)
+        self._holonomic = bool(p('holonomic').value)
+        self._stop_point_skip_margin = int(p('stop_point_skip_margin').value)
+        self._inspection_timeout = float(p('inspection_timeout_sec').value)
+        self._require_localization = bool(p('require_localization').value)
+
+        if touched('approach.', 'holonomic'):
+            self._approach = FinalApproach(
+                holonomic=self._holonomic,
+                kp_xy=float(p('approach.kp_xy').value),
+                kp_yaw=float(p('approach.kp_yaw').value),
+                max_speed=float(p('approach.max_speed').value),
+                max_yaw_rate=float(p('approach.max_yaw_rate').value),
+                min_speed=float(p('approach.min_speed').value),
+                position_tolerance=float(p('approach.position_tolerance').value),
+                yaw_tolerance=math.radians(float(p('approach.yaw_tolerance_deg').value)),
+            )
+        if touched('linear_accel_limit', 'angular_accel_limit'):
+            self._linear_limiter = self.carry(
+                self._linear_limiter, SlewLimiter(float(p('linear_accel_limit').value))
+            )
+            self._lateral_limiter = self.carry(
+                self._lateral_limiter, SlewLimiter(float(p('linear_accel_limit').value))
+            )
+            self._angular_limiter = self.carry(
+                self._angular_limiter, SlewLimiter(float(p('angular_accel_limit').value))
+            )
+        if touched('command_smoothing'):
+            alpha = float(p('command_smoothing').value)
+            self._angular_filter = self.carry(self._angular_filter, LowPassFilter(alpha))
+            self._lateral_filter = self.carry(self._lateral_filter, LowPassFilter(alpha))
+        if touched('estop_release_sec', 'blocked_timeout_sec', 'off_path_'):
+            self._safety = SafetySupervisor(
+                estop_release_sec=float(p('estop_release_sec').value),
+                blocked_timeout_sec=float(p('blocked_timeout_sec').value),
+                off_path_slow_distance=float(p('off_path_slow_distance').value),
+                off_path_stop_distance=float(p('off_path_stop_distance').value),
+            )
+        if touched('speed_regulator.'):
+            self._speed_regulator = SpeedRegulator(
+                kp=float(p('speed_regulator.kp').value),
+                ki=float(p('speed_regulator.ki').value),
+                kd=float(p('speed_regulator.kd').value),
+                min_scale=float(p('speed_regulator.min_scale').value),
+            )
+        name = p('controller').value
+        if touched('controller', 'max_angular_velocity', f'{name}.'):
+            self.build_controller(name)
+        if touched(
+            'target_linear_velocity',
+            'min_linear_velocity',
+            'max_lateral_accel',
+            'decel_limit',
+            'approach_speed',
+        ):
+            self.compute_speed_profile()
+        if not everything:
+            self.get_logger().info(f'applied parameters: {", ".join(sorted(changed))}')
+
+    @staticmethod
+    def carry(old, new):
+        """Return new, starting from the old filter/limiter output so commands do not jump."""
+        if old is not None:
+            new.reset(old.value)
+        return new
+
+    def build_controller(self, name: str):
+        """Instantiate a controller, keeping the current route and progress."""
+        progress = self._controller.progress_index() if self._controller else None
+        self._controller = create_controller(name, self.build_controller_params(name))
         if self._waypoints:
-            new_controller.set_path([(x, y) for x, y, _, _ in self._waypoints])
-        self._controller = new_controller
+            self._controller.set_path([(x, y) for x, y, _, _ in self._waypoints], progress)
+        if name != self._controller_name and self._controller_name:
+            self.get_logger().info(f'switched controller to {name}')
         self._controller_name = name
-        self.get_logger().info(f'switched controller to {name}')
+
+    def compute_speed_profile(self):
+        """Recompute the per-point speed limits for the current route."""
+        self._speed_profile = velocity_profile(
+            [(w[0], w[1]) for w in self._waypoints],
+            [i for i, w in enumerate(self._waypoints) if w[3] > 0.0],
+            cruise=self._target_linear_velocity,
+            min_speed=self._min_linear_velocity,
+            max_lateral_accel=self._max_lateral_accel,
+            decel=self._decel_limit,
+            approach_speed=self._approach_speed,
+        )
 
     def on_parameters_changed(self, params):
-        """Apply runtime changes to avoidance, speed regulator, loop and controller selection."""
+        """Validate a parameter change; it is applied on the next control tick."""
         for param in params:
-            if param.name == 'avoidance_enabled':
-                self._avoidance_enabled = bool(param.value)
-            elif param.name == 'speed_regulator_enabled':
-                self._speed_regulator_enabled = bool(param.value)
-            elif param.name == 'loop_route':
-                self._loop_route = bool(param.value)
-            elif param.name == 'controller':
-                try:
-                    self.switch_controller(param.value)
-                except ValueError as error:
-                    return SetParametersResult(successful=False, reason=str(error))
+            if param.name in STARTUP_ONLY_PARAMS:
+                return SetParametersResult(
+                    successful=False, reason=f'{param.name} is read at startup, restart the node'
+                )
+            if param.name == 'controller' and param.value not in CONTROLLER_PARAMS:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f'unknown controller {param.value!r}, use {list(CONTROLLER_PARAMS)}',
+                )
+        with self._pending_lock:
+            self._pending_params.update(param.name for param in params)
         return SetParametersResult(successful=True)
 
     def find_next_stop_index(self, from_index: int):
@@ -360,15 +426,7 @@ class PathFollowerNode(Node):
         if waypoints == self._waypoints:
             return
         self._waypoints = waypoints
-        self._speed_profile = velocity_profile(
-            [(w[0], w[1]) for w in waypoints],
-            [i for i, w in enumerate(waypoints) if w[3] > 0.0],
-            cruise=self._target_linear_velocity,
-            min_speed=self._min_linear_velocity,
-            max_lateral_accel=self._max_lateral_accel,
-            decel=self._decel_limit,
-            approach_speed=self._approach_speed,
-        )
+        self.compute_speed_profile()
         self._lap = 0
         self.restart_route()
         stops = sum(1 for w in waypoints if w[3] > 0.0)
@@ -695,6 +753,10 @@ class PathFollowerNode(Node):
 
     def control_loop(self):
         """Run one control tick: safety checks, stop-point state machine, then path following."""
+        with self._pending_lock:
+            changed, self._pending_params = self._pending_params, set()
+        if changed:
+            self.load_tunables(changed)
         now = self.get_clock().now()
         dt = (now - self._last_time).nanoseconds / 1e9
         self._last_time = now

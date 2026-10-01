@@ -28,6 +28,11 @@ class LowPassFilter:
         self._alpha = max(0.0, min(1.0, alpha))
         self._value = 0.0
 
+    @property
+    def value(self) -> float:
+        """Current filtered value."""
+        return self._value
+
     def step(self, target: float) -> float:
         """Blend target into the filtered value and return it."""
         self._value += self._alpha * (target - self._value)
