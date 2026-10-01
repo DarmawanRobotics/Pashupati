@@ -25,8 +25,8 @@ case "${1:-shell}" in
     build) shift; in_container "colcon build $*" ;;
     test) shift; in_container "colcon test $* && colcon test-result --verbose" ;;
     vnc)
-        command -v open >/dev/null && open "vnc://localhost:5901"
-        echo "noVNC http://localhost:6080/vnc.html"
+        echo "TigerVNC Viewer: localhost:5901  (brew install --cask tigervnc-viewer)"
+        echo "noVNC: http://localhost:6080/vnc.html?resize=remote&autoconnect=true"
         ;;
     down) docker compose down ;;
     clean) docker compose down -v ;;

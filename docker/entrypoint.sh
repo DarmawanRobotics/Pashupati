@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the VNC desktop (Xvnc :1 + fluxbox + noVNC) unless VNC=0, then run the command.
+# Start the VNC desktop (Xvnc :1 + XFCE + noVNC) unless VNC=0, then run the command.
 set -e
 
 start_desktop() {
@@ -14,7 +14,7 @@ start_desktop() {
         [[ -e /tmp/.X11-unix/X1 ]] && break
         sleep 0.1
     done
-    DISPLAY=:1 fluxbox > /tmp/fluxbox.log 2>&1 &
+    DISPLAY=:1 dbus-launch --exit-with-session startxfce4 > /tmp/xfce.log 2>&1 &
     websockify --web /usr/share/novnc 6080 localhost:5901 > /tmp/novnc.log 2>&1 &
 }
 
