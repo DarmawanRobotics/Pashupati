@@ -1,7 +1,5 @@
 class SpeedRegulator:
-    """Scales down target linear velocity proportionally to how sharp the current turn is,
-    independent of which steering controller (pure_pursuit/pid/mppi) produced that angular
-    command. A separate concern from steering, so it composes with any of them."""
+    """Scale the linear velocity down on sharp turns, independent of the steering controller."""
 
     def __init__(self, kp=0.3, ki=0.0, kd=0.0, min_scale=0.3):
         self._kp = kp

@@ -1,9 +1,0 @@
-realsense_camera:
-  ros__parameters:
-    camera_name: camera
-    camera_namespace: camera
-    enable_color: true
-    rgb_camera.profile: 848x480x30
-    enable_depth: false
-    publish_tf: true
-    tf_publish_rate: 0.0

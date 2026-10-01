@@ -1,192 +1,325 @@
 #!/usr/bin/env python3
 import math
-
-import rclpy
-from rclpy.duration import Duration
-from rclpy.node import Node
+import threading
 
 from geometry_msgs.msg import Twist
-from std_srvs.srv import SetBool
+from rcl_interfaces.msg import SetParametersResult
+import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
+from rclpy.time import Time
+from robot_interfaces.msg import (
+    AvoidanceCommand,
+    MissionStatus,
+    NavigationStatus,
+    StopPointEvent,
+    WaypointPath,
+)
+from robot_navigation.utils import visualization
+from robot_navigation.utils.command_filter import LowPassFilter, SlewLimiter
+from robot_navigation.utils.controllers.registry import create_controller
+from robot_navigation.utils.final_approach import FinalApproach
+from robot_navigation.utils.geometry import clamp, yaw_from_quaternion
+from robot_navigation.utils.path_processing import velocity_profile
+from robot_navigation.utils.pose2d import Pose2D
+from robot_navigation.utils.safety import SafetySupervisor
+from robot_navigation.utils.speed_regulator import SpeedRegulator
+from sensor_msgs.msg import BatteryState
+from std_srvs.srv import SetBool, Trigger
+from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import MarkerArray
 
-from rcl_interfaces.msg import SetParametersResult
+DEFAULT_PARAMS = {
+    'control_rate': 20.0,
+    'target_linear_velocity': 0.4,
+    'min_linear_velocity': 0.1,
+    'max_lateral_accel': 0.3,
+    'decel_limit': 0.3,
+    'approach_speed': 0.15,
+    'max_linear_velocity': 0.6,
+    'max_angular_velocity': 1.0,
+    'linear_accel_limit': 0.5,
+    'angular_accel_limit': 1.5,
+    'command_smoothing': 0.4,
+    'arc_visualization_length': 2.0,
+    'marker_lifetime_sec': 0.5,
+    'avoidance_enabled': True,
+    'avoidance_timeout_sec': 0.5,
+    'estop_release_sec': 1.0,
+    'blocked_timeout_sec': 30.0,
+    'off_path_slow_distance': 0.6,
+    'off_path_stop_distance': 1.5,
+    'tf_timeout_sec': 0.5,
+    'loop_route': True,
+    'loop_close_distance': 1.0,
+    'low_battery_percentage': 0.2,
+    'holonomic': True,
+    'avoidance_lateral_enabled': True,
+    'approach_radius': 0.5,
+    'approach_timeout_sec': 20.0,
+    'approach.kp_xy': 1.2,
+    'approach.kp_yaw': 1.5,
+    'approach.max_speed': 0.2,
+    'approach.max_yaw_rate': 0.6,
+    'approach.min_speed': 0.04,
+    'approach.position_tolerance': 0.05,
+    'approach.yaw_tolerance_deg': 3.0,
+    'stop_point_skip_margin': 5,
+    'auto_mode_on_service': '',
+    'auto_mode_off_service': '',
+    'inspection_services': [''],
+    'inspection_timeout_sec': 10.0,
+    'controller': 'pure_pursuit',
+    'speed_regulator_enabled': False,
+    'speed_regulator.kp': 0.3,
+    'speed_regulator.ki': 0.0,
+    'speed_regulator.kd': 0.0,
+    'speed_regulator.min_scale': 0.3,
+}
 
-from tf2_ros import Buffer, TransformListener
-
-from robot_interfaces.msg import AvoidanceCommand, NavigationStatus, WaypointPath
-
-from robot_navigation.utils import visualization
-from robot_navigation.utils.controllers.pid_controller import angle_diff
-from robot_navigation.utils.controllers.registry import create_controller
-from robot_navigation.utils.pose2d import Pose2D
-from robot_navigation.utils.speed_regulator import SpeedRegulator
-
-
-def yaw_from_quaternion(q) -> float:
-    """Extract the yaw angle from a geometry_msgs Quaternion."""
-    siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-    cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-    return math.atan2(siny_cosp, cosy_cosp)
-
-
-class SlewLimiter:
-    """Caps how fast a value can change per second, for smooth accel/turn-rate limiting."""
-
-    def __init__(self, max_rate: float):
-        self._max_rate = max_rate
-        self._value = 0.0
-
-    def step(self, target: float, dt: float) -> float:
-        """Move value toward target by at most max_rate * dt and return the new value."""
-        max_delta = self._max_rate * dt
-        delta = max(-max_delta, min(max_delta, target - self._value))
-        self._value += delta
-        return self._value
+CONTROLLER_PARAMS = {
+    'pure_pursuit': {
+        'lookahead_distance': 1.0,
+        'goal_tolerance': 0.3,
+    },
+    'pid': {
+        'lookahead_distance': 1.0,
+        'goal_tolerance': 0.3,
+        'kp': 1.5,
+        'ki': 0.0,
+        'kd': 0.2,
+    },
+    'mppi': {
+        'goal_tolerance': 0.3,
+        'horizon_steps': 15,
+        'dt': 0.1,
+        'num_samples': 200,
+        'angular_std': 1.0,
+        'temperature': 0.05,
+        'window_points': 60,
+    },
+    'lqr': {
+        'goal_tolerance': 0.3,
+        'q_lateral': 1.0,
+        'q_heading': 0.5,
+        'r_angular': 0.5,
+    },
+    'stanley': {
+        'goal_tolerance': 0.3,
+        'k_cross_track': 1.0,
+        'k_soft': 0.2,
+        'k_heading': 1.5,
+    },
+}
 
 
 class PathFollowerNode(Node):
-    """Drives the robot along a received waypoint path using a selectable controller, blended
-    with avoidance, pausing to align and dwell at inspection stop points. A single SetBool
-    service starts/stops it -- the path is a dense, continuous trajectory rather than a
-    handful of discrete goals, so a plain always-on control loop is a better fit here than
-    a goal/feedback/result action."""
+    """Patrol a taught route with inspection stop points.
 
-    _WARN_STATES = {'NO_PATH', 'TF_UNAVAILABLE', 'EMERGENCY_STOP'}
+    Follows the route with a selectable controller, blends reactive avoidance, and at each stop
+    point converges onto x/y/yaw, triggers the inspection services and dwells.
+    """
+
+    _WARN_STATES = {
+        'NO_PATH',
+        'TF_UNAVAILABLE',
+        'EMERGENCY_STOP',
+        'AVOIDANCE_STALE',
+        'BLOCKED',
+        'OFF_PATH',
+    }
 
     def __init__(self):
-        """Declare params, set up TF, build the initial controller, and wire subscriptions/outputs."""
+        """Declare params, set up TF, build the controller, and wire all interfaces."""
         super().__init__('path_follower_node')
-        self.declare_parameter('control_rate', 20.0)
-        self.declare_parameter('target_linear_velocity', 0.4)
-        self.declare_parameter('max_linear_velocity', 0.6)
-        self.declare_parameter('max_angular_velocity', 1.0)
-        self.declare_parameter('linear_accel_limit', 0.5)
-        self.declare_parameter('angular_accel_limit', 1.5)
-        self.declare_parameter('arc_visualization_length', 2.0)
-        self.declare_parameter('marker_lifetime_sec', 0.5)
-        self.declare_parameter('avoidance_enabled', True)
+        self.declare_params()
+        p = self.get_parameter
 
-        self.declare_parameter('stop_point_tolerance', 0.3)
-        self.declare_parameter('yaw_tolerance_deg', 5.0)
-        self.declare_parameter('align_kp', 1.5)
+        self._control_rate = float(p('control_rate').value)
+        self._target_linear_velocity = float(p('target_linear_velocity').value)
+        self._min_linear_velocity = float(p('min_linear_velocity').value)
+        self._max_lateral_accel = float(p('max_lateral_accel').value)
+        self._decel_limit = float(p('decel_limit').value)
+        self._approach_speed = float(p('approach_speed').value)
+        self._max_linear_velocity = float(p('max_linear_velocity').value)
+        self._max_angular_velocity = float(p('max_angular_velocity').value)
+        self._arc_length = float(p('arc_visualization_length').value)
+        self._marker_lifetime = Duration(seconds=float(p('marker_lifetime_sec').value)).to_msg()
+        self._avoidance_enabled = bool(p('avoidance_enabled').value)
+        self._speed_regulator_enabled = bool(p('speed_regulator_enabled').value)
+        self._avoidance_timeout = Duration(seconds=float(p('avoidance_timeout_sec').value))
+        self._tf_timeout = Duration(seconds=float(p('tf_timeout_sec').value))
+        self._loop_route = bool(p('loop_route').value)
+        self._loop_close_distance = float(p('loop_close_distance').value)
+        self._low_battery = float(p('low_battery_percentage').value)
 
-        self.declare_parameter('controller', 'pure_pursuit')
-        self.declare_parameter('pure_pursuit.lookahead_distance', 1.0)
-        self.declare_parameter('pure_pursuit.goal_tolerance', 0.3)
-        self.declare_parameter('pid.lookahead_distance', 1.0)
-        self.declare_parameter('pid.goal_tolerance', 0.3)
-        self.declare_parameter('pid.kp', 1.5)
-        self.declare_parameter('pid.ki', 0.0)
-        self.declare_parameter('pid.kd', 0.2)
-        self.declare_parameter('mppi.goal_tolerance', 0.3)
-        self.declare_parameter('mppi.horizon_steps', 15)
-        self.declare_parameter('mppi.dt', 0.1)
-        self.declare_parameter('mppi.num_samples', 200)
-        self.declare_parameter('mppi.angular_std', 1.0)
-        self.declare_parameter('mppi.temperature', 1.0)
+        self._approach_radius = float(p('approach_radius').value)
+        self._approach_timeout = float(p('approach_timeout_sec').value)
+        self._holonomic = bool(p('holonomic').value)
+        self._avoidance_lateral = bool(p('avoidance_lateral_enabled').value)
+        self._stop_point_skip_margin = int(p('stop_point_skip_margin').value)
+        self._approach = FinalApproach(
+            holonomic=self._holonomic,
+            kp_xy=float(p('approach.kp_xy').value),
+            kp_yaw=float(p('approach.kp_yaw').value),
+            max_speed=float(p('approach.max_speed').value),
+            max_yaw_rate=float(p('approach.max_yaw_rate').value),
+            min_speed=float(p('approach.min_speed').value),
+            position_tolerance=float(p('approach.position_tolerance').value),
+            yaw_tolerance=math.radians(float(p('approach.yaw_tolerance_deg').value)),
+        )
+        self._inspection_timeout = float(p('inspection_timeout_sec').value)
 
-        self.declare_parameter('speed_regulator_enabled', False)
-        self.declare_parameter('speed_regulator.kp', 0.3)
-        self.declare_parameter('speed_regulator.ki', 0.0)
-        self.declare_parameter('speed_regulator.kd', 0.0)
-        self.declare_parameter('speed_regulator.min_scale', 0.3)
-
-        self._control_rate = float(self.get_parameter('control_rate').value)
-        self._target_linear_velocity = float(self.get_parameter('target_linear_velocity').value)
-        self._max_linear_velocity = float(self.get_parameter('max_linear_velocity').value)
-        self._max_angular_velocity = float(self.get_parameter('max_angular_velocity').value)
-        self._arc_length = float(self.get_parameter('arc_visualization_length').value)
-        self._marker_lifetime = Duration(seconds=float(self.get_parameter('marker_lifetime_sec').value)).to_msg()
-        self._avoidance_enabled = bool(self.get_parameter('avoidance_enabled').value)
-        self._speed_regulator_enabled = bool(self.get_parameter('speed_regulator_enabled').value)
-
-        self._stop_point_tolerance = float(self.get_parameter('stop_point_tolerance').value)
-        self._yaw_tolerance = math.radians(float(self.get_parameter('yaw_tolerance_deg').value))
-        self._align_kp = float(self.get_parameter('align_kp').value)
-
-        self._linear_limiter = SlewLimiter(float(self.get_parameter('linear_accel_limit').value))
-        self._angular_limiter = SlewLimiter(float(self.get_parameter('angular_accel_limit').value))
+        self._linear_limiter = SlewLimiter(float(p('linear_accel_limit').value))
+        self._angular_limiter = SlewLimiter(float(p('angular_accel_limit').value))
+        self._lateral_limiter = SlewLimiter(float(p('linear_accel_limit').value))
+        alpha = float(p('command_smoothing').value)
+        self._angular_filter = LowPassFilter(alpha)
+        self._lateral_filter = LowPassFilter(alpha)
+        self._safety = SafetySupervisor(
+            estop_release_sec=float(p('estop_release_sec').value),
+            blocked_timeout_sec=float(p('blocked_timeout_sec').value),
+            off_path_slow_distance=float(p('off_path_slow_distance').value),
+            off_path_stop_distance=float(p('off_path_stop_distance').value),
+        )
         self._speed_regulator = SpeedRegulator(
-            kp=float(self.get_parameter('speed_regulator.kp').value),
-            ki=float(self.get_parameter('speed_regulator.ki').value),
-            kd=float(self.get_parameter('speed_regulator.kd').value),
-            min_scale=float(self.get_parameter('speed_regulator.min_scale').value),
+            kp=float(p('speed_regulator.kp').value),
+            ki=float(p('speed_regulator.ki').value),
+            kd=float(p('speed_regulator.kd').value),
+            min_scale=float(p('speed_regulator.min_scale').value),
         )
 
-        self._avoidance_steering_bias = 0.0
-        self._avoidance_velocity_scale = 1.0
-        self._avoidance_emergency = False
-        self._have_path = False
+        self._avoidance = AvoidanceCommand(velocity_scale=1.0)
+        self._avoidance_time = None
         self._nav_active = False
-        self._current_path_points: list[tuple[float, float]] = []
-
+        self._paused = False
+        self._battery_low = False
         self._waypoints: list[tuple[float, float, float, float]] = []
+        self._speed_profile: list[float] = []
         self._next_stop_index = None
         self._follower_state = 'FOLLOWING'
-        self._align_target_yaw = 0.0
+        self._approach_start_time = None
+        self._approach_index = 0
+        self._approach_is_goal = False
         self._dwell_duration = 0.0
         self._dwell_start_time = None
-
+        self._inspection_pending = 0
+        self._inspection_results: list[str] = []
+        self._lap = 0
         self._last_status = 'NAV_INACTIVE'
-        self._last_status_message = ''
 
-        self._controller_name = self.get_parameter('controller').value
-        self._controller = create_controller(self._controller_name, self.build_controller_params(self._controller_name))
+        self._controller_name = p('controller').value
+        self._controller = create_controller(
+            self._controller_name, self.build_controller_params(self._controller_name)
+        )
 
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self)
+        self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
 
-        self.create_subscription(WaypointPath, 'navigation/waypoints', self.waypoints_callback, 10)
-        self.create_subscription(AvoidanceCommand, 'navigation/avoidance', self.avoidance_callback, 10)
+        self._srv_group = ReentrantCallbackGroup()
+        self._loop_group = MutuallyExclusiveCallbackGroup()
+        latched = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self.create_subscription(
+            WaypointPath,
+            'navigation/waypoints',
+            self.waypoints_callback,
+            latched,
+            callback_group=self._loop_group,
+        )
+        self.create_subscription(
+            AvoidanceCommand,
+            'navigation/avoidance',
+            self.avoidance_callback,
+            10,
+            callback_group=self._loop_group,
+        )
         self._cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self._markers_pub = self.create_publisher(MarkerArray, 'navigation/markers', 10)
         self._status_pub = self.create_publisher(NavigationStatus, 'navigation/status', 10)
+        self._stop_event_pub = self.create_publisher(
+            StopPointEvent, 'navigation/stop_point_event', 10
+        )
 
-        self._auto_mode_client = self.create_client(SetBool, 'drivers/set_auto_mode')
-        self.create_service(SetBool, 'navigation/start_nav', self.start_nav_callback)
+        self._auto_on_client = self.optional_client(p('auto_mode_on_service').value)
+        self._auto_off_client = self.optional_client(p('auto_mode_off_service').value)
+        self._inspection_clients = [
+            self.create_client(Trigger, name, callback_group=self._srv_group)
+            for name in p('inspection_services').value
+            if name
+        ]
+        self.create_service(
+            SetBool,
+            'navigation/start_nav',
+            self.start_nav_callback,
+            callback_group=self._srv_group,
+        )
+        self.create_service(
+            SetBool, 'navigation/pause', self.pause_callback, callback_group=self._srv_group
+        )
+        self.create_subscription(
+            BatteryState, 'battery', self.battery_callback, 10, callback_group=self._loop_group
+        )
+        self._mission_pub = self.create_publisher(MissionStatus, 'navigation/mission_status', 10)
+        self.create_timer(1.0, self.publish_mission_status, callback_group=self._loop_group)
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
         self._last_time = self.get_clock().now()
-        self.create_timer(1.0 / self._control_rate, self.control_loop)
+        self.create_timer(
+            1.0 / self._control_rate, self.control_loop, callback_group=self._loop_group
+        )
+
+    def declare_params(self):
+        """Declare the general parameters and every controller's namespaced parameters."""
+        for name, value in DEFAULT_PARAMS.items():
+            self.declare_parameter(name, value)
+        for controller, params in CONTROLLER_PARAMS.items():
+            for name, value in params.items():
+                self.declare_parameter(f'{controller}.{name}', value)
+
+    def optional_client(self, name: str):
+        """Create a Trigger client, or None when the service name is empty."""
+        return self.create_client(Trigger, name, callback_group=self._srv_group) if name else None
 
     def build_controller_params(self, name: str) -> dict:
-        """Collect the constructor kwargs for a controller name from its declared parameters."""
-        params = {'target_linear_velocity': self._target_linear_velocity}
-        if name == 'pure_pursuit':
-            params['lookahead_distance'] = float(self.get_parameter('pure_pursuit.lookahead_distance').value)
-            params['goal_tolerance'] = float(self.get_parameter('pure_pursuit.goal_tolerance').value)
-        elif name == 'pid':
-            params['lookahead_distance'] = float(self.get_parameter('pid.lookahead_distance').value)
-            params['goal_tolerance'] = float(self.get_parameter('pid.goal_tolerance').value)
-            params['kp'] = float(self.get_parameter('pid.kp').value)
-            params['ki'] = float(self.get_parameter('pid.ki').value)
-            params['kd'] = float(self.get_parameter('pid.kd').value)
-        elif name == 'mppi':
-            params['goal_tolerance'] = float(self.get_parameter('mppi.goal_tolerance').value)
-            params['horizon_steps'] = int(self.get_parameter('mppi.horizon_steps').value)
-            params['dt'] = float(self.get_parameter('mppi.dt').value)
-            params['num_samples'] = int(self.get_parameter('mppi.num_samples').value)
-            params['angular_std'] = float(self.get_parameter('mppi.angular_std').value)
-            params['temperature'] = float(self.get_parameter('mppi.temperature').value)
+        """Build constructor kwargs for a controller from its namespaced parameters."""
+        if name not in CONTROLLER_PARAMS:
+            raise ValueError(f'unknown controller {name!r}, options are {list(CONTROLLER_PARAMS)}')
+        params = {
+            key: type(default)(self.get_parameter(f'{name}.{key}').value)
+            for key, default in CONTROLLER_PARAMS[name].items()
+        }
+        if name in ('mppi', 'lqr', 'stanley'):
             params['max_angular_velocity'] = self._max_angular_velocity
+        if name == 'lqr':
+            params['dt'] = 1.0 / self._control_rate
         return params
 
     def switch_controller(self, name: str):
         """Instantiate the requested controller, carrying over the current path if any."""
         new_controller = create_controller(name, self.build_controller_params(name))
-        if self._have_path:
-            new_controller.set_path(self._current_path_points)
+        if self._waypoints:
+            new_controller.set_path([(x, y) for x, y, _, _ in self._waypoints])
         self._controller = new_controller
         self._controller_name = name
         self.get_logger().info(f'switched controller to {name}')
 
     def on_parameters_changed(self, params):
-        """Apply runtime changes to avoidance_enabled, speed_regulator_enabled, and controller selection."""
+        """Apply runtime changes to avoidance, speed regulator, loop and controller selection."""
         for param in params:
             if param.name == 'avoidance_enabled':
                 self._avoidance_enabled = bool(param.value)
             elif param.name == 'speed_regulator_enabled':
                 self._speed_regulator_enabled = bool(param.value)
+            elif param.name == 'loop_route':
+                self._loop_route = bool(param.value)
             elif param.name == 'controller':
                 try:
                     self.switch_controller(param.value)
@@ -195,91 +328,153 @@ class PathFollowerNode(Node):
         return SetParametersResult(successful=True)
 
     def find_next_stop_index(self, from_index: int):
-        """Return the index of the next waypoint with dwell_sec > 0 at or after from_index, or None."""
+        """Index of the next waypoint with dwell_sec > 0 at or after from_index, or None."""
         for i in range(from_index, len(self._waypoints)):
             if self._waypoints[i][3] > 0.0:
                 return i
         return None
 
-    def waypoints_callback(self, msg: WaypointPath):
-        """Load a new waypoint path into the controller and reset the stop-point state machine."""
-        self._waypoints = [(w.x, w.y, w.yaw, w.dwell_sec) for w in msg.waypoints]
-        self._current_path_points = [(x, y) for x, y, _, _ in self._waypoints]
-        self._controller.set_path(self._current_path_points)
+    def restart_route(self, from_start: bool = False):
+        """Reset controller progress and the stop-point state machine to the start of the route."""
+        self._controller.set_path(
+            [(x, y) for x, y, _, _ in self._waypoints], 0 if from_start else None
+        )
         self._speed_regulator.reset()
-        self._have_path = len(self._waypoints) > 0
         self._follower_state = 'FOLLOWING'
         self._next_stop_index = self.find_next_stop_index(0)
 
+    def waypoints_callback(self, msg: WaypointPath):
+        """Load a new route; identical republished routes are ignored so progress is kept."""
+        waypoints = [(w.x, w.y, w.yaw, w.dwell_sec) for w in msg.waypoints]
+        if waypoints == self._waypoints:
+            return
+        self._waypoints = waypoints
+        self._speed_profile = velocity_profile(
+            [(w[0], w[1]) for w in waypoints],
+            [i for i, w in enumerate(waypoints) if w[3] > 0.0],
+            cruise=self._target_linear_velocity,
+            min_speed=self._min_linear_velocity,
+            max_lateral_accel=self._max_lateral_accel,
+            decel=self._decel_limit,
+            approach_speed=self._approach_speed,
+        )
+        self._lap = 0
+        self.restart_route()
+        stops = sum(1 for w in waypoints if w[3] > 0.0)
+        self.get_logger().info(f'route loaded: {len(waypoints)} waypoints, {stops} stop points')
+
     def avoidance_callback(self, msg: AvoidanceCommand):
-        """Cache the latest avoidance signal for blending into the control loop."""
-        self._avoidance_steering_bias = msg.steering_bias
-        self._avoidance_velocity_scale = msg.velocity_scale
-        self._avoidance_emergency = msg.emergency
+        """Cache the latest avoidance signal and its arrival time."""
+        self._avoidance = msg
+        self._avoidance_time = self.get_clock().now()
 
-    def call_set_auto_mode(self, enable: bool):
-        """Call the driver's set_auto_mode service and return (success, message)."""
-        if not self._auto_mode_client.wait_for_service(timeout_sec=2.0):
-            return False, 'drivers/set_auto_mode service not available'
-
-        driver_request = SetBool.Request()
-        driver_request.data = enable
-        future = self._auto_mode_client.call_async(driver_request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-
-        if future.result() is None:
-            return False, 'drivers/set_auto_mode call timed out'
+    def call_trigger(self, client, timeout: float = 2.0):
+        """Call a Trigger service and wait for it (requires the multi-threaded executor)."""
+        if client is None:
+            return True, 'skipped'
+        if not client.wait_for_service(timeout_sec=timeout):
+            return False, f'{client.srv_name} not available'
+        done = threading.Event()
+        future = client.call_async(Trigger.Request())
+        future.add_done_callback(lambda _: done.set())
+        if not done.wait(timeout) or future.result() is None:
+            return False, f'{client.srv_name} timed out'
         return future.result().success, future.result().message
 
     def start_nav_callback(self, request, response):
-        """Enable or disable navigation, gating driver auto mode along with it."""
+        """Enable or disable navigation, switching the robot's control mode along with it."""
         if request.data:
-            success, message = self.call_set_auto_mode(True)
-            if not success:
-                self.get_logger().error(f'failed to enable auto mode: {message}')
+            ok, message = self.call_trigger(self._auto_on_client)
+            if not ok:
                 response.success = False
                 response.message = f'failed to enable auto mode: {message}'
+                self.get_logger().error(response.message)
                 return response
-
+            self._safety.reset()
+            self._paused = False
             self._nav_active = True
-            self.get_logger().info('navigation started')
             response.success = True
             response.message = 'navigation started'
+            self.get_logger().info(response.message)
             return response
 
         self._nav_active = False
-        self.publish_stop()
-
-        success, message = self.call_set_auto_mode(False)
-        if not success:
+        self.publish_stop(hard=True)
+        ok, message = self.call_trigger(self._auto_off_client)
+        if not ok:
             self.get_logger().error(f'failed to switch back to manual mode: {message}')
-
-        self.get_logger().info('navigation stopped, switched to manual mode')
         response.success = True
-        response.message = 'navigation stopped, switched to manual mode'
+        response.message = 'navigation stopped'
+        self.get_logger().info(response.message)
         return response
 
+    def pause_callback(self, request, response):
+        """Pause (hold position, keep progress) or resume navigation."""
+        self._paused = bool(request.data)
+        if self._paused:
+            self.publish_stop(hard=True)
+        response.success = True
+        response.message = 'paused' if self._paused else 'resumed'
+        self.get_logger().info(f'navigation {response.message}')
+        return response
+
+    def battery_callback(self, msg: BatteryState):
+        """Flag low battery so the patrol ends at the end of the current lap."""
+        low = 0.0 <= msg.percentage < self._low_battery
+        if low and not self._battery_low:
+            self.get_logger().warn(
+                f'battery {msg.percentage * 100:.0f}%, finishing this lap and stopping'
+            )
+        self._battery_low = self._battery_low or low
+
+    def publish_mission_status(self):
+        """Publish a 1 Hz mission summary for dashboards."""
+        msg = MissionStatus()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.active = self._nav_active and not self._paused
+        msg.root_status = self._last_status
+        stops = sum(1 for w in self._waypoints if w[3] > 0.0)
+        flags = ' | battery low' if self._battery_low else ''
+        msg.active_behavior = (
+            f'lap {self._lap} | next stop {self._next_stop_index} of {stops} | '
+            f'{self._follower_state}{flags}'
+        )
+        self._mission_pub.publish(msg)
+
     def current_pose(self):
-        """Look up the robot's current map->base_link pose, or None if TF isn't ready."""
+        """Look up map->base_link; None if unavailable or older than tf_timeout_sec."""
         try:
-            t = self._tf_buffer.lookup_transform('map', 'base_link', rclpy.time.Time())
-        except Exception as error:
-            self.get_logger().warn(f'TF lookup map->base_link failed: {error}', throttle_duration_sec=2.0)
+            t = self._tf_buffer.lookup_transform('map', 'base_link', Time())
+        except TransformException as error:
+            self.get_logger().warn(f'TF map->base_link failed: {error}', throttle_duration_sec=2.0)
+            return None
+        stamp = Time.from_msg(t.header.stamp)
+        if stamp.nanoseconds > 0 and self.get_clock().now() - stamp > self._tf_timeout:
+            self.get_logger().warn(
+                'TF map->base_link is stale (odometry stopped?)', throttle_duration_sec=2.0
+            )
             return None
         p = t.transform.translation
         return Pose2D(p.x, p.y, yaw_from_quaternion(t.transform.rotation))
 
+    def avoidance_signal(self):
+        """Return (steering, lateral, velocity_scale, emergency, stale) from avoidance."""
+        if not self._avoidance_enabled:
+            return 0.0, 0.0, 1.0, False, False
+        stale = (
+            self._avoidance_time is None
+            or self.get_clock().now() - self._avoidance_time > self._avoidance_timeout
+        )
+        a = self._avoidance
+        lateral = a.lateral_bias if self._holonomic and self._avoidance_lateral else 0.0
+        return a.steering_bias, lateral, a.velocity_scale, a.emergency, stale
+
     def publish_status(self, stamp, status, message):
-        """Publish the current follower state as a NavigationStatus, logging once per
-        state transition (not every tick) so the console and the GUI both show clear,
-        readable events -- "navigation started/ended", "no tf", "no path", etc -- instead
-        of staying silent or spamming at the 20Hz control rate."""
+        """Publish NavigationStatus, logging once per state transition."""
         if status != self._last_status:
             log = self.get_logger().warn if status in self._WARN_STATES else self.get_logger().info
             log(f'[{status}] {message}')
-
         self._last_status = status
-        self._last_status_message = message
         msg = NavigationStatus()
         msg.header.stamp = stamp
         msg.header.frame_id = 'map'
@@ -287,165 +482,334 @@ class PathFollowerNode(Node):
         msg.message = message
         self._status_pub.publish(msg)
 
-    def publish_markers(self, stamp, status, message, pose_x, pose_y, lookahead_xy=None, nearest_xy=None, curvature=None, rollout_xy=None):
-        """Build and publish the path controller debug MarkerArray, and the plain NavigationStatus."""
+    def publish_markers(self, stamp, status, message, pose_x, pose_y, debug=None):
+        """Publish the status and the controller debug MarkerArray."""
         self.publish_status(stamp, status, message)
+        debug = debug or {}
         markers = MarkerArray()
-        color = visualization.status_color(status)
-
-        text_marker = visualization.status_text_marker('map', stamp, pose_x, pose_y, f'{status}\n{message}', color)
-        text_marker.lifetime = self._marker_lifetime
-        markers.markers.append(text_marker)
-
-        if lookahead_xy is not None:
-            m = visualization.lookahead_marker('map', stamp, lookahead_xy[0], lookahead_xy[1])
+        items = [
+            visualization.status_text_marker(
+                'map',
+                stamp,
+                pose_x,
+                pose_y,
+                f'{status}\n{message}',
+                visualization.status_color(status),
+            )
+        ]
+        if debug.get('lookahead_xy') is not None:
+            items.append(visualization.lookahead_marker('map', stamp, *debug['lookahead_xy']))
+        if debug.get('nearest_xy') is not None:
+            items.append(visualization.nearest_point_marker('map', stamp, *debug['nearest_xy']))
+        if debug.get('curvature') is not None:
+            items.append(
+                visualization.curvature_arc_marker(
+                    'base_link', stamp, debug['curvature'], self._arc_length
+                )
+            )
+        if debug.get('rollout_xy') is not None:
+            items.append(visualization.rollout_marker('map', stamp, debug['rollout_xy']))
+        for m in items:
             m.lifetime = self._marker_lifetime
             markers.markers.append(m)
-
-        if nearest_xy is not None:
-            m = visualization.nearest_point_marker('map', stamp, nearest_xy[0], nearest_xy[1])
-            m.lifetime = self._marker_lifetime
-            markers.markers.append(m)
-
-        if curvature is not None:
-            m = visualization.curvature_arc_marker('base_link', stamp, curvature, self._arc_length)
-            m.lifetime = self._marker_lifetime
-            markers.markers.append(m)
-
-        if rollout_xy is not None:
-            m = visualization.rollout_marker('map', stamp, rollout_xy)
-            m.lifetime = self._marker_lifetime
-            markers.markers.append(m)
-
         self._markers_pub.publish(markers)
 
-    def run_aligning(self, pose: Pose2D, dt: float, stamp):
-        """Rotate in place toward the stop point's recorded yaw; transition to DWELLING once aligned."""
-        error = angle_diff(self._align_target_yaw, pose.yaw)
+    def publish_stop_event(self, event: str, message: str = ''):
+        """Publish a StopPointEvent for the current stop point."""
+        x, y, yaw_deg, dwell = self._waypoints[self._next_stop_index]
+        msg = StopPointEvent()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.index = self._next_stop_index
+        msg.x, msg.y, msg.yaw_deg, msg.dwell_sec = float(x), float(y), float(yaw_deg), float(dwell)
+        msg.event = event
+        msg.message = message
+        self._stop_event_pub.publish(msg)
 
-        if abs(error) < self._yaw_tolerance:
+    def start_inspection(self):
+        """Fire every inspection Trigger service asynchronously."""
+        self._inspection_results = []
+        self._inspection_pending = 0
+        for client in self._inspection_clients:
+            if not client.service_is_ready():
+                self._inspection_results.append(f'{client.srv_name}: not available')
+                continue
+            self._inspection_pending += 1
+            future = client.call_async(Trigger.Request())
+            future.add_done_callback(lambda f, name=client.srv_name: self.inspection_done(name, f))
+
+    def inspection_done(self, name: str, future):
+        """Collect one inspection result."""
+        result = future.result()
+        verdict = 'ok' if result and result.success else 'fail'
+        text = f'{name}: {verdict} {result.message if result else ""}'
+        self._inspection_results.append(text.strip())
+        self._inspection_pending = max(0, self._inspection_pending - 1)
+        if self._inspection_pending == 0 and self._next_stop_index is not None:
+            self.publish_stop_event('inspected', ' | '.join(self._inspection_results))
+
+    def run_approaching(self, pose: Pose2D, stamp):
+        """Converge onto the target x, y, yaw, then dwell (stop point) or hold (route end)."""
+        x, y, yaw_deg, _ = self._waypoints[self._approach_index]
+        cmd = self._approach.update(pose, x, y, math.radians(yaw_deg))
+        elapsed = (self.get_clock().now() - self._approach_start_time).nanoseconds / 1e9
+        if cmd.done or elapsed > self._approach_timeout:
+            self.publish_stop(hard=True)
+            note = '' if cmd.done else f'approach timeout, error {cmd.position_error:.2f} m'
+            if note:
+                self.get_logger().warn(note)
+            if self._approach_is_goal:
+                self._follower_state = 'GOAL_HOLD'
+                return
             self._follower_state = 'DWELLING'
             self._dwell_start_time = self.get_clock().now()
-            self.publish_stop()
-            self.publish_markers(stamp, 'DWELLING', f'holding for {self._dwell_duration:.1f}s', pose.x, pose.y)
+            self.publish_stop_event('arrived', note)
+            self.start_inspection()
+            self.publish_markers(
+                stamp, 'DWELLING', f'stop {self._next_stop_index}, inspecting', pose.x, pose.y
+            )
             return
 
-        angular = max(-self._max_angular_velocity, min(self._max_angular_velocity, self._align_kp * error))
-        cmd = Twist()
-        cmd.angular.z = self._angular_limiter.step(angular, dt)
-        self._cmd_vel_pub.publish(cmd)
-        self.publish_markers(stamp, 'ALIGNING', f'heading error {math.degrees(error):.1f} deg', pose.x, pose.y)
+        _, _, _, emergency, stale = self.avoidance_signal()
+        if emergency or stale:
+            self.publish_stop(hard=True)
+            self.publish_markers(
+                stamp, 'EMERGENCY_STOP', 'obstacle during final approach', pose.x, pose.y
+            )
+            return
+
+        target = 'goal' if self._approach_is_goal else f'stop {self._approach_index}'
+        out = Twist()
+        out.linear.x = cmd.vx
+        out.linear.y = cmd.vy
+        out.angular.z = cmd.wz
+        self._linear_limiter.reset(cmd.vx)
+        self._lateral_limiter.reset(cmd.vy)
+        self._angular_limiter.reset(cmd.wz)
+        self._cmd_vel_pub.publish(out)
+        self.publish_markers(
+            stamp,
+            'APPROACHING',
+            f'{target}: {cmd.position_error * 100:.1f} cm, '
+            f'{math.degrees(cmd.yaw_error):.1f} deg',
+            pose.x,
+            pose.y,
+        )
 
     def run_dwelling(self, pose: Pose2D, stamp):
-        """Hold position until dwell_duration has elapsed, then resume following past this stop point."""
-        self.publish_stop()
+        """Hold until dwell time passed and inspections finished (or timed out), then move on."""
+        self.publish_stop(hard=True)
         elapsed = (self.get_clock().now() - self._dwell_start_time).nanoseconds / 1e9
-        remaining = max(0.0, self._dwell_duration - elapsed)
-        self.publish_markers(stamp, 'DWELLING', f'resuming in {remaining:.1f}s', pose.x, pose.y)
+        waiting = (
+            self._inspection_pending > 0
+            and elapsed < self._dwell_duration + self._inspection_timeout
+        )
+        if elapsed < self._dwell_duration or waiting:
+            remaining = max(0.0, self._dwell_duration - elapsed)
+            note = (
+                f', {self._inspection_pending} inspection(s) pending'
+                if self._inspection_pending
+                else ''
+            )
+            self.publish_markers(
+                stamp, 'DWELLING', f'resuming in {remaining:.1f}s{note}', pose.x, pose.y
+            )
+            return
 
-        if elapsed >= self._dwell_duration:
-            self._follower_state = 'FOLLOWING'
+        if self._inspection_pending:
+            self.publish_stop_event(
+                'inspected', 'timeout: ' + ' | '.join(self._inspection_results)
+            )
+            self._inspection_pending = 0
+        self.publish_stop_event('departed')
+        self._follower_state = 'FOLLOWING'
+        self._next_stop_index = self.find_next_stop_index(self._next_stop_index + 1)
+
+    def check_stop_point(self, pose: Pose2D, stamp) -> bool:
+        """Enter APPROACHING near the next stop point, or skip it if progress already passed it."""
+        if self._next_stop_index is None:
+            return False
+        sx, sy, _, sdwell = self._waypoints[self._next_stop_index]
+        if math.hypot(sx - pose.x, sy - pose.y) < self._approach_radius:
+            self._dwell_duration = sdwell
+            self.start_approach(self._next_stop_index, is_goal=False)
+            self.publish_markers(
+                stamp, 'APPROACHING', f'stop point {self._next_stop_index}', pose.x, pose.y
+            )
+            return True
+        if (
+            self._controller.progress_index()
+            > self._next_stop_index + self._stop_point_skip_margin
+        ):
+            self.get_logger().warn(f'stop point {self._next_stop_index} missed, skipping')
+            self.publish_stop_event('skipped', 'passed without reaching tolerance')
             self._next_stop_index = self.find_next_stop_index(self._next_stop_index + 1)
+        return False
+
+    def start_approach(self, index: int, is_goal: bool):
+        """Switch to the final approach toward waypoint index."""
+        self._follower_state = 'APPROACHING'
+        self._approach_index = index
+        self._approach_is_goal = is_goal
+        self._approach.reset()
+        self._approach_start_time = self.get_clock().now()
+
+    def handle_route_end(self):
+        """Start the next lap on a closed loop, else approach the last point and hold."""
+        first_x, first_y = self._waypoints[0][0], self._waypoints[0][1]
+        last_x, last_y = self._waypoints[-1][0], self._waypoints[-1][1]
+        closed = math.hypot(first_x - last_x, first_y - last_y) < self._loop_close_distance
+        if self._loop_route and closed and not self._battery_low:
+            self._lap += 1
+            self.get_logger().info(f'lap {self._lap} complete, restarting route')
+            self.restart_route(from_start=True)
+            return
+        self.start_approach(len(self._waypoints) - 1, is_goal=True)
 
     def control_loop(self):
-        """Compute and publish the blended controller + avoidance cmd_vel, or run the stop-point state machine."""
+        """Run one control tick: safety checks, stop-point state machine, then path following."""
         now = self.get_clock().now()
         dt = (now - self._last_time).nanoseconds / 1e9
         self._last_time = now
-        if dt <= 0.0:
+        if dt <= 0.0 or dt > 1.0:
             dt = 1.0 / self._control_rate
         stamp = now.to_msg()
 
         if not self._nav_active:
-            self.publish_markers(stamp, 'NAV_INACTIVE', "call service 'navigation/start_nav' to begin", 0.0, 0.0)
+            self.publish_markers(
+                stamp, 'NAV_INACTIVE', "call 'navigation/start_nav' to begin", 0.0, 0.0
+            )
             return
-
-        if not self._have_path:
-            self.publish_stop()
-            self.publish_markers(stamp, 'NO_PATH', 'waiting for a path on navigation/waypoints', 0.0, 0.0)
+        if self._paused:
+            self.publish_stop(hard=True)
+            self.publish_markers(
+                stamp, 'PAUSED', "call 'navigation/pause' false to resume", 0.0, 0.0
+            )
+            return
+        if not self._waypoints:
+            self.publish_stop(hard=True)
+            self.publish_markers(stamp, 'NO_PATH', 'waiting for navigation/waypoints', 0.0, 0.0)
             return
 
         pose = self.current_pose()
         if pose is None:
-            self.publish_stop()
-            self.publish_markers(stamp, 'TF_UNAVAILABLE', 'waiting for map->base_link TF', 0.0, 0.0)
+            self.publish_stop(hard=True)
+            self.publish_markers(
+                stamp, 'TF_UNAVAILABLE', 'waiting for fresh map->base_link', 0.0, 0.0
+            )
             return
 
-        if self._follower_state == 'ALIGNING':
-            self.run_aligning(pose, dt, stamp)
+        if self._follower_state == 'GOAL_HOLD':
+            self.publish_stop(hard=True)
+            self.publish_markers(
+                stamp, 'GOAL_REACHED', 'holding position at the route end', pose.x, pose.y
+            )
             return
-
+        if self._follower_state == 'APPROACHING':
+            self.run_approaching(pose, stamp)
+            return
         if self._follower_state == 'DWELLING':
             self.run_dwelling(pose, stamp)
             return
 
-        if self._controller.is_finished(pose):
-            self.publish_stop()
-            self.publish_markers(stamp, 'GOAL_REACHED', 'holding position', pose.x, pose.y)
+        steering_bias, lateral_bias, velocity_scale, emergency, stale = self.avoidance_signal()
+        if stale:
+            self.publish_stop(hard=True)
+            self.publish_markers(
+                stamp, 'AVOIDANCE_STALE', 'no fresh navigation/avoidance, stopped', pose.x, pose.y
+            )
             return
 
-        if self._next_stop_index is not None:
-            sx, sy, syaw_deg, sdwell = self._waypoints[self._next_stop_index]
-            if math.hypot(sx - pose.x, sy - pose.y) < self._stop_point_tolerance:
-                self._follower_state = 'ALIGNING'
-                self._align_target_yaw = math.radians(syaw_deg)
-                self._dwell_duration = sdwell
-                self.publish_stop()
-                self.publish_markers(stamp, 'ALIGNING', f'reached stop point {self._next_stop_index}', pose.x, pose.y)
-                return
+        if self._controller.is_finished(pose):
+            self.handle_route_end()
+            return
+        if self.check_stop_point(pose, stamp):
+            return
 
-        controller_output = self._controller.update(pose, dt)
+        now_sec = now.nanoseconds / 1e9
+        cross_track = self.cross_track_error(pose)
+        slow, off_path = self._safety.off_path(cross_track)
+        if off_path:
+            self.publish_stop(hard=True)
+            self.publish_markers(
+                stamp,
+                'OFF_PATH',
+                f'{cross_track:.2f} m from the route, check the robot '
+                "and call 'navigation/start_nav' again",
+                pose.x,
+                pose.y,
+            )
+            return
 
-        steering_bias = self._avoidance_steering_bias if self._avoidance_enabled else 0.0
-        velocity_scale = self._avoidance_velocity_scale if self._avoidance_enabled else 1.0
-        emergency = self._avoidance_emergency if self._avoidance_enabled else False
-
-        target_angular = controller_output.angular + steering_bias
-        target_linear = controller_output.linear * velocity_scale
-
+        index = min(self._controller.progress_index(), len(self._speed_profile) - 1)
+        target_speed = (
+            self._speed_profile[index] if self._speed_profile else self._target_linear_velocity
+        )
+        if slow:
+            target_speed = min(target_speed, self._min_linear_velocity)
+        output = self._controller.update(pose, dt, target_speed)
+        target_angular = output.angular + steering_bias
+        target_linear = output.linear * velocity_scale
         if self._speed_regulator_enabled:
             target_linear *= self._speed_regulator.scale_for(target_angular, dt)
 
-        if emergency:
-            target_linear = 0.0
+        estop = self._safety.estop(emergency, now_sec)
+        blocked = self._safety.blocked(estop or velocity_scale < 0.05, now_sec)
+        if estop:
+            self.publish_stop(hard=True)
+        else:
+            cmd = Twist()
+            cmd.linear.x = self._linear_limiter.step(
+                clamp(target_linear, self._max_linear_velocity), dt
+            )
+            lateral = self._lateral_filter.step(lateral_bias)
+            angular = self._angular_filter.step(clamp(target_angular, self._max_angular_velocity))
+            cmd.linear.y = self._lateral_limiter.step(lateral, dt)
+            cmd.angular.z = self._angular_limiter.step(angular, dt)
+            self._cmd_vel_pub.publish(cmd)
 
-        target_linear = max(-self._max_linear_velocity, min(self._max_linear_velocity, target_linear))
-        target_angular = max(-self._max_angular_velocity, min(self._max_angular_velocity, target_angular))
-
-        cmd = Twist()
-        cmd.linear.x = self._linear_limiter.step(target_linear, dt)
-        cmd.angular.z = self._angular_limiter.step(target_angular, dt)
-        self._cmd_vel_pub.publish(cmd)
-
-        status = 'EMERGENCY_STOP' if emergency else 'FOLLOWING'
+        status = 'BLOCKED' if blocked else 'EMERGENCY_STOP' if estop else 'FOLLOWING'
         message = (
-            f'controller {self._controller_name} | v_scale {velocity_scale:.2f} | '
-            f'avoidance {"on" if self._avoidance_enabled else "off"} | '
-            f'speed_reg {"on" if self._speed_regulator_enabled else "off"}'
+            f'lap {self._lap} | {self._controller_name} | v_scale {velocity_scale:.2f} | '
+            f'cte {cross_track:.2f} m | next stop {self._next_stop_index}'
         )
-        debug = self._controller.debug_info()
-        self.publish_markers(
-            stamp, status, message, pose.x, pose.y,
-            lookahead_xy=debug.get('lookahead_xy'),
-            nearest_xy=debug.get('nearest_xy'),
-            curvature=debug.get('curvature'),
-            rollout_xy=debug.get('rollout_xy'),
-        )
+        self.publish_markers(stamp, status, message, pose.x, pose.y, self._controller.debug_info())
 
-    def publish_stop(self):
-        """Ramp linear and angular velocity down to zero and publish."""
+    def cross_track_error(self, pose: Pose2D) -> float:
+        """Distance from the robot to the route around the current progress index."""
+        i = self._controller.progress_index()
+        window = self._waypoints[max(0, i - 20):i + 20]
+        return min(math.hypot(w[0] - pose.x, w[1] - pose.y) for w in window) if window else 0.0
+
+    def publish_stop(self, hard: bool = False):
+        """Publish zero velocity; hard skips the slew ramp entirely."""
+        if hard:
+            for limiter in (
+                self._linear_limiter,
+                self._lateral_limiter,
+                self._angular_limiter,
+                self._angular_filter,
+                self._lateral_filter,
+            ):
+                limiter.reset()
+            self._cmd_vel_pub.publish(Twist())
+            return
+        dt = 1.0 / self._control_rate
         cmd = Twist()
-        cmd.linear.x = self._linear_limiter.step(0.0, 1.0 / self._control_rate)
-        cmd.angular.z = self._angular_limiter.step(0.0, 1.0 / self._control_rate)
+        cmd.linear.x = self._linear_limiter.step(0.0, dt)
+        cmd.linear.y = self._lateral_limiter.step(0.0, dt)
+        cmd.angular.z = self._angular_limiter.step(0.0, dt)
         self._cmd_vel_pub.publish(cmd)
 
 
 def main(args=None):
-    """Spin the path follower node."""
+    """Spin the path follower node on a multi-threaded executor."""
     rclpy.init(args=args)
     node = PathFollowerNode()
+    executor = MultiThreadedExecutor(num_threads=3)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:

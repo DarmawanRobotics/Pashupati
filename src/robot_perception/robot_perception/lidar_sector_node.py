@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 import math
-import numpy as np
 
-import rclpy
-from rclpy.node import Node
-from rclpy.duration import Duration
-
-from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Point
 from livox_ros_driver2.msg import CustomMsg
+import numpy as np
+import rclpy
+from rclpy.duration import Duration
+from rclpy.node import Node
+from robot_interfaces.msg import SectorScan
+from std_msgs.msg import ColorRGBA
+from tf2_ros import Buffer, TransformListener
+import tf_transformations
 from visualization_msgs.msg import Marker, MarkerArray
 
-import tf_transformations
-from tf2_ros import Buffer, TransformListener
-
-from robot_interfaces.msg import SectorScan
 
 class LidarSectorNode(Node):
     """Bins Livox points into fixed angular sectors and publishes a SectorScan."""
+
     def __init__(self):
         """Declare params, set up TF, and wire the subscription/publishers."""
         super().__init__('lidar_sector_node')
@@ -25,7 +24,7 @@ class LidarSectorNode(Node):
         self.declare_parameter('fov_deg', 180.0)
         self.declare_parameter('range_max', 8.0)
         self.declare_parameter('range_min', 0.1)
-        self.declare_parameter('obstacle_z_min', 0.05)
+        self.declare_parameter('obstacle_z_min', -0.25)
         self.declare_parameter('obstacle_z_max', 1.20)
         self.declare_parameter('publish_markers', True)
         self.declare_parameter('marker_lifetime_sec', 0.3)
@@ -33,6 +32,10 @@ class LidarSectorNode(Node):
         self.declare_parameter('corridor_x_max', 5.0)
         self.declare_parameter('corridor_y_min', -1.0)
         self.declare_parameter('corridor_y_max', 1.0)
+        self.declare_parameter('self_filter_x_min', -0.40)
+        self.declare_parameter('self_filter_x_max', 0.40)
+        self.declare_parameter('self_filter_y_min', -0.28)
+        self.declare_parameter('self_filter_y_max', 0.28)
 
         self._num_sectors = int(self.get_parameter('num_sectors').value)
         self._fov = math.radians(float(self.get_parameter('fov_deg').value))
@@ -41,11 +44,17 @@ class LidarSectorNode(Node):
         self._z_min = float(self.get_parameter('obstacle_z_min').value)
         self._z_max = float(self.get_parameter('obstacle_z_max').value)
         self._publish_markers = bool(self.get_parameter('publish_markers').value)
-        self._marker_lifetime = Duration(seconds=float(self.get_parameter('marker_lifetime_sec').value)).to_msg()
+        self._marker_lifetime = Duration(
+            seconds=float(self.get_parameter('marker_lifetime_sec').value)
+        ).to_msg()
         self._corridor_x_min = float(self.get_parameter('corridor_x_min').value)
         self._corridor_x_max = float(self.get_parameter('corridor_x_max').value)
         self._corridor_y_min = float(self.get_parameter('corridor_y_min').value)
         self._corridor_y_max = float(self.get_parameter('corridor_y_max').value)
+        self._self_box = [
+            float(self.get_parameter(f'self_filter_{k}').value)
+            for k in ('x_min', 'x_max', 'y_min', 'y_max')
+        ]
 
         self._angle_min = -self._fov / 2.0
         self._angle_increment = self._fov / self._num_sectors
@@ -55,20 +64,29 @@ class LidarSectorNode(Node):
         self._extrinsic_rotation = None
         self._extrinsic_translation = None
 
-        self.create_subscription(CustomMsg, "livox/lidar", self.livox_callback, 10)
-        self._sectorscan_pub = self.create_publisher(SectorScan, "perception/sector_scan", 10)
-        self._markers_pub = self.create_publisher(MarkerArray, "perception/obstacles", 10) if self._publish_markers else None
+        self.create_subscription(CustomMsg, 'livox/lidar', self.livox_callback, 10)
+        self._sectorscan_pub = self.create_publisher(SectorScan, 'perception/sector_scan', 10)
+        self._markers_pub = (
+            self.create_publisher(MarkerArray, 'perception/obstacles', 10)
+            if self._publish_markers
+            else None
+        )
 
     def lookup_extrinsic(self) -> bool:
         """Look up and cache the static lidar_frame -> base_frame transform from TF."""
         try:
-            tf = self._tf_buffer.lookup_transform("base_link", "livox_frame", rclpy.time.Time())
+            tf = self._tf_buffer.lookup_transform('base_link', 'livox_frame', rclpy.time.Time())
         except Exception as error:
-            self.get_logger().warn(f'waiting for TF {"livox_frame"} -> {"base_link"}: {error}', throttle_duration_sec=2.0)
+            self.get_logger().warn(
+                f'waiting for TF {"livox_frame"} -> {"base_link"}: {error}',
+                throttle_duration_sec=2.0,
+            )
             return False
 
         q = tf.transform.rotation
-        self._extrinsic_rotation = tf_transformations.quaternion_matrix([q.x, q.y, q.z, q.w])[:3, :3]
+        self._extrinsic_rotation = tf_transformations.quaternion_matrix([q.x, q.y, q.z, q.w])[
+            :3, :3
+        ]
         t = tf.transform.translation
         self._extrinsic_translation = np.array([t.x, t.y, t.z])
         return True
@@ -83,8 +101,7 @@ class LidarSectorNode(Node):
         return ColorRGBA(r=1.0 - ratio, g=1.0, b=0.0, a=0.9)
 
     def corridor_ray_length(self, theta: float) -> float:
-        """Clamp range_max to a rectangular corridor at this angle, giving a flattened
-        'U' shape (long ahead, short to the sides) instead of a uniform semicircle."""
+        """Clamp range_max to the rectangular corridor at this angle (RViz rays only)."""
         length = self._range_max
         sin_t, cos_t = math.sin(theta), math.cos(theta)
 
@@ -115,24 +132,33 @@ class LidarSectorNode(Node):
             y = np.fromiter((p.y for p in msg.points), dtype=np.float32, count=n)
             z = np.fromiter((p.z for p in msg.points), dtype=np.float32, count=n)
 
-            points = np.stack([x, y, z], axis=1) @ self._extrinsic_rotation.T + self._extrinsic_translation
+            points = (
+                np.stack([x, y, z], axis=1) @ self._extrinsic_rotation.T
+                + self._extrinsic_translation
+            )
             base_x, base_y, base_z = points[:, 0], points[:, 1], points[:, 2]
 
-            height_mask = (base_z >= self._z_min) & (base_z <= self._z_max)
-            base_x, base_y = base_x[height_mask], base_y[height_mask]
+            sx0, sx1, sy0, sy1 = self._self_box
+            on_body = (base_x > sx0) & (base_x < sx1) & (base_y > sy0) & (base_y < sy1)
+            keep = (base_z >= self._z_min) & (base_z <= self._z_max) & ~on_body
+            base_x, base_y = base_x[keep], base_y[keep]
 
             if base_x.size > 0:
                 r = np.hypot(base_x, base_y)
                 theta = np.arctan2(base_y, base_x)
 
                 valid = (
-                    (r >= self._range_min) & (r <= self._range_max)
-                    & (theta >= self._angle_min) & (theta < self._angle_min + self._fov)
+                    (r >= self._range_min)
+                    & (r <= self._range_max)
+                    & (theta >= self._angle_min)
+                    & (theta < self._angle_min + self._fov)
                 )
                 r, theta = r[valid], theta[valid]
                 if r.size > 0:
                     idx = np.clip(
-                        ((theta - self._angle_min) / self._angle_increment).astype(int), 0, self._num_sectors - 1
+                        ((theta - self._angle_min) / self._angle_increment).astype(int),
+                        0,
+                        self._num_sectors - 1,
                     )
                     np.minimum.at(ranges, idx, r.astype(np.float32))
 
@@ -144,7 +170,7 @@ class LidarSectorNode(Node):
         """Fill and publish a SectorScan message from the binned ranges."""
         out = SectorScan()
         out.header.stamp = header.stamp
-        out.header.frame_id = "base_link"
+        out.header.frame_id = 'base_link'
         out.num_sectors = self._num_sectors
         out.angle_min = self._angle_min
         out.angle_increment = self._angle_increment
@@ -156,7 +182,7 @@ class LidarSectorNode(Node):
         """Build and publish ray and point markers for RViz visualization."""
         ray_marker = Marker()
         ray_marker.header.stamp = header.stamp
-        ray_marker.header.frame_id = "base_link"
+        ray_marker.header.frame_id = 'base_link'
         ray_marker.ns = 'sector_rays'
         ray_marker.id = 0
         ray_marker.type = Marker.LINE_LIST
@@ -164,7 +190,7 @@ class LidarSectorNode(Node):
         ray_marker.pose.orientation.w = 1.0
         ray_marker.scale.x = 0.02
         ray_marker.lifetime = self._marker_lifetime
-    
+
         point_marker = Marker()
         point_marker.header = ray_marker.header
         point_marker.ns = 'sector_points'
@@ -174,14 +200,14 @@ class LidarSectorNode(Node):
         point_marker.pose.orientation.w = 1.0
         point_marker.scale.x = point_marker.scale.y = point_marker.scale.z = 0.08
         point_marker.lifetime = self._marker_lifetime
-    
+
         origin = Point(x=0.0, y=0.0, z=0.0)
-        detection_eps = 1e-3 
+        detection_eps = 1e-3
         for i, r in enumerate(ranges):
             r = float(r)
             theta = self._angle_min + (i + 0.5) * self._angle_increment
             color = self.range_to_color(r)
-    
+
             ray_length = self.corridor_ray_length(theta)
             ray_end = Point(
                 x=float(ray_length * math.cos(theta)),
@@ -199,11 +225,12 @@ class LidarSectorNode(Node):
                 detected = Point(x=float(r * math.cos(theta)), y=float(r * math.sin(theta)), z=0.0)
                 point_marker.points.append(detected)
                 point_marker.colors.append(color)
-    
+
         markers = MarkerArray()
         markers.markers.append(ray_marker)
         markers.markers.append(point_marker)
         self._markers_pub.publish(markers)
+
 
 def main(args=None):
     """Spin the lidar sector perception node."""

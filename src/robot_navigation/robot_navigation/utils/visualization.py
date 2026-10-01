@@ -39,7 +39,9 @@ def nearest_point_marker(frame_id: str, stamp, x: float, y: float) -> Marker:
     return marker
 
 
-def curvature_arc_marker(frame_id: str, stamp, curvature: float, arc_length: float, num_points: int = 20) -> Marker:
+def curvature_arc_marker(
+    frame_id: str, stamp, curvature: float, arc_length: float, num_points: int = 20
+) -> Marker:
     """Build a line strip tracing the arc the robot will follow at the current curvature."""
     marker = Marker()
     marker.header.frame_id = frame_id
@@ -80,7 +82,9 @@ def rollout_marker(frame_id: str, stamp, points_xy) -> Marker:
     return marker
 
 
-def status_text_marker(frame_id: str, stamp, x: float, y: float, text: str, color: ColorRGBA) -> Marker:
+def status_text_marker(
+    frame_id: str, stamp, x: float, y: float, text: str, color: ColorRGBA
+) -> Marker:
     """Build a text marker showing follower status/debug info above the given position."""
     marker = Marker()
     marker.header.frame_id = frame_id

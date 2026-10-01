@@ -1,5 +1,6 @@
-import os
 from glob import glob
+import os
+
 from setuptools import find_packages, setup
 
 package_name = 'robot_mapping'
@@ -18,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='FAST-LIO2 mapping bringup and teach-and-repeat path recording with inspection stop points',
+    description='FAST-LIO2 mapping and teach-and-repeat route recording with stop points',
     license='MIT',
     extras_require={
         'test': [

@@ -36,3 +36,6 @@ desktop.ini
 # ---- misc ----
 *.log
 .cache/
+__MACOSX/
+
+.vscode/settings.json
