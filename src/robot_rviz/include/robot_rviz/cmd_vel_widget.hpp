@@ -1,11 +1,9 @@
-#ifndef ROBOT_UI__CMD_VEL_WIDGET_HPP_
-#define ROBOT_UI__CMD_VEL_WIDGET_HPP_
+#pragma once
 
 #include <QWidget>
 
-namespace robot_ui
+namespace robot_rviz
 {
-
 // Compact radar-style readout for a Twist: linear.x/y as a dot position,
 // angular.z as an arc. Purely a dumb display widget -- feed it values via
 // setValues(), it repaints itself.
@@ -32,6 +30,5 @@ private:
   double max_angular_ = 2.0;  // rad/s
 };
 
-}  // namespace robot_ui
+}  // namespace robot_rviz
 
-#endif  // ROBOT_UI__CMD_VEL_WIDGET_HPP_

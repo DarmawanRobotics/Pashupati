@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(robot_ui)
+project(robot_rviz)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -23,8 +23,8 @@ include_directories(include)
 add_library(${PROJECT_NAME} SHARED
   src/control_panel.cpp
   src/cmd_vel_widget.cpp
-  include/robot_ui/control_panel.hpp
-  include/robot_ui/cmd_vel_widget.hpp
+  include/robot_rviz/control_panel.hpp
+  include/robot_rviz/cmd_vel_widget.hpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC

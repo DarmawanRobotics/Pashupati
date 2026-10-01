@@ -1,5 +1,4 @@
-#ifndef ROBOT_UI__CONTROL_PANEL_HPP_
-#define ROBOT_UI__CONTROL_PANEL_HPP_
+#pragma once
 
 #include <memory>
 #include <string>
@@ -23,9 +22,9 @@
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
-#include "robot_ui/cmd_vel_widget.hpp"
+#include "robot_rviz/cmd_vel_widget.hpp"
 
-namespace robot_ui
+namespace robot_rviz
 {
 
 class ControlPanel : public rviz_common::Panel
@@ -98,6 +97,4 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
 };
 
-}  // namespace robot_ui
-
-#endif  // ROBOT_UI__CONTROL_PANEL_HPP_
+}  // namespace robot_rviz

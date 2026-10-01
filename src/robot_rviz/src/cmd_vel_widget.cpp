@@ -1,4 +1,4 @@
-#include "robot_ui/cmd_vel_widget.hpp"
+#include "robot_rviz/cmd_vel_widget.hpp"
 
 #include <QPainter>
 #include <QPaintEvent>
@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace robot_ui
+namespace robot_rviz
 {
 
 CmdVelWidget::CmdVelWidget(QWidget * parent)
@@ -64,4 +64,4 @@ void CmdVelWidget::paintEvent(QPaintEvent *)
   painter.drawEllipse(QPoint(dot_x, dot_y), 5, 5);
 }
 
-}  // namespace robot_ui
+}  

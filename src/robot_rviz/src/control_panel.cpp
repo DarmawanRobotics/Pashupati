@@ -1,4 +1,4 @@
-#include "robot_ui/control_panel.hpp"
+#include "robot_rviz/control_panel.hpp"
 
 #include <QFileDialog>
 #include <QGroupBox>
@@ -7,7 +7,7 @@
 
 #include <pluginlib/class_list_macros.hpp>
 
-namespace robot_ui
+namespace robot_rviz
 {
 
 ControlPanel::ControlPanel(QWidget * parent)
@@ -353,6 +353,6 @@ void ControlPanel::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg
       .arg(msg->angular.z, 0, 'f', 2));
 }
 
-}  // namespace robot_ui
+}  // namespace robot_rviz
 
-PLUGINLIB_EXPORT_CLASS(robot_ui::ControlPanel, rviz_common::Panel)
+PLUGINLIB_EXPORT_CLASS(robot_rviz::ControlPanel, rviz_common::Panel)
