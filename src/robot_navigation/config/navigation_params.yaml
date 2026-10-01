@@ -16,6 +16,10 @@ path_follower_node:
     avoidance_enabled: true           # blend obstacle avoidance into cmd_vel
     avoidance_timeout_sec: 0.5        # s, stop if navigation/avoidance goes silent (fail-safe)
     tf_timeout_sec: 0.5               # s, stop if map->base_link stops updating (odometry died)
+    estop_release_sec: 1.0            # s, path must stay clear this long before resuming after an e-stop
+    blocked_timeout_sec: 30.0         # s, report BLOCKED when no progress is possible for this long
+    off_path_slow_distance: 0.6       # m, cross-track error that caps speed to min_linear_velocity
+    off_path_stop_distance: 1.5       # m, cross-track error that stops until navigation is restarted
 
     loop_route: true                  # patrol: restart the route when it ends (closed routes only)
     loop_close_distance: 1.0          # m, first/last waypoint gap that still counts as a closed loop

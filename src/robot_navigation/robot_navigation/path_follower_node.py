@@ -23,6 +23,7 @@ from robot_navigation.utils.controllers.registry import create_controller
 from robot_navigation.utils.final_approach import FinalApproach
 from robot_navigation.utils.geometry import clamp, yaw_from_quaternion
 from robot_navigation.utils.path_processing import velocity_profile
+from robot_navigation.utils.safety import SafetySupervisor
 from robot_navigation.utils.pose2d import Pose2D
 from robot_navigation.utils.speed_regulator import SpeedRegulator
 
@@ -31,7 +32,7 @@ class PathFollowerNode(Node):
     """Patrols a taught route: follows it with a selectable controller, blends reactive avoidance,
     and at each stop point converges onto x/y/yaw, triggers inspection services and dwells."""
 
-    _WARN_STATES = {'NO_PATH', 'TF_UNAVAILABLE', 'EMERGENCY_STOP', 'AVOIDANCE_STALE'}
+    _WARN_STATES = {'NO_PATH', 'TF_UNAVAILABLE', 'EMERGENCY_STOP', 'AVOIDANCE_STALE', 'BLOCKED', 'OFF_PATH'}
 
     def __init__(self):
         """Declare params, set up TF, build the controller, and wire all interfaces."""
@@ -76,6 +77,12 @@ class PathFollowerNode(Node):
         self._linear_limiter = SlewLimiter(float(p('linear_accel_limit').value))
         self._angular_limiter = SlewLimiter(float(p('angular_accel_limit').value))
         self._lateral_limiter = SlewLimiter(float(p('linear_accel_limit').value))
+        self._safety = SafetySupervisor(
+            estop_release_sec=float(p('estop_release_sec').value),
+            blocked_timeout_sec=float(p('blocked_timeout_sec').value),
+            off_path_slow_distance=float(p('off_path_slow_distance').value),
+            off_path_stop_distance=float(p('off_path_stop_distance').value),
+        )
         self._speed_regulator = SpeedRegulator(
             kp=float(p('speed_regulator.kp').value),
             ki=float(p('speed_regulator.ki').value),
@@ -153,6 +160,10 @@ class PathFollowerNode(Node):
             'marker_lifetime_sec': 0.5,
             'avoidance_enabled': True,
             'avoidance_timeout_sec': 0.5,
+            'estop_release_sec': 1.0,
+            'blocked_timeout_sec': 30.0,
+            'off_path_slow_distance': 0.6,
+            'off_path_stop_distance': 1.5,
             'tf_timeout_sec': 0.5,
             'loop_route': True,
             'loop_close_distance': 1.0,
@@ -331,6 +342,7 @@ class PathFollowerNode(Node):
                 response.message = f'failed to enable auto mode: {message}'
                 self.get_logger().error(response.message)
                 return response
+            self._safety.reset()
             self._nav_active = True
             response.success = True
             response.message = 'navigation started'
@@ -577,29 +589,48 @@ class PathFollowerNode(Node):
         if self.check_stop_point(pose, stamp):
             return
 
+        now_sec = now.nanoseconds / 1e9
+        cross_track = self.cross_track_error(pose)
+        slow, off_path = self._safety.off_path(cross_track)
+        if off_path:
+            self.publish_stop(hard=True)
+            self.publish_markers(stamp, 'OFF_PATH', f'{cross_track:.2f} m from the route, check the robot '
+                                 "and call 'navigation/start_nav' again", pose.x, pose.y)
+            return
+
         index = min(self._controller.progress_index(), len(self._speed_profile) - 1)
         target_speed = self._speed_profile[index] if self._speed_profile else self._target_linear_velocity
+        if slow:
+            target_speed = min(target_speed, self._min_linear_velocity)
         output = self._controller.update(pose, dt, target_speed)
         target_angular = output.angular + steering_bias
         target_linear = output.linear * velocity_scale
         if self._speed_regulator_enabled:
             target_linear *= self._speed_regulator.scale_for(target_angular, dt)
 
-        cmd = Twist()
-        if emergency:
+        estop = self._safety.estop(emergency, now_sec)
+        blocked = self._safety.blocked(estop or velocity_scale < 0.05, now_sec)
+        if estop:
             self.publish_stop(hard=True)
         else:
+            cmd = Twist()
             cmd.linear.x = self._linear_limiter.step(clamp(target_linear, self._max_linear_velocity), dt)
             cmd.linear.y = self._lateral_limiter.step(lateral_bias, dt)
             cmd.angular.z = self._angular_limiter.step(clamp(target_angular, self._max_angular_velocity), dt)
             self._cmd_vel_pub.publish(cmd)
 
-        status = 'EMERGENCY_STOP' if emergency else 'FOLLOWING'
+        status = 'BLOCKED' if blocked else 'EMERGENCY_STOP' if estop else 'FOLLOWING'
         message = (
             f'lap {self._lap} | {self._controller_name} | v_scale {velocity_scale:.2f} | '
-            f'next stop {self._next_stop_index}'
+            f'cte {cross_track:.2f} m | next stop {self._next_stop_index}'
         )
         self.publish_markers(stamp, status, message, pose.x, pose.y, self._controller.debug_info())
+
+    def cross_track_error(self, pose: Pose2D) -> float:
+        """Distance from the robot to the route around the current progress index."""
+        i = self._controller.progress_index()
+        window = self._waypoints[max(0, i - 20):i + 20]
+        return min(math.hypot(w[0] - pose.x, w[1] - pose.y) for w in window) if window else 0.0
 
     def publish_stop(self, hard: bool = False):
         """Publish zero velocity; hard skips the slew ramp entirely."""
