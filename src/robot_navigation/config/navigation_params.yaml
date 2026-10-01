@@ -48,8 +48,8 @@ path_follower_node:
 
     # std_srvs/Trigger services called at every stop point after aligning ("" = none),
     # e.g. ["/anomaly_detector_node/check_now"]. The robot waits for them up to inspection_timeout_sec.
-    inspection_services: [""]
-    inspection_timeout_sec: 10.0
+    inspection_services: ["/anomaly_detector_node/check_now"]
+    inspection_timeout_sec: 20.0          # VLM inference on the Jetson takes a few seconds
 
     require_localization: true        # refuse start_nav until localization/status reports a source
 

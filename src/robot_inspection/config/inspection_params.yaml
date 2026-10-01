@@ -1,0 +1,13 @@
+anomaly_detector_node:
+  ros__parameters:
+    image_topic: /camera/camera/color/image_raw/compressed
+    ollama_url: http://127.0.0.1:11434
+    model: moondream                  # any Ollama vision model (moondream, llava-phi3, qwen2.5vl:3b ...)
+    categories: [trash, spill, floor_damage, fallen_person]   # must match the NETRA rule codes
+    keep_alive: 30m                   # keep the model in memory between inspections
+    timeout_sec: 25.0
+    max_image_age_sec: 2.0
+    max_image_width: 640              # downscale before inference (faster, same accuracy for this task)
+    min_confidence: 0.5
+    periodic_check_sec: 0.0           # > 0: also inspect while driving every N s
+    cooldown_sec: 60.0                # periodic mode: do not repeat a category within this time
