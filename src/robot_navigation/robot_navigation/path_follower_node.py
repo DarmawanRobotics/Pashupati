@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 import math
+import threading
 
 import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 
 from geometry_msgs.msg import Twist
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 from visualization_msgs.msg import MarkerArray
 
 from rcl_interfaces.msg import SetParametersResult
@@ -66,6 +69,8 @@ class PathFollowerNode(Node):
         self.declare_parameter('arc_visualization_length', 2.0)
         self.declare_parameter('marker_lifetime_sec', 0.5)
         self.declare_parameter('avoidance_enabled', True)
+        self.declare_parameter('auto_mode_on_service', '')
+        self.declare_parameter('auto_mode_off_service', '')
 
         self.declare_parameter('stop_point_tolerance', 0.3)
         self.declare_parameter('yaw_tolerance_deg', 5.0)
@@ -149,8 +154,11 @@ class PathFollowerNode(Node):
         self._markers_pub = self.create_publisher(MarkerArray, 'navigation/markers', 10)
         self._status_pub = self.create_publisher(NavigationStatus, 'navigation/status', 10)
 
-        self._auto_mode_client = self.create_client(SetBool, 'drivers/set_auto_mode')
-        self.create_service(SetBool, 'navigation/start_nav', self.start_nav_callback)
+        self._srv_group = ReentrantCallbackGroup()
+        self._auto_on_client = self.optional_client(self.get_parameter('auto_mode_on_service').value)
+        self._auto_off_client = self.optional_client(self.get_parameter('auto_mode_off_service').value)
+        self.create_service(SetBool, 'navigation/start_nav', self.start_nav_callback,
+                            callback_group=self._srv_group)
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
         self._last_time = self.get_clock().now()
@@ -227,46 +235,46 @@ class PathFollowerNode(Node):
         self._avoidance_velocity_scale = msg.velocity_scale
         self._avoidance_emergency = msg.emergency
 
-    def call_set_auto_mode(self, enable: bool):
-        """Call the driver's set_auto_mode service and return (success, message)."""
-        if not self._auto_mode_client.wait_for_service(timeout_sec=2.0):
-            return False, 'drivers/set_auto_mode service not available'
+    def optional_client(self, name: str):
+        """Create a Trigger client, or None when the service name is empty."""
+        return self.create_client(Trigger, name, callback_group=self._srv_group) if name else None
 
-        driver_request = SetBool.Request()
-        driver_request.data = enable
-        future = self._auto_mode_client.call_async(driver_request)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-
-        if future.result() is None:
-            return False, 'drivers/set_auto_mode call timed out'
+    def call_trigger(self, client, timeout: float = 2.0):
+        """Call a Trigger service and wait for it without blocking the executor."""
+        if client is None:
+            return True, 'skipped'
+        if not client.wait_for_service(timeout_sec=timeout):
+            return False, f'{client.srv_name} not available'
+        done = threading.Event()
+        future = client.call_async(Trigger.Request())
+        future.add_done_callback(lambda _: done.set())
+        if not done.wait(timeout) or future.result() is None:
+            return False, f'{client.srv_name} timed out'
         return future.result().success, future.result().message
 
     def start_nav_callback(self, request, response):
-        """Enable or disable navigation, gating driver auto mode along with it."""
+        """Enable or disable navigation, switching the robot control mode along with it."""
         if request.data:
-            success, message = self.call_set_auto_mode(True)
-            if not success:
-                self.get_logger().error(f'failed to enable auto mode: {message}')
+            ok, message = self.call_trigger(self._auto_on_client)
+            if not ok:
                 response.success = False
                 response.message = f'failed to enable auto mode: {message}'
+                self.get_logger().error(response.message)
                 return response
-
             self._nav_active = True
-            self.get_logger().info('navigation started')
             response.success = True
             response.message = 'navigation started'
+            self.get_logger().info(response.message)
             return response
 
         self._nav_active = False
         self.publish_stop()
-
-        success, message = self.call_set_auto_mode(False)
-        if not success:
+        ok, message = self.call_trigger(self._auto_off_client)
+        if not ok:
             self.get_logger().error(f'failed to switch back to manual mode: {message}')
-
-        self.get_logger().info('navigation stopped, switched to manual mode')
         response.success = True
-        response.message = 'navigation stopped, switched to manual mode'
+        response.message = 'navigation stopped'
+        self.get_logger().info(response.message)
         return response
 
     def current_pose(self):
@@ -454,8 +462,10 @@ def main(args=None):
     """Spin the path follower node."""
     rclpy.init(args=args)
     node = PathFollowerNode()
+    executor = MultiThreadedExecutor(num_threads=3)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:

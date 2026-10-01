@@ -10,6 +10,11 @@ path_follower_node:
     marker_lifetime_sec: 0.5          # seconds, RViz marker lifetime
     avoidance_enabled: true           # apply obstacle avoidance to cmd_vel
 
+    # std_srvs/Trigger called on navigation start/stop ("" = skip),
+    # e.g. Genisom L1W: /l1w/sdk_control_right and /l1w/remote_control_right
+    auto_mode_on_service: ""
+    auto_mode_off_service: ""
+
     stop_point_tolerance: 0.3   # meters, distance to a dwell_sec>0 waypoint that triggers ALIGNING
     yaw_tolerance_deg: 5.0      # deg, heading error considered "aligned" before DWELLING starts
     align_kp: 1.5               # P gain for the in-place rotation during ALIGNING
