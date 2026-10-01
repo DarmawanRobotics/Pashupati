@@ -2,6 +2,7 @@
 # Usage: script/start_tmux.sh [mapping|patrol]
 #   mapping: FAST-LIO saves the PCD map, record a route with the RViz panel
 #   patrol:  map saving off, route loaded, navigation ready (start it from the panel)
+# Env: WS, ROUTE, TAGS, ROBOT_NS, RVIZ=0 (headless), DETACH=1 (do not attach, e.g. systemd)
 set -euo pipefail
 
 MODE="${1:-patrol}"
@@ -9,6 +10,8 @@ WS="${WS:-/home/robot/dev/Pashupati}"
 ROUTE="${ROUTE:-$WS/map/example/example_waypoint.csv}"
 TAGS="${TAGS:-$WS/map/example/tag_config.json}"
 ROBOT_NS="${ROBOT_NS:-l1w}"
+RVIZ="${RVIZ:-1}"
+DETACH="${DETACH:-0}"
 SESSION=pashupati
 
 if [[ "$MODE" != "mapping" && "$MODE" != "patrol" ]]; then
@@ -38,9 +41,11 @@ run robot.0 "ros2 launch l1w_bringup bringup.launch.py namespace:=$ROBOT_NS"
 sleep 3
 run robot.1 "ros2 launch robot_mapping mapping.launch.py save_map:=$SAVE_MAP tags_config_file:=$TAGS"
 run robot.2 "ros2 launch robot_perception perception.launch.py"
-run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix robot_rviz)/share/robot_rviz/rviz/robot.rviz \
+if [[ "$RVIZ" == "1" ]]; then
+    run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix robot_rviz)/share/robot_rviz/rviz/robot.rviz \
 --ros-args -r battery:=/$ROBOT_NS/battery -r cmd_vel:=/$ROBOT_NS/cmd_vel \
 -r motor_temperature:=/$ROBOT_NS/motor_temperature -r diagnostics:=/$ROBOT_NS/diagnostics"
+fi
 tmux select-layout -t "$SESSION:robot" tiled
 
 # Window 2: navigation + command pane
@@ -54,4 +59,6 @@ tmux send-keys -t "$SESSION:nav.1" "$SETUP" C-m
 tmux send-keys -t "$SESSION:nav.1" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
 
 tmux select-window -t "$SESSION:robot"
-tmux attach-session -t "$SESSION"
+if [[ "$DETACH" != "1" ]]; then
+    tmux attach-session -t "$SESSION"
+fi
