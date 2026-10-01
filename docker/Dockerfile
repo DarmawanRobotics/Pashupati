@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1.6
+# Pashupati dev container: ROS 2 Humble, vendor SDKs, all rosdep keys, desktop over VNC/noVNC.
+ARG ROS_DISTRO=humble
+
+# Only the package manifests, so the rosdep layer is rebuilt when dependencies change, not code.
+FROM alpine:3.20 AS manifests
+COPY src /src
+RUN find /src -type f ! -name package.xml ! -name '*_IGNORE' -delete \
+    && find /src -depth -type d -empty -delete
+
+FROM ros:${ROS_DISTRO}-ros-base-jammy
+ARG ROS_DISTRO
+ARG USERNAME=robot
+ARG USER_UID=1000
+ARG USER_GID=1000
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    WS=/home/${USERNAME}/dev/Pashupati \
+    DISPLAY=:1 \
+    LIBGL_ALWAYS_SOFTWARE=1 \
+    QT_X11_NO_MITSHM=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tigervnc-standalone-server tigervnc-tools fluxbox xterm novnc websockify dbus-x11 \
+        libgl1-mesa-dri mesa-utils \
+        python3-colcon-common-extensions python3-pip python3-pytest \
+        build-essential cmake git tmux sudo curl iputils-ping nano less bash-completion \
+        ros-${ROS_DISTRO}-rviz2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Vendor SDKs through the same installer the robot uses
+COPY script/setup.sh /opt/pashupati/setup.sh
+COPY src/xtras/drivers/genisom_l1w_ros2/script/setup.sh /opt/pashupati/genisom_setup.sh
+RUN GENISOM_SETUP=/opt/pashupati/genisom_setup.sh /opt/pashupati/setup.sh install livox genisom
+
+COPY --from=manifests /src /tmp/src
+RUN apt-get update \
+    && rosdep update --rosdistro ${ROS_DISTRO} \
+    && rosdep install --from-paths /tmp/src --ignore-src -r -y --rosdistro ${ROS_DISTRO} \
+    && rm -rf /var/lib/apt/lists/* /tmp/src
+
+RUN groupadd --gid ${USER_GID} ${USERNAME} \
+    && useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USERNAME} \
+    && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
+    && mkdir -p ${WS}/build ${WS}/install ${WS}/log /home/${USERNAME}/.colcon \
+    && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix \
+    && printf '%s\n' \
+        "source /opt/ros/${ROS_DISTRO}/setup.bash" \
+        '[ -f "$WS/install/setup.bash" ] && source "$WS/install/setup.bash"' \
+        'source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash' \
+        'cd "$WS"' >> /home/${USERNAME}/.bashrc \
+    && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
+
+COPY --chown=${USERNAME}:${USERNAME} docker/colcon_defaults.yaml /home/${USERNAME}/.colcon/defaults.yaml
+COPY docker/entrypoint.sh /entrypoint.sh
+
+USER ${USERNAME}
+WORKDIR ${WS}
+EXPOSE 5901 6080
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["sleep", "infinity"]
