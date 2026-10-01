@@ -8,6 +8,7 @@ teleop_udp_node:
   ros__parameters:
     port: 9870
     token: ""                         # shared secret; when set every message must carry "k"
+    robot_name: ""                    # name in discovery beacons (default: hostname)
     client_timeout_sec: 2.0
     max_vx: 1.0                       # m/s, clamp on teleop commands
     max_vy: 0.5

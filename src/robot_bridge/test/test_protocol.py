@@ -33,3 +33,38 @@ def test_voxel_downsample_caps_points():
     """Downsampling keeps at most max_points."""
     xyz = np.random.uniform(-5, 5, (20000, 3)).astype(np.float32)
     assert protocol.voxel_downsample(xyz, 0.1, 1000).shape[0] == 1000
+
+
+def test_discovery_beacon_and_seq():
+    """A discover probe gets a beacon without the token; states carry an increasing seq."""
+    import socket
+
+    import stubgen  # noqa: F401
+    from robot_bridge import teleop_udp_node as node_module
+
+    node = node_module.TeleopUdpNode.__new__(node_module.TeleopUdpNode)
+    node._robot_name, node._token, node._client, node._client_seen = 'l1w-01', 'secret', None, 0.0
+    node._client_timeout, node._client_name, node._seq = 1.0, '', 0
+    node._state = {'mode': 'remote', 'battery': {'pct': 80}}
+    server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server.bind(('127.0.0.1', 0))
+    node._sock = server
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(('127.0.0.1', 0))
+    probe.settimeout(1)
+    node.reply_beacon(probe.getsockname())
+    beacon = protocol.decode_json(probe.recv(2048))
+    expected = {
+        't': 'beacon',
+        'name': 'l1w-01',
+        'secured': True,
+        'in_use_by': '',
+        'mode': 'remote',
+    }
+    assert {k: beacon[k] for k in expected} == expected and beacon['battery'] == 80
+    sent = []
+    node._client, node.pose = ('127.0.0.1', 1), lambda: None
+    node.send_json = sent.append
+    node.send_state()
+    node.send_state()
+    assert [m['seq'] for m in sent] == [1, 2]
