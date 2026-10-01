@@ -16,6 +16,7 @@ from tf2_ros import Buffer, TransformListener
 
 from robot_interfaces.msg import SectorScan
 
+
 class LidarSectorNode(Node):
     """Bins Livox points into fixed angular sectors and publishes a SectorScan."""
     def __init__(self):
@@ -25,7 +26,7 @@ class LidarSectorNode(Node):
         self.declare_parameter('fov_deg', 180.0)
         self.declare_parameter('range_max', 8.0)
         self.declare_parameter('range_min', 0.1)
-        self.declare_parameter('obstacle_z_min', 0.05)
+        self.declare_parameter('obstacle_z_min', -0.25)
         self.declare_parameter('obstacle_z_max', 1.20)
         self.declare_parameter('publish_markers', True)
         self.declare_parameter('marker_lifetime_sec', 0.3)
@@ -33,6 +34,10 @@ class LidarSectorNode(Node):
         self.declare_parameter('corridor_x_max', 5.0)
         self.declare_parameter('corridor_y_min', -1.0)
         self.declare_parameter('corridor_y_max', 1.0)
+        self.declare_parameter('self_filter_x_min', -0.40)
+        self.declare_parameter('self_filter_x_max', 0.40)
+        self.declare_parameter('self_filter_y_min', -0.28)
+        self.declare_parameter('self_filter_y_max', 0.28)
 
         self._num_sectors = int(self.get_parameter('num_sectors').value)
         self._fov = math.radians(float(self.get_parameter('fov_deg').value))
@@ -46,6 +51,8 @@ class LidarSectorNode(Node):
         self._corridor_x_max = float(self.get_parameter('corridor_x_max').value)
         self._corridor_y_min = float(self.get_parameter('corridor_y_min').value)
         self._corridor_y_max = float(self.get_parameter('corridor_y_max').value)
+        self._self_box = [float(self.get_parameter(f'self_filter_{k}').value)
+                          for k in ('x_min', 'x_max', 'y_min', 'y_max')]
 
         self._angle_min = -self._fov / 2.0
         self._angle_increment = self._fov / self._num_sectors
@@ -118,8 +125,10 @@ class LidarSectorNode(Node):
             points = np.stack([x, y, z], axis=1) @ self._extrinsic_rotation.T + self._extrinsic_translation
             base_x, base_y, base_z = points[:, 0], points[:, 1], points[:, 2]
 
-            height_mask = (base_z >= self._z_min) & (base_z <= self._z_max)
-            base_x, base_y = base_x[height_mask], base_y[height_mask]
+            sx0, sx1, sy0, sy1 = self._self_box
+            on_body = (base_x > sx0) & (base_x < sx1) & (base_y > sy0) & (base_y < sy1)
+            keep = (base_z >= self._z_min) & (base_z <= self._z_max) & ~on_body
+            base_x, base_y = base_x[keep], base_y[keep]
 
             if base_x.size > 0:
                 r = np.hypot(base_x, base_y)
@@ -164,7 +173,7 @@ class LidarSectorNode(Node):
         ray_marker.pose.orientation.w = 1.0
         ray_marker.scale.x = 0.02
         ray_marker.lifetime = self._marker_lifetime
-    
+
         point_marker = Marker()
         point_marker.header = ray_marker.header
         point_marker.ns = 'sector_points'
@@ -174,14 +183,14 @@ class LidarSectorNode(Node):
         point_marker.pose.orientation.w = 1.0
         point_marker.scale.x = point_marker.scale.y = point_marker.scale.z = 0.08
         point_marker.lifetime = self._marker_lifetime
-    
+
         origin = Point(x=0.0, y=0.0, z=0.0)
-        detection_eps = 1e-3 
+        detection_eps = 1e-3
         for i, r in enumerate(ranges):
             r = float(r)
             theta = self._angle_min + (i + 0.5) * self._angle_increment
             color = self.range_to_color(r)
-    
+
             ray_length = self.corridor_ray_length(theta)
             ray_end = Point(
                 x=float(ray_length * math.cos(theta)),
@@ -199,7 +208,7 @@ class LidarSectorNode(Node):
                 detected = Point(x=float(r * math.cos(theta)), y=float(r * math.sin(theta)), z=0.0)
                 point_marker.points.append(detected)
                 point_marker.colors.append(color)
-    
+
         markers = MarkerArray()
         markers.markers.append(ray_marker)
         markers.markers.append(point_marker)

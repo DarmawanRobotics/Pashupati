@@ -6,9 +6,17 @@ lidar_sector_node:
     range_max: 8.0               # maximum LiDAR detection range in meters
     range_min: 0.2              # minimum LiDAR detection range in meters
 
-    # Obstacle height filtering
-    obstacle_z_min: 0.20         # minimum obstacle height relative to base_link in meters
-    obstacle_z_max: 1.20         # maximum obstacle height relative to base_link in meters
+    # Obstacle height filtering, relative to base_link (body center, NOT the floor).
+    # base_link is ~0.35 m above the floor when standing: z_min -0.25 keeps anything taller
+    # than ~10 cm (bags, kids, low planters) while dropping floor returns. Measure and tune.
+    obstacle_z_min: -0.25
+    obstacle_z_max: 1.20
+
+    # Robot footprint in base_link; points inside are the robot's own legs/body and are ignored
+    self_filter_x_min: -0.40
+    self_filter_x_max: 0.40
+    self_filter_y_min: -0.28
+    self_filter_y_max: 0.28
 
     # RViz marker visualization
     publish_markers: true        # publish sector rays and detected obstacle points
