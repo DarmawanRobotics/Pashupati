@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import math
 import os
 import socket
@@ -104,6 +105,7 @@ class TeleopUdpNode(Node):
             'battery': None,
             'driver': None,
             'cmd': [0.0, 0.0, 0.0],
+            'health': None,
         }
         self._route: list = []
         self._extrinsics: dict = {}
@@ -180,6 +182,7 @@ class TeleopUdpNode(Node):
         self.create_subscription(MissionStatus, 'navigation/mission_status', self.on_mission, 10)
         self.create_subscription(String, 'localization/status', self.on_localization, latched)
         self.create_subscription(String, 'bridge/mode', self.on_mode, latched)
+        self.create_subscription(String, 'health/status', self.on_health, latched)
         self.create_subscription(WaypointPath, 'navigation/waypoints', self.on_route, latched)
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
@@ -336,6 +339,17 @@ class TeleopUdpNode(Node):
     def on_mode(self, msg: String):
         """Cache the control mode."""
         self._state['mode'] = msg.data
+
+    def on_health(self, msg: String):
+        """Cache ok + issues of the health summary."""
+        try:
+            health = json.loads(msg.data)
+        except ValueError:
+            return
+        self._state['health'] = {
+            'ok': bool(health.get('ok')),
+            'issues': health.get('issues', [])[:5],
+        }
 
     def on_battery(self, msg: BatteryState):
         """Cache battery readings."""

@@ -1,0 +1,12 @@
+health_monitor_node:
+  ros__parameters:
+    topics:                           # "topic:minimum Hz"; below 80 % of it is an issue
+      - /livox/lidar:5.0
+      - /perception/sector_scan:5.0
+      - /camera/camera/color/image_raw/compressed:5.0
+      - /l1w/odom:10.0
+    max_cpu_temp_c: 85.0
+    max_memory_percent: 92.0
+    min_disk_free_gb: 5.0
+    disk_path: "~"
+    publish_hz: 1.0

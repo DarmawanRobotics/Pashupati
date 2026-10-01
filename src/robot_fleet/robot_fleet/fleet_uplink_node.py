@@ -79,6 +79,7 @@ class FleetUplinkNode(Node):
             'battery': None,
             'driver': None,
             'people': 0,
+            'health': None,
         }
         self._patrol = None
         self._lap = 0
@@ -126,6 +127,7 @@ class FleetUplinkNode(Node):
         self.create_subscription(StopPointEvent, 'navigation/stop_point_event', self.on_stop, 10)
         self.create_subscription(String, 'localization/status', self.on_localization, latched)
         self.create_subscription(String, 'bridge/mode', self.on_mode, latched)
+        self.create_subscription(String, 'health/status', self.on_health, latched)
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
         self.create_subscription(PoseArray, 'perception/people', self.on_people, 10)
@@ -343,6 +345,13 @@ class FleetUplinkNode(Node):
     def on_mode(self, msg: String):
         """Cache the control mode."""
         self._state['mode'] = msg.data
+
+    def on_health(self, msg: String):
+        """Cache the health summary (ok, issues, system figures)."""
+        try:
+            self._state['health'] = json.loads(msg.data)
+        except ValueError:
+            pass
 
     def on_battery(self, msg: BatteryState):
         """Cache battery readings."""

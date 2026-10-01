@@ -15,7 +15,7 @@ while offline are replayed after `hello` (telemetry is not).
 | `type` | Fields |
 |---|---|
 | `hello` | `robot_id`, `version` |
-| `telemetry` (1 Hz) | `ts`, `pose` {x, y, yaw} \| null, `mode` (`auto`/`remote`), `nav` {state, message}, `mission`, `localization`, `battery` {pct, v, a, temp} \| null, `driver` {level, msg} \| null, `people` (count in view), `patrol` {patrol_id, route_id} \| null |
+| `telemetry` (1 Hz) | `ts`, `pose` {x, y, yaw} \| null, `mode` (`auto`/`remote`), `nav` {state, message}, `mission`, `localization`, `battery` {pct, v, a, temp} \| null, `driver` {level, msg} \| null, `people` (count in view), `health` {ok, issues, topics, cpu_temp_c, memory_percent, disk_free_gb, load} \| null, `patrol` {patrol_id, route_id} \| null |
 | `patrol_event` | `event` (`started`, `lap`, `finished`), `lap?`, `reason?`, `patrol_id`, `route_id`, `ts` |
 | `stop_event` | `index`, `event` (`arrived`, `inspected`, `departed`, `skipped`), `message`, `x`, `y`, `yaw_deg`, `patrol_id`, `route_id`, `ts` |
 | `alert` | `state` (`BLOCKED`, `OFF_PATH`, `TF_UNAVAILABLE`, `AVOIDANCE_STALE`), `message`, `pose`, `patrol_id`, `route_id`, `ts` |

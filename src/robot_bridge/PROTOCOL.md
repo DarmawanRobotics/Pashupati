@@ -46,7 +46,7 @@ the robot runs it once and resends the cached `ack`.
 |---|---|
 | `welcome` | `commands` (list), `limits` ([vx, vy, wz] maxima) |
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
-| `state` | `mode`, `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot) |
+| `state` | `mode`, `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
 | `pong` | `ts` |
 | `bye` | robot shutting down |
 
