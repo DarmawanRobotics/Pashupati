@@ -15,6 +15,7 @@ from robot_localization.utils.pose_localization import (
     map_base_from_tag,
     map_odom_from_map_base,
     matrix_to_transform,
+    planar_delta,
     pose_msg_to_matrix,
     pose_values_to_matrix,
     transform_to_matrix,
@@ -36,6 +37,10 @@ class LocalizationNode(Node):
         self.declare_parameter('imu_frame', 'livox_imu_frame')
         self.declare_parameter('camera_frame', 'camera_color_optical_frame')
         self.declare_parameter('tag_max_age_sec', 0.5)
+        self.declare_parameter('auto_localize_on_start', True)
+        self.declare_parameter('auto_correct_period_sec', 0.0)
+        self.declare_parameter('max_correction_m', 0.5)
+        self.declare_parameter('max_correction_deg', 15.0)
 
         p = self.get_parameter
         self._map = p('map_frame').value
@@ -46,6 +51,8 @@ class LocalizationNode(Node):
         self._imu = p('imu_frame').value
         self._camera = p('camera_frame').value
         self._tag_max_age = Duration(seconds=float(p('tag_max_age_sec').value))
+        self._max_corr_m = float(p('max_correction_m').value)
+        self._max_corr_rad = math.radians(float(p('max_correction_deg').value))
 
         self._tag_poses = self.load_tag_poses(p('tags_config_file').value)
         self._static_broadcaster = StaticTransformBroadcaster(self)
@@ -54,12 +61,17 @@ class LocalizationNode(Node):
 
         self._m_base_imu = None
         self._m_map_odom = np.eye(4)
+        self._localized = False
         self._active_source = 'none'
 
         self.create_service(Trigger, 'localization/start', self.localization_callback)
         self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.pose_estimate_callback, 10)
 
         self._bridge_timer = self.create_timer(0.5, self.try_start_bridge)
+        self._auto_start = bool(p('auto_localize_on_start').value)
+        period = float(p('auto_correct_period_sec').value)
+        if period > 0.0:
+            self.create_timer(period, self.auto_correct)
 
         self.get_logger().info(f'localization_node ready with {len(self._tag_poses)} tag(s)')
 
@@ -87,6 +99,8 @@ class LocalizationNode(Node):
         self._bridge_timer.cancel()
         self.broadcast_static()
         self.get_logger().info('frame bridge up: map->odom->camera_init, body->base_link')
+        if self._auto_start and self._tag_poses:
+            self._auto_timer = self.create_timer(1.0, self.auto_start_tick)
 
     def broadcast_static(self):
         """Publish map->odom, odom->camera_init (= base->imu) and body->base_link (= imu->base)."""
@@ -100,6 +114,7 @@ class LocalizationNode(Node):
     def set_map_odom(self, m_map_odom: np.ndarray, source: str):
         """Store and broadcast a new map->odom."""
         self._m_map_odom = m_map_odom
+        self._localized = True
         self._active_source = source
         self.broadcast_static()
         t = m_map_odom[:3, 3]
@@ -149,6 +164,29 @@ class LocalizationNode(Node):
         response.success = True
         response.message = f'map->odom set from tag "{info}"'
         return response
+
+    def auto_start_tick(self):
+        """Retry tag localization every second until the first success."""
+        m, info = self.map_odom_from_visible_tag()
+        if m is None:
+            self.get_logger().info(f'auto localize waiting: {info}', throttle_duration_sec=10.0)
+            return
+        self.set_map_odom(m, f'apriltag "{info}" (auto start)')
+        self._auto_timer.cancel()
+
+    def auto_correct(self):
+        """Periodically correct drift from any visible tag, rejecting implausible jumps."""
+        if not self._localized:
+            return
+        m, info = self.map_odom_from_visible_tag()
+        if m is None:
+            return
+        dist, dyaw = planar_delta(m, self._m_map_odom)
+        if dist > self._max_corr_m or dyaw > self._max_corr_rad:
+            self.get_logger().warn(
+                f'rejected correction from "{info}": {dist:.2f} m / {math.degrees(dyaw):.1f} deg')
+            return
+        self.set_map_odom(m, f'apriltag "{info}" (auto correct)')
 
     def pose_estimate_callback(self, msg: PoseWithCovarianceStamped):
         """RViz 2D Pose Estimate: set map->odom so base_link lands on the clicked pose."""

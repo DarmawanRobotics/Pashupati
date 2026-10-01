@@ -1,0 +1,15 @@
+localization_node:
+  ros__parameters:
+    tags_config_file: ""              # JSON {tag_frame: {x,y,z,qx,qy,qz,qw}} in map frame
+    map_frame: map
+    odom_frame: odom
+    base_frame: base_link
+    lio_odom_frame: camera_init       # FAST-LIO world frame
+    lio_body_frame: body              # FAST-LIO body frame (= Livox IMU)
+    imu_frame: livox_imu_frame        # same physical frame as `body`, from the URDF
+    camera_frame: camera_color_optical_frame
+    tag_max_age_sec: 0.5              # ignore tag TFs older than this
+    auto_localize_on_start: true      # retry tag localization every 1 s until it succeeds
+    auto_correct_period_sec: 0.0      # >0: re-correct drift from any visible tag every N s
+    max_correction_m: 0.5             # reject auto corrections larger than this
+    max_correction_deg: 15.0
