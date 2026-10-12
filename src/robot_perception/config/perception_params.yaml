@@ -69,9 +69,9 @@ apriltag:
       threads: 1                 # number of CPU threads used by the detector
       decimate: 2.0              # image downsampling factor for faster detection
       blur: 0.0                  # Gaussian blur sigma applied during detection
-      refine: 1                  # refine detected tag corner positions
+      refine: true               # refine detected tag corner positions
       sharpening: 0.25           # sharpening strength applied before decoding
-      debug: 0                   # save additional detector debug images
+      debug: false               # save additional detector debug images
 
     # Tag pose estimation
     pose_estimation_method: pnp   # pose estimation method: PnP
