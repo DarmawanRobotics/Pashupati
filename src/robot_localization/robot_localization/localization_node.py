@@ -218,6 +218,14 @@ class LocalizationNode(Node):
         )
         return map_odom_from_map_base(m_map_base, transform_to_matrix(odom_base)), frame
 
+    def destroy_node(self):
+        """Stop the TF listener's spin thread while the context is still valid, then destroy."""
+        executor = getattr(self._tf_listener, 'executor', None)
+        if executor is not None:
+            executor.shutdown(timeout_sec=2.0)
+            self._tf_listener.dedicated_listener_thread.join(timeout=2.0)
+        super().destroy_node()
+
     def localization_callback(self, request, response):
         """Service: set map->odom from whichever configured tag is currently visible."""
         m, info = self.map_odom_from_visible_tag()
