@@ -433,12 +433,10 @@ class TeleopUdpNode(Node):
 
     def set_camera_fps(self, fps):
         """Let the handheld lower or restore the camera rate, capped by camera_fps."""
-        try:
-            fps = float(fps)
-        except (TypeError, ValueError):
-            return
-        limit = float(self.get_parameter('camera_fps').value)
-        self._camera_period = 1.0 / min(max(fps, 0.5), limit)
+        if isinstance(fps, bool) or not isinstance(fps, (int, float)) or not math.isfinite(fps):
+            return  # absent, text or NaN (json accepts NaN): keep the current rate
+        limit = max(float(self.get_parameter('camera_fps').value), 0.1)
+        self._camera_period = 1.0 / min(max(float(fps), 0.5), limit)
 
     # ------------------------------------------------------------------ streams
 

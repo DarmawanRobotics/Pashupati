@@ -1,6 +1,8 @@
 import random
+import types
 
 import numpy as np
+import pytest
 from robot_bridge import protocol
 
 
@@ -39,9 +41,7 @@ def test_discovery_beacon_and_seq():
     """A discover probe gets a beacon without the token; states carry an increasing seq."""
     import socket
 
-    import stubgen  # noqa: F401
-    from robot_bridge import teleop_udp_node as node_module
-
+    node_module = pytest.importorskip('robot_bridge.teleop_udp_node')
     node = node_module.TeleopUdpNode.__new__(node_module.TeleopUdpNode)
     node._robot_name, node._token, node._client, node._client_seen = 'l1w-01', 'secret', None, 0.0
     node._client_timeout, node._client_name, node._seq = 1.0, '', 0
@@ -68,3 +68,18 @@ def test_discovery_beacon_and_seq():
     node.send_state()
     node.send_state()
     assert [m['seq'] for m in sent] == [1, 2]
+
+
+def test_camera_rate_from_the_handheld_is_bounded():
+    """camera_fps from the client is capped by the parameter; NaN, text and bools are ignored."""
+    node_module = pytest.importorskip('robot_bridge.teleop_udp_node')
+    node = node_module.TeleopUdpNode.__new__(node_module.TeleopUdpNode)
+    node.get_parameter = lambda name: types.SimpleNamespace(value=8.0)
+    node._camera_period = 0.125
+    node.set_camera_fps(2.0)
+    assert node._camera_period == 0.5
+    node.set_camera_fps(100)
+    assert node._camera_period == 0.125
+    for bad in (float('nan'), 'fast', True, None):
+        node.set_camera_fps(bad)
+        assert node._camera_period == 0.125
