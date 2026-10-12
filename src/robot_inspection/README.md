@@ -7,7 +7,8 @@ operator validation.
 | Interface | Type | |
 |---|---|---|
 | `~/check_now` (`/anomaly_detector_node/check_now`) | `std_srvs/Trigger` | inspect the latest frame; called by `path_follower_node` at every stop point (`inspection_services`) |
-| `anomaly_detector/result` | `std_msgs/String` (JSON) | `{is_anomaly, category, confidence, description, model, latency_ms, source}`, published only for anomalies above `min_confidence`; `robot_fleet` uploads them with the frame and pose |
+| `anomaly_detector/result` | `std_msgs/String` (JSON) | `{is_anomaly, category, confidence, description, model, latency_ms, source, evidence_stamp}`, published only for anomalies above `min_confidence`; `robot_fleet` uploads them with the evidence frame and pose |
+| `anomaly_detector/evidence` | `sensor_msgs/CompressedImage` | the camera frame the result was detected in (full size), published just before the result; its stamp equals `evidence_stamp` |
 
 The prompt asks for one of `categories` (default `trash`, `spill`, `floor_damage`,
 `fallen_person`) as JSON; Ollama constrains the output to JSON and off-list answers are mapped by

@@ -49,6 +49,7 @@ Files: `image.jpg`. `meta`:
 | `confidence` | 0..1 |
 | `description` | detector text |
 | `pose` | {x, y, yaw} \| null |
+| `evidence` | `analysed_frame` (the image is the frame the robot classified) or `latest_frame` (fallback) |
 | `stop_index` | stop point index when taken at a stop, else null |
 | `patrol_id`, `route_id`, `ts` | context |
 | `detector` | `robot` |

@@ -54,7 +54,7 @@ class AnomalyDetectorNode(Node):
         self._max_width = int(p('max_image_width'))
         self._min_conf = float(p('min_confidence'))
         self._cooldown = float(p('cooldown_sec'))
-        self._image = (0.0, b'')
+        self._image = (0.0, b'', None)
         self._lock = threading.Lock()
         self._busy = threading.Lock()
         self._last_report: dict[str, float] = {}
@@ -62,6 +62,10 @@ class AnomalyDetectorNode(Node):
         images = MutuallyExclusiveCallbackGroup()
         work = ReentrantCallbackGroup()
         self._result_pub = self.create_publisher(String, 'anomaly_detector/result', 10)
+        # The exact camera frame behind each reported result, so the evidence matches the verdict
+        self._evidence_pub = self.create_publisher(
+            CompressedImage, 'anomaly_detector/evidence', 10
+        )
         self.create_subscription(
             CompressedImage,
             p('image_topic'),
@@ -76,16 +80,20 @@ class AnomalyDetectorNode(Node):
         threading.Thread(target=self.warm_up, daemon=True).start()
 
     def on_image(self, msg: CompressedImage):
-        """Keep the latest camera frame."""
+        """Keep the latest camera frame with its header."""
         with self._lock:
-            self._image = (time.monotonic(), bytes(msg.data))
+            self._image = (time.monotonic(), bytes(msg.data), msg.header)
 
-    def latest_jpeg(self):
-        """Return the latest frame (downscaled) or None when it is stale."""
+    def latest_frame(self):
+        """Return (original jpeg, jpeg for the model, header), or None when the frame is stale."""
         with self._lock:
-            stamp, jpeg = self._image
+            stamp, jpeg, header = self._image
         if not jpeg or time.monotonic() - stamp > self._max_age:
             return None
+        return jpeg, self.downscale(jpeg), header
+
+    def downscale(self, jpeg: bytes) -> bytes:
+        """Shrink a JPEG to max_image_width for faster inference (unchanged when smaller)."""
         if cv2 is None:
             return jpeg
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
@@ -113,9 +121,10 @@ class AnomalyDetectorNode(Node):
 
     def inspect(self, source: str):
         """Inspect the latest frame; returns (result or None, message)."""
-        jpeg = self.latest_jpeg()
-        if jpeg is None:
+        frame = self.latest_frame()
+        if frame is None:
             return None, 'no recent camera frame'
+        original, jpeg, header = frame
         if not self._busy.acquire(blocking=False):
             return None, 'inspection already running'
         try:
@@ -131,6 +140,10 @@ class AnomalyDetectorNode(Node):
             report = time.monotonic() - last > self._cooldown
         if report:
             self._last_report[result['category']] = time.monotonic()
+            result['evidence_stamp'] = evidence_stamp(header.stamp)
+            evidence = CompressedImage(header=header, format='jpeg')
+            evidence.data = original
+            self._evidence_pub.publish(evidence)
             self._result_pub.publish(String(data=json.dumps(result)))
         verdict = result['category'] if result['is_anomaly'] else 'clear'
         return result, f"{verdict} ({result['confidence']:.2f}, {result['latency_ms']} ms)"
@@ -163,6 +176,11 @@ class AnomalyDetectorNode(Node):
             except (urllib.error.URLError, OSError):
                 time.sleep(10.0)
         self.get_logger().error(f'could not load {self._model} from {self._url}')
+
+
+def evidence_stamp(stamp) -> str:
+    """Return a camera stamp as 'sec.nanosec', the key that links a result to its evidence."""
+    return f'{stamp.sec}.{stamp.nanosec:09d}'
 
 
 def main(args=None):

@@ -57,6 +57,7 @@ class FleetUplinkNode(Node):
             'crowd_window_sec': 60.0,
             'anomaly_topic': '/anomaly_detector/result',
             'anomaly_image_topic': '/camera/camera/color/image_raw/compressed',
+            'anomaly_evidence_topic': '/anomaly_detector/evidence',
             'anomaly_min_confidence': 0.5,
         }
         for name, value in defaults.items():
@@ -86,6 +87,8 @@ class FleetUplinkNode(Node):
         self._lap = 0
         self._stop_index = None
         self._last_image = (0.0, b'')
+        self._evidence: deque = deque(maxlen=10)  # (stamp key, jpeg) from the detector
+        self._pending_anomalies: list = []  # (deadline, result, evidence key)
 
         self._incoming: queue.Queue = queue.Queue()
         self._outbox: deque = deque(maxlen=500)
@@ -97,10 +100,13 @@ class FleetUplinkNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self.make_clients()
-        self.make_subscriptions(p('anomaly_topic'), p('anomaly_image_topic'))
+        self.make_subscriptions(
+            p('anomaly_topic'), p('anomaly_image_topic'), p('anomaly_evidence_topic')
+        )
         self.create_timer(1.0 / float(p('telemetry_hz')), self.send_telemetry)
         self.create_timer(0.1, self.drain_incoming)
         self.create_timer(5.0, self.flush_crowd)
+        self.create_timer(0.25, self.flush_anomalies)
 
         if self._base_url:
             threading.Thread(target=self.ws_loop, daemon=True).start()
@@ -120,7 +126,7 @@ class FleetUplinkNode(Node):
         self._pause = self.create_client(SetBool, 'navigation/pause')
         self._localize = self.create_client(Trigger, 'localization/start')
 
-    def make_subscriptions(self, anomaly_topic: str, image_topic: str):
+    def make_subscriptions(self, anomaly_topic: str, image_topic: str, evidence_topic: str):
         """Subscribe to state, events, people, routes and anomalies."""
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(NavigationStatus, 'navigation/status', self.on_nav_status, 10)
@@ -139,6 +145,8 @@ class FleetUplinkNode(Node):
             self.create_subscription(
                 CompressedImage, image_topic, self.on_image, qos_profile_sensor_data
             )
+        if evidence_topic:
+            self.create_subscription(CompressedImage, evidence_topic, self.on_evidence, 10)
 
     # ------------------------------------------------------------------ connection
 
@@ -400,15 +408,21 @@ class FleetUplinkNode(Node):
         """Keep the latest camera frame for anomaly snapshots."""
         self._last_image = (time.time(), bytes(msg.data))
 
+    def on_evidence(self, msg: CompressedImage):
+        """Keep the frames the detector analysed, keyed by their camera stamp."""
+        key = f'{msg.header.stamp.sec}.{msg.header.stamp.nanosec:09d}'
+        self._evidence.append((key, bytes(msg.data)))
+        self.flush_anomalies()
+
     def on_anomaly(self, msg: String):
-        """Spool an anomaly with the latest frame and the robot pose."""
+        """Queue an anomaly until the frame it was detected in has arrived (or 1 s passed)."""
         result = parse_result(msg.data)
         if result is None or result['confidence'] < self._min_confidence:
             return
-        stamp, jpeg = self._last_image
-        if not jpeg or time.time() - stamp > 3.0:
-            self.get_logger().warn('anomaly without a recent camera frame, skipped')
-            return
+        try:
+            key = json.loads(msg.data).get('evidence_stamp')
+        except (ValueError, AttributeError):
+            key = None
         meta = {
             **result,
             **self.patrol_context(),
@@ -416,8 +430,29 @@ class FleetUplinkNode(Node):
             'stop_index': self._stop_index,
             'detector': 'robot',
         }
-        uid = self._spool.put('anomaly', meta, {'image.jpg': jpeg})
-        self.get_logger().info(f'anomaly {result["category"]} spooled ({uid})')
+        self._pending_anomalies.append((time.monotonic() + 1.0, meta, key))
+        self.flush_anomalies()
+
+    def flush_anomalies(self):
+        """Spool queued anomalies with their evidence frame, or the latest frame as a fallback."""
+        evidence = dict(self._evidence)
+        waiting = []
+        for deadline, meta, key in self._pending_anomalies:
+            jpeg = evidence.get(key) if key else None
+            if jpeg is None and key and time.monotonic() < deadline:
+                waiting.append((deadline, meta, key))
+                continue
+            if jpeg is None:
+                stamp, jpeg = self._last_image
+                if not jpeg or time.time() - stamp > 3.0:
+                    self.get_logger().warn('anomaly without a recent camera frame, skipped')
+                    continue
+                meta['evidence'] = 'latest_frame'
+            else:
+                meta['evidence'] = 'analysed_frame'
+            uid = self._spool.put('anomaly', meta, {'image.jpg': jpeg})
+            self.get_logger().info(f'anomaly {meta["category"]} spooled ({uid})')
+        self._pending_anomalies = waiting
 
     def on_route_saved(self, msg: String):
         """Spool a freshly recorded route for the route database."""
