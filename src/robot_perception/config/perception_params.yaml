@@ -26,6 +26,12 @@ lidar_sector_node:
     self_filter_y_min: -0.28
     self_filter_y_max: 0.28
 
+    # 360 deg safety scan for the protective field in control_mux_node (perception/safety_scan)
+    safety_scan_enabled: true
+    safety_num_sectors: 72       # 5 deg sectors
+    safety_range_max: 4.0        # m, beyond this nothing limits the speed
+    min_raw_points: 100          # fewer points per cloud: LiDAR covered/failed, report all blocked
+
     # RViz marker visualization
     publish_markers: true        # publish sector rays and detected obstacle points
     marker_lifetime_sec: 0.3     # lifetime of each marker in seconds

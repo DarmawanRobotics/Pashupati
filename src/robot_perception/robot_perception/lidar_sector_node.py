@@ -9,6 +9,7 @@ from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from robot_interfaces.msg import SectorScan
+from robot_perception.sectors import bin_ranges, obstacle_points
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import ColorRGBA
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -17,7 +18,13 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 
 class LidarSectorNode(Node):
-    """Bins lidar points into fixed angular sectors and publishes a SectorScan."""
+    """
+    Bins lidar points into fixed angular sectors and publishes a SectorScan.
+
+    perception/sector_scan covers the front (fov_deg) for obstacle avoidance;
+    perception/safety_scan covers the full circle for the protective field in the control mux,
+    and reports every sector blocked when the LiDAR returns almost nothing (covered or failed).
+    """
 
     def __init__(self):
         """Declare params, set up TF, and wire the subscription/publishers."""
@@ -42,6 +49,10 @@ class LidarSectorNode(Node):
         self.declare_parameter('self_filter_x_max', 0.40)
         self.declare_parameter('self_filter_y_min', -0.28)
         self.declare_parameter('self_filter_y_max', 0.28)
+        self.declare_parameter('safety_scan_enabled', True)
+        self.declare_parameter('safety_num_sectors', 72)
+        self.declare_parameter('safety_range_max', 4.0)
+        self.declare_parameter('min_raw_points', 100)
 
         self._num_sectors = int(self.get_parameter('num_sectors').value)
         self._fov = math.radians(float(self.get_parameter('fov_deg').value))
@@ -64,6 +75,9 @@ class LidarSectorNode(Node):
 
         self._angle_min = -self._fov / 2.0
         self._angle_increment = self._fov / self._num_sectors
+        self._safety_sectors = int(self.get_parameter('safety_num_sectors').value)
+        self._safety_range_max = float(self.get_parameter('safety_range_max').value)
+        self._min_raw_points = int(self.get_parameter('min_raw_points').value)
 
         self._base_frame = self.get_parameter('base_frame').value
         self._fallback_frame = self.get_parameter('lidar_frame').value
@@ -80,6 +94,11 @@ class LidarSectorNode(Node):
         else:
             raise ValueError(f"input_type must be 'livox' or 'pointcloud2', got {input_type!r}")
         self._sectorscan_pub = self.create_publisher(SectorScan, 'perception/sector_scan', 10)
+        self._safety_pub = (
+            self.create_publisher(SectorScan, 'perception/safety_scan', 10)
+            if bool(self.get_parameter('safety_scan_enabled').value)
+            else None
+        )
         self._markers_pub = (
             self.create_publisher(MarkerArray, 'perception/obstacles', 10)
             if self._publish_markers
@@ -166,51 +185,49 @@ class LidarSectorNode(Node):
         if extrinsic is None:
             return
         rotation, translation = extrinsic
-        ranges = np.full(self._num_sectors, self._range_max, dtype=np.float32)
+        raw_points = xyz.shape[0]
+        points = xyz @ rotation.T + translation if raw_points else np.empty((0, 3))
+        xy = obstacle_points(points, self._z_min, self._z_max, self._self_box)
 
-        if xyz.shape[0] > 0:
-            points = xyz @ rotation.T + translation
-            base_x, base_y, base_z = points[:, 0], points[:, 1], points[:, 2]
-
-            sx0, sx1, sy0, sy1 = self._self_box
-            on_body = (base_x > sx0) & (base_x < sx1) & (base_y > sy0) & (base_y < sy1)
-            keep = (base_z >= self._z_min) & (base_z <= self._z_max) & ~on_body
-            base_x, base_y = base_x[keep], base_y[keep]
-
-            if base_x.size > 0:
-                r = np.hypot(base_x, base_y)
-                theta = np.arctan2(base_y, base_x)
-
-                valid = (
-                    (r >= self._range_min)
-                    & (r <= self._range_max)
-                    & (theta >= self._angle_min)
-                    & (theta < self._angle_min + self._fov)
+        ranges = bin_ranges(
+            xy, self._angle_min, self._fov, self._num_sectors, self._range_min, self._range_max
+        )
+        self.publish_scan(
+            self._sectorscan_pub, header, ranges, self._angle_min, self._fov, self._range_max
+        )
+        if self._safety_pub is not None:
+            if raw_points < self._min_raw_points:
+                self.get_logger().warn(
+                    f'LiDAR blind ({raw_points} points), safety scan reports every sector blocked',
+                    throttle_duration_sec=2.0,
                 )
-                r, theta = r[valid], theta[valid]
-                if r.size > 0:
-                    idx = np.clip(
-                        ((theta - self._angle_min) / self._angle_increment).astype(int),
-                        0,
-                        self._num_sectors - 1,
-                    )
-                    np.minimum.at(ranges, idx, r.astype(np.float32))
-
-        self.publish_scan(header, ranges)
+                safety = np.zeros(self._safety_sectors, dtype=np.float32)
+            else:
+                safety = bin_ranges(
+                    xy,
+                    -math.pi,
+                    2.0 * math.pi,
+                    self._safety_sectors,
+                    self._range_min,
+                    self._safety_range_max,
+                )
+            self.publish_scan(
+                self._safety_pub, header, safety, -math.pi, 2.0 * math.pi, self._safety_range_max
+            )
         if self._publish_markers:
             self.publish_marker_array(header, ranges)
 
-    def publish_scan(self, header, ranges: np.ndarray):
+    def publish_scan(self, publisher, header, ranges, angle_min, fov, range_max):
         """Fill and publish a SectorScan message from the binned ranges."""
         out = SectorScan()
         out.header.stamp = header.stamp
         out.header.frame_id = self._base_frame
-        out.num_sectors = self._num_sectors
-        out.angle_min = self._angle_min
-        out.angle_increment = self._angle_increment
-        out.range_max = self._range_max
+        out.num_sectors = len(ranges)
+        out.angle_min = float(angle_min)
+        out.angle_increment = float(fov / len(ranges))
+        out.range_max = float(range_max)
         out.ranges = ranges.tolist()
-        self._sectorscan_pub.publish(out)
+        publisher.publish(out)
 
     def publish_marker_array(self, header, ranges: np.ndarray):
         """Build and publish ray and point markers for RViz visualization."""

@@ -37,6 +37,9 @@ versions follow [SemVer](https://semver.org).
 - Site configuration `/etc/pashupati/site.yaml` applied on top of every node's defaults.
 - Latched software e-stop in the control mux (`bridge/estop`, handheld `estop` / `emergency_stop`,
   NETRA `estop`), `ESTOP` alert to NETRA; the mux also zeroes the robot when navigation goes silent.
+- Protective field (speed and separation monitoring) in the control mux: every command, navigation
+  or handheld, in any direction, is limited to a speed that stops before the nearest obstacle in
+  the swept path; 360° `perception/safety_scan` with LiDAR-blind detection.
 - CI: build, unit + in-process ROS tests, lint (flake8, pep257, shellcheck, YAML) on every PR.
 
 ### Changed

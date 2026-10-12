@@ -6,6 +6,21 @@ control_mux_node:
     pause_nav_on_remote: true         # pause navigation while the remote drives
     estop_hold_hz: 10.0               # zero commands per second while the e-stop is engaged
 
+    # Protective field: limit every command to a speed that still stops `margin` before the
+    # nearest obstacle in the swept path (perception/safety_scan, 360 deg).
+    field_in_auto: true
+    field_in_remote: true             # also protects the robot from the handheld driver
+    safety_scan_timeout_sec: 0.5      # older scan: auto mode stops, remote mode creeps
+    stale_remote_speed: 0.15          # m/s cap for the handheld while the scan is stale
+    field.front: 0.40                 # m, base_link to the front edge
+    field.rear: 0.40                  # m, base_link to the rear edge
+    field.half_width: 0.28            # m, base_link to the side edges
+    field.max_decel: 0.6              # m/s^2, braking the robot reliably achieves
+    field.reaction_time: 0.25         # s, sensing + command latency
+    field.margin: 0.15                # m, gap kept to the obstacle
+    field.lateral_margin: 0.10        # m, extra width of the swept path
+    field.min_speed: 0.02             # m/s, slower commands are not limited
+
 teleop_udp_node:
   ros__parameters:
     port: 9870

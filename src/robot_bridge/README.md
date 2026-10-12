@@ -24,6 +24,16 @@ In `remote` mode navigation is paused (and resumed when switching back). The rob
 command as soon as the active source goes silent: teleop after `remote_timeout_sec`, navigation
 after `nav_timeout_sec`.
 
+**Protective field.** Every forwarded command is limited to a speed the robot can still stop at,
+after `field.reaction_time` and braking at `field.max_decel`, `field.margin` short of the nearest
+obstacle in its swept path (box `field.front` / `field.rear` / `field.half_width`, from the 360°
+`perception/safety_scan`). It works in every direction, so sideways and backward motion during a
+holonomic stop-point approach and the handheld driver are protected as well as forward driving.
+Without a fresh scan (`safety_scan_timeout_sec`) navigation stops and the handheld creeps at
+`stale_remote_speed`; a blind LiDAR reports every sector blocked. Rotation is not limited. State on
+`bridge/protective_field` (`clear`, `limited`, `stop`, `stale`, `off`), also in the handheld and
+NETRA telemetry. Robots without the safety scan set `field_in_auto` / `field_in_remote` to false.
+
 **Software e-stop.** Engaged from the handheld (`estop`, and also its `emergency_stop` driver
 command), NETRA (`estop`), RViz / CLI (`ros2 service call /bridge/estop std_srvs/srv/SetBool
 "{data: true}"`) or any node via `bridge/estop_request`. While engaged nothing but zero reaches the

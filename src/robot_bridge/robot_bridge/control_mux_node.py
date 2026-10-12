@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
+import math
+import time
+
 from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
+from robot_bridge import protective_field
 from robot_bridge.mux import ControlMux, MODES
+from robot_interfaces.msg import SectorScan
 from robot_interfaces.srv import SetMode
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool
@@ -15,7 +20,9 @@ class ControlMuxNode(Node):
     The single gate between every velocity source and the robot.
 
     Forwards navigation (auto) or teleop (remote) velocity, zeroes the robot when the active
-    source goes silent, and holds it still while the software e-stop is engaged.
+    source goes silent, holds it still while the software e-stop is engaged, and limits every
+    command to a speed the robot can still stop at before the nearest obstacle in its path
+    (protective field on perception/safety_scan).
     """
 
     def __init__(self):
@@ -26,6 +33,28 @@ class ControlMuxNode(Node):
         self.declare_parameter('nav_timeout_sec', 0.5)
         self.declare_parameter('pause_nav_on_remote', True)
         self.declare_parameter('estop_hold_hz', 10.0)
+        self.declare_parameter('field_in_auto', True)
+        self.declare_parameter('field_in_remote', True)
+        self.declare_parameter('safety_scan_timeout_sec', 0.5)
+        self.declare_parameter('stale_remote_speed', 0.15)
+        defaults = protective_field.FieldConfig()
+        for name in defaults.__dataclass_fields__:
+            self.declare_parameter(f'field.{name}', float(getattr(defaults, name)))
+        self._field = protective_field.FieldConfig(
+            **{
+                name: float(self.get_parameter(f'field.{name}').value)
+                for name in defaults.__dataclass_fields__
+            }
+        )
+        self._field_modes = {
+            'auto': bool(self.get_parameter('field_in_auto').value),
+            'remote': bool(self.get_parameter('field_in_remote').value),
+        }
+        self._scan_timeout = float(self.get_parameter('safety_scan_timeout_sec').value)
+        self._stale_remote_speed = float(self.get_parameter('stale_remote_speed').value)
+        self._obstacles = []
+        self._scan_time = None
+        self._field_state = None
         self._mux = ControlMux(
             self.get_parameter('mode').value,
             float(self.get_parameter('remote_timeout_sec').value),
@@ -39,6 +68,8 @@ class ControlMuxNode(Node):
         self._mode_pub = self.create_publisher(String, 'bridge/mode', latched)
         self._estop_pub = self.create_publisher(Bool, 'bridge/estop_engaged', latched)
         self._estop_reason_pub = self.create_publisher(String, 'bridge/estop_reason', latched)
+        self._field_pub = self.create_publisher(String, 'bridge/protective_field', latched)
+        self.create_subscription(SectorScan, 'perception/safety_scan', self.scan_callback, 10)
         self.create_subscription(Twist, 'bridge/nav_cmd_vel', self.nav_callback, 10)
         self.create_subscription(Twist, 'bridge/remote_cmd_vel', self.remote_callback, 10)
         self.create_subscription(String, 'bridge/estop_request', self.estop_request_callback, 10)
@@ -62,13 +93,54 @@ class ControlMuxNode(Node):
         """Forward navigation commands in auto mode."""
         out = self._mux.on_nav(msg, self.now())
         if out is not None:
-            self._cmd_pub.publish(out)
+            self._cmd_pub.publish(self.apply_field(out))
 
     def remote_callback(self, msg: Twist):
         """Forward teleop commands in remote mode."""
         out = self._mux.on_remote(msg, self.now())
         if out is not None:
-            self._cmd_pub.publish(out)
+            self._cmd_pub.publish(self.apply_field(out))
+
+    def scan_callback(self, msg: SectorScan):
+        """Keep the obstacle points of the latest 360 deg safety scan."""
+        self._obstacles = protective_field.scan_points(
+            msg.angle_min, msg.angle_increment, msg.ranges, msg.range_max
+        )
+        self._scan_time = time.monotonic()
+
+    def apply_field(self, cmd: Twist) -> Twist:
+        """Scale the linear velocity so the robot can stop before what is in its path."""
+        if not self._field_modes.get(self._mux.mode, False):
+            self.set_field_state('off')
+            return cmd
+        stale = self._scan_time is None or time.monotonic() - self._scan_time > self._scan_timeout
+        if stale:
+            self.set_field_state('stale')
+            if self._mux.mode != 'remote':
+                return Twist()  # navigation never drives blind
+            speed = math.hypot(cmd.linear.x, cmd.linear.y)
+            scale = min(1.0, self._stale_remote_speed / speed) if speed > 0.0 else 1.0
+        else:
+            result = protective_field.limit(
+                self._field, cmd.linear.x, cmd.linear.y, self._obstacles
+            )
+            self.set_field_state(result.state)
+            scale = result.scale
+        if scale < 1.0:
+            cmd.linear.x *= scale
+            cmd.linear.y *= scale
+        return cmd
+
+    def set_field_state(self, state: str):
+        """Publish and log protective-field state changes (latched)."""
+        if state == self._field_state:
+            return
+        if state in ('stop', 'stale'):
+            self.get_logger().warn(f'protective field: {state}')
+        else:
+            self.get_logger().info(f'protective field: {state}')
+        self._field_state = state
+        self._field_pub.publish(String(data=state))
 
     def watchdog(self):
         """Send one zero command when the active source goes silent or the mode just changed."""
