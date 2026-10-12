@@ -23,7 +23,7 @@ case "${1:-shell}" in
         ;;
     shell) docker compose exec dev bash ;;
     build) shift; in_container "colcon build $*" ;;
-    test) shift; in_container "colcon test $* && colcon test-result --verbose" ;;
+    test) shift; in_container "colcon test --executor sequential $* && colcon test-result --verbose" ;;
     vnc)
         echo "TigerVNC Viewer: localhost:5901  (brew install --cask tigervnc-viewer)"
         echo "noVNC: http://localhost:6080/vnc.html?resize=remote&autoconnect=true"

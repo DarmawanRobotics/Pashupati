@@ -126,7 +126,8 @@ STARTUP_ONLY_PARAMS = {
 
 
 class PathFollowerNode(Node):
-    """Patrol a taught route with inspection stop points.
+    """
+    Patrol a taught route with inspection stop points.
 
     Follows the route with a selectable controller, blends reactive avoidance, and at each stop
     point converges onto x/y/yaw, triggers the inspection services and dwells.

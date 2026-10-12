@@ -4,6 +4,7 @@
 
 **Autonomous patrol & inspection stack for the Genisom L1W wheel-legged quadruped — LiDAR-inertial teach-and-repeat navigation, reactive avoidance, on-robot VLM inspection, crowd sensing, handheld teleop and the NETRA command center.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/DarmawanRobotics/Pashupati/ci.yml?branch=dev&style=for-the-badge&label=CI)](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml)
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-22314E?style=for-the-badge&logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
 [![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -244,16 +245,22 @@ map → odom → camera_init → body → base_link ─┬─ livox_frame → li
 ## Tests
 
 ```bash
-colcon test && colcon test-result --verbose
+colcon test --executor sequential && colcon test-result --verbose
 ```
 
-Navigation simulations drive every controller around a noisy loop and an out-and-back corridor;
-bridge, fleet, inspection, health and perception have unit tests for their protocol and logic.
+Every package runs flake8 and pep257 plus its own tests. Navigation simulations drive every
+controller around a noisy loop and an out-and-back corridor; bridge, fleet, inspection, health and
+perception have unit tests for their protocol and logic; in-process ROS tests drive the real teleop
+gateway over UDP, the odometry gate / monitor / route recorder with fake sensors, the path follower
+state changes and the launch description. CI runs all of it on every pull request
+([.github/workflows/ci.yml](.github/workflows/ci.yml)); branch and commit rules are in
+[CONTRIBUTING.md](CONTRIBUTING.md), changes in [CHANGELOG.md](CHANGELOG.md).
 
 ## Repository layout
 
 ```
 Pashupati/
+├── .github/workflows/ci.yml      # build + tests + lint on every PR
 ├── docker/ docker-compose.yaml   # dev container (VNC desktop, shared workspace)
 ├── map/                          # recorded routes + example/
 ├── script/                       # setup.sh, run_robot.sh (service), start_tmux.sh (dev), dev.sh

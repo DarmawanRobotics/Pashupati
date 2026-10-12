@@ -5,7 +5,8 @@ from robot_navigation.utils.pose2d import Pose2D
 
 
 class MppiController(PathController):
-    """Simplified Model Predictive Path Integral controller.
+    """
+    Simplified Model Predictive Path Integral controller.
 
     Samples angular-velocity sequences at the requested speed, rolls out a unicycle model and
     returns the cost-weighted first control (local path window + lookahead terminal cost).

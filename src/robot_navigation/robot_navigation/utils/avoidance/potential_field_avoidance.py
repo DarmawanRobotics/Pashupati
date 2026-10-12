@@ -10,7 +10,8 @@ from robot_navigation.utils.avoidance.base_avoidance import (
 
 
 class PotentialFieldAvoidance(AvoidanceAlgorithm):
-    """Artificial potential field: every obstacle inside safe_distance pushes the robot away.
+    """
+    Artificial potential field: every obstacle inside safe_distance pushes the robot away.
 
     The repulsion yields a steering bias, a sideways push for holonomic robots and a speed scale.
     """

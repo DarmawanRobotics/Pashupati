@@ -92,7 +92,8 @@ def curvatures(points: list[tuple[float, float]], span: int = 3) -> list[float]:
 def process_route(
     waypoints: list[Waypoint], spacing: float, weight_data: float, weight_smooth: float
 ) -> tuple[list[Waypoint], float]:
-    """Resample and smooth a recorded route between anchors (ends and stop points).
+    """
+    Resample and smooth a recorded route between anchors (ends and stop points).
 
     Returns the processed route and the maximum deviation from the recording in metres.
     """
