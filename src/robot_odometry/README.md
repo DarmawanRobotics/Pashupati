@@ -13,6 +13,7 @@ launch and drifts slowly. `map → odom` is set by [robot_localization](../robot
 |---|---|---|
 | `fast_lio` | `src/xtras/slam/fast_lio2` | [config/fast_lio.yaml](config/fast_lio.yaml) is tuned indoors: 0.3 m voxels, 4 iterations, 50 m range, no ever-growing `/path` |
 | `leg_kilo` | `src/xtras/slam/leg_kilo` (optional) | [config/leg_kilo.yaml](config/leg_kilo.yaml): Gaussian voxel map (plane + NDT), two-stage ESKF built for legged-robot dynamics, headless |
+| `external` | started elsewhere | no estimator, the monitor and recorder still run; used by [robot_sim](../robot_sim), which publishes `/Odometry` itself |
 
 **`wait_still`**, the launch prefix of the estimator. Both estimators estimate gravity and the IMU
 biases from their first IMU samples and assume the robot is not moving. `wait_still` holds the

@@ -136,3 +136,6 @@ def test_health_watches_every_started_node():
     assert names == sorted(names) and len(names) == len(set(names))
     assert {'path_follower_node', 'fastlio_mapping_node', 'health_monitor_node'} <= set(names)
     assert 'legkilo' in expected_nodes([], 'leg_kilo')
+    external = expected_nodes([], 'external')  # the simulator brings its own odometry
+    assert 'odometry_monitor_node' in external
+    assert not {'fastlio_mapping_node', 'legkilo'} & set(external)

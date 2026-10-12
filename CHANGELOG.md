@@ -56,6 +56,8 @@ versions follow [SemVer](https://semver.org).
 - Health monitor: missing nodes (the launch passes the list it starts), lost odometry, stale safety
   scan and e-stop reported as critical (`level: error`) next to sensor rates and the computer.
 - CI: build, unit + in-process ROS tests, lint (flake8, pep257, shellcheck, YAML) on every PR.
+- `odometry:=external`: no estimator is started, `/Odometry` comes from elsewhere (the simulator);
+  the odometry monitor and route recorder still run.
 
 ### Changed
 - **Breaking:** `pashupati_bringup` → `pashupati` (`ros2 launch pashupati robot.launch.py`),
