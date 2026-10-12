@@ -32,6 +32,8 @@ versions follow [SemVer](https://semver.org).
 - `map → odom` is a dynamic transform on `/tf` (REP-105), republished at `map_odom_hz` and after
   every relocalization. As a static transform it only worked on Humble: from Jazzy on, the static
   broadcaster keeps the first value, so relocalizing had no effect.
+- A Ctrl-C that lands while a node builds its wait set no longer ends it with an `RCLError`
+  traceback (exit 1); the teleop gateway frees its UDP port as soon as it stops.
 
 ### Added
 - Teleop LAN discovery (`discover` → `beacon` with name, token required, who is driving,

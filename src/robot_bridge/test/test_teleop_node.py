@@ -28,7 +28,11 @@ class Rig:
     def __init__(self):
         self.port = free_port()
         rclpy.init(args=['--ros-args', '-p', f'port:={self.port}', '-p', f'token:={TOKEN}'])
-        self.node = TeleopUdpNode()
+        try:
+            self.node = TeleopUdpNode()
+        except Exception:
+            rclpy.shutdown()  # keep the next test's rclpy.init() working
+            raise
         self.listener = rclpy.create_node('teleop_test_listener')
         self.twists, self.estop_requests = [], []
         self.listener.create_subscription(
