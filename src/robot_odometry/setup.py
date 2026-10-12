@@ -7,7 +7,7 @@ package_name = 'robot_odometry'
 
 setup(
     name=package_name,
-    version='0.1.0',
+    version='0.2.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='FAST-LIO2 LiDAR-inertial odometry: tuned config, stillness gate, health monitor',
+    description='LIO odometry (FAST-LIO2 or Leg-KILO), stillness gate, monitor, route recorder',
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -30,6 +30,7 @@ setup(
         'console_scripts': [
             'wait_still = robot_odometry.wait_still:main',
             'odometry_monitor_node = robot_odometry.odometry_monitor_node:main',
+            'route_recorder_node = robot_odometry.route_recorder_node:main',
         ],
     },
 )

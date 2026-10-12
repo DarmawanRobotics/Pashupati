@@ -19,3 +19,11 @@ odometry_monitor_node:
     min_check_speed_mps: 0.1
     restart_origin_radius_m: 0.05
     restart_min_offset_m: 0.3
+
+route_recorder_node:                 # teach: route/record, route/mark_stop_point -> route/saved
+  ros__parameters:
+    output_path: "/home/robot/dev/Pashupati/map/"   # writes map/<date>/<time>_path.csv
+    map_frame: "map"
+    base_frame: "base_link"
+    min_waypoint_spacing_m: 0.2
+    record_rate_hz: 10.0

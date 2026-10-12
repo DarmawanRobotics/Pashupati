@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the robot stack in the foreground (systemd ExecStart). Settings come from the environment,
-# normally /etc/pashupati/pashupati.env: MODE, ROUTE, TAGS, ROBOT_NS, CC_URL, CC_TOKEN, ROS_DOMAIN_ID,
-# PEOPLE, INSPECTION.
+# normally /etc/pashupati/pashupati.env: MODE, ODOMETRY, ROUTE, TAGS, ROBOT_NS, CC_URL, CC_TOKEN,
+# ROS_DOMAIN_ID, PEOPLE, INSPECTION.
 set -eo pipefail
 
 WS="${WS:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -22,6 +22,7 @@ find "$ROS_LOG_DIR" -mindepth 1 -maxdepth 1 -mtime +7 -exec rm -rf {} + 2>/dev/n
 
 exec ros2 launch pashupati_bringup robot.launch.py \
     mode:="${MODE:-patrol}" \
+    odometry:="${ODOMETRY:-fast_lio}" \
     route:="${ROUTE:-}" \
     tags:="${TAGS:-}" \
     robot_ns:="${ROBOT_NS:-l1w}" \

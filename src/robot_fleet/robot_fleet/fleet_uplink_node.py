@@ -138,7 +138,7 @@ class FleetUplinkNode(Node):
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
         self.create_subscription(PoseArray, 'perception/people', self.on_people, 10)
-        self.create_subscription(String, 'mapping/route_saved', self.on_route_saved, 10)
+        self.create_subscription(String, 'route/saved', self.on_route_saved, 10)
         if anomaly_topic:
             self.create_subscription(String, anomaly_topic, self.on_anomaly, 10)
         if image_topic:

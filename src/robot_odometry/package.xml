@@ -2,14 +2,21 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>robot_odometry</name>
-  <version>0.1.0</version>
-  <description>FAST-LIO2 LiDAR-inertial odometry for the Livox Mid-360: tuned config, a stillness gate for IMU initialisation and an odometry health monitor.</description>
+  <version>0.2.0</version>
+  <description>LiDAR-inertial odometry for the Livox Mid-360 (FAST-LIO2, or Leg-KILO from src/xtras/slam/leg_kilo), a stillness gate for IMU initialisation, an odometry monitor and the teach-and-repeat route recorder.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>livox_ros_driver2</exec_depend>
   <exec_depend>fast_lio</exec_depend>
+  <!-- legkilo is optional (method:=leg_kilo), so it is not a dependency -->
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>python3-transforms3d</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>robot_interfaces</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>

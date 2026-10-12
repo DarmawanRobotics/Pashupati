@@ -1,8 +1,0 @@
-# FAST-LIO parameters moved to robot_odometry/config/fast_lio.yaml
-path_recorder_node:
-  ros__parameters:
-    output_path: "/home/robot/dev/Pashupati/map/"
-    map_frame: "map"
-    base_frame: "base_link"
-    min_waypoint_spacing_m: 0.2
-    record_rate_hz: 10.0

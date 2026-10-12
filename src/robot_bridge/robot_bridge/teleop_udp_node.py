@@ -170,7 +170,7 @@ class TeleopUdpNode(Node):
 
         start_nav = self.create_client(SetBool, 'navigation/start_nav')
         pause = self.create_client(SetBool, 'navigation/pause')
-        record = self.create_client(SetBool, 'mapping/path_record')
+        record = self.create_client(SetBool, 'route/record')
         self._commands = {
             'set_mode': (
                 SetMode,
@@ -185,7 +185,7 @@ class TeleopUdpNode(Node):
             'record_stop': (SetBool, record, lambda a: SetBool.Request(data=False)),
             'mark_stop': (
                 MarkStopPoint,
-                self.create_client(MarkStopPoint, 'mapping/mark_stop_point'),
+                self.create_client(MarkStopPoint, 'route/mark_stop_point'),
                 lambda a: MarkStopPoint.Request(dwell_sec=dwell_seconds(a.get('dwell', 10.0))),
             ),
             'load_route': (
