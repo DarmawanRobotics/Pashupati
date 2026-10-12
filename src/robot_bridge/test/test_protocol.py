@@ -60,7 +60,7 @@ def test_discovery_beacon_and_seq():
 
     node_module = pytest.importorskip('robot_bridge.teleop_udp_node')
     node = node_module.TeleopUdpNode.__new__(node_module.TeleopUdpNode)
-    node._robot_name, node._token, node._client, node._client_seen = 'l1w-01', 'secret', None, 0.0
+    node._robot_name, node._token, node._client, node._client_seen = 'dog-01', 'secret', None, 0.0
     node._client_timeout, node._client_name, node._seq = 1.0, '', 0
     node._state = {'mode': 'remote', 'battery': {'pct': 80}}
     server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -73,7 +73,7 @@ def test_discovery_beacon_and_seq():
     beacon = protocol.decode_json(probe.recv(2048))
     expected = {
         't': 'beacon',
-        'name': 'l1w-01',
+        'name': 'dog-01',
         'secured': True,
         'in_use_by': '',
         'mode': 'remote',

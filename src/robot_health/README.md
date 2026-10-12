@@ -4,6 +4,7 @@
 
 - **Sensor rates**: every `topic:min_hz` in `topics` is subscribed raw (no deserialisation, cheap
   even for point clouds) as soon as it appears; below 80 % of the minimum is an issue.
+  `{robot_ns}` in a topic is the robot namespace (`robot_ns`, set by `robot.launch.py`).
 - **Computer**: hottest thermal zone, memory use, free disk at `disk_path`, load average.
 - **Nodes**: every name in `expected_nodes` (filled by `robot.launch.py` with the nodes it starts)
   must be running once `startup_grace_sec` has passed.

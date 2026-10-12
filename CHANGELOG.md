@@ -58,7 +58,7 @@ versions follow [SemVer](https://semver.org).
 - CI: build, unit + in-process ROS tests, lint (flake8, pep257, shellcheck, YAML) on every PR.
 - `odometry:=external`: no estimator is started, `/Odometry` comes from elsewhere (the simulator);
   the odometry monitor and route recorder still run.
-- `robot_sim`: the production stack on a simulated L1W (2D world, ray-cast LiDAR, the driver and
+- `robot_sim`: the production stack on a simulated quadruped (2D world, ray-cast LiDAR, the driver and
   FAST-LIO interfaces, people dropped in at runtime, stand-in inspection), and an end-to-end CI
   test: patrol through a stop, stop for a person, drive on, the handheld cannot drive into a
   person, clean shutdown.
@@ -67,3 +67,11 @@ versions follow [SemVer](https://semver.org).
 - **Breaking:** `pashupati_bringup` → `pashupati` (`ros2 launch pashupati robot.launch.py`),
   `robot_mapping` merged into `robot_odometry`, `mapping/*` services → `route/*`, mode `mapping`
   → `teach` (old name still accepted).
+- **Breaking:** robot-agnostic. Pashupati no longer ships a robot driver: any quadruped plugs in
+  through a robot package (`ROBOT_BRINGUP` / `robot_bringup:=<package>[/<file>.launch.py]`,
+  started with `namespace:=<robot_ns>`), whose contract is in `src/xtras/README.md`. The
+  `genisom_l1w_ros2` submodule is removed, `sensors:=` is replaced by `robot_bringup:=`, the
+  default `robot_ns` is `robot` (set `ROBOT_NS` to keep another one), the handheld's default
+  robot commands are `stand_up`, `sit_down`, `emergency_stop` (extras via `robot_commands`), the
+  vendor-autostart stop became `ROBOT_PRESTART`, and `script/setup.sh install robot` runs the
+  robot package's own installer (`ROBOT_SETUP`). Health topics may use `{robot_ns}`.

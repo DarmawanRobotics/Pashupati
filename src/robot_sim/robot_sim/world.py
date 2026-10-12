@@ -122,7 +122,7 @@ def lio_pose(start: tuple, pose: tuple, imu_xy: tuple) -> tuple:
     Return FAST-LIO's camera_init->body (x, y, yaw) for a base pose.
 
     camera_init is the IMU frame at the start pose and body is the IMU frame now; the IMU sits at
-    imu_xy in base_link without rotation (L1W URDF).
+    imu_xy in base_link without rotation (as in the robot URDF).
     """
     (sx, sy, syaw), (x, y, yaw), (ix, iy) = start, pose, imu_xy
 

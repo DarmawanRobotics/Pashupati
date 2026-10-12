@@ -18,7 +18,7 @@ Commands from the server (`start_patrol`, `stop_patrol`, `pause`, `resume`, `loc
 ## Run
 
 ```bash
-ros2 launch robot_fleet fleet.launch.py robot_ns:=l1w \
+ros2 launch robot_fleet fleet.launch.py robot_ns:=robot \
   server_url:=https://netra.example.com token:=<robot token>
 ```
 

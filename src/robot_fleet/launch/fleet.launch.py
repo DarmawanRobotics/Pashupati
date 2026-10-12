@@ -16,7 +16,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument('params_file', default_value=params),
-            DeclareLaunchArgument('robot_ns', default_value='l1w'),
+            DeclareLaunchArgument('robot_ns', default_value='robot'),
             DeclareLaunchArgument('server_url', default_value=''),
             DeclareLaunchArgument('token', default_value=''),
             Node(

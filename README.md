@@ -2,7 +2,7 @@
 
 # PASHUPATI
 
-**Autonomous patrol & inspection stack for the Genisom L1W wheel-legged quadruped — LiDAR-inertial teach-and-repeat navigation, reactive avoidance, on-robot VLM inspection, crowd sensing, handheld teleop and the NETRA command center.**
+**Autonomous patrol & inspection stack for quadruped robots (legged or wheel-legged, any brand with a ROS 2 driver) — LiDAR-inertial teach-and-repeat navigation, reactive avoidance, on-robot VLM inspection, crowd sensing, handheld teleop and the NETRA command center.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/DarmawanRobotics/Pashupati/ci.yml?branch=dev&style=for-the-badge&label=CI)](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml)
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-22314E?style=for-the-badge&logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
@@ -37,7 +37,7 @@ instead of a global planner:
 ```mermaid
 flowchart LR
     subgraph Robot[Robot — Jetson, ROS 2 Humble]
-        DRV[l1w_driver] --- SENS[Livox MID-360 + RealSense D435i]
+        DRV[robot package<br/>driver · URDF] --- SENS[Livox MID-360 + RealSense]
         SENS --> FL[FAST-LIO2 / Leg-KILO] --> LOC[localization]
         SENS --> PER[lidar sectors · AprilTag · people]
         LOC --> NAV[path follower + avoidance]
@@ -57,7 +57,7 @@ flowchart LR
 | Repository | |
 |---|---|
 | **Pashupati** (this) | robot workspace |
-| [`genisom_l1w_ros2`](src/xtras/drivers/genisom_l1w_ros2) | L1W driver, URDF, sensor bringup, SDK installer (submodule) |
+| robot package | the robot's driver, URDF and sensor launch, added under `src/xtras/robots/` ([contract](src/xtras/README.md)) |
 | [`leg_kilo`](src/xtras/slam/leg_kilo) | Leg-KILO odometry, `pashupati` branch of the fork: headless options (submodule, optional) |
 | `netra` | command center: backend, dashboard, VPS deployment |
 | `flutter_teleop` | handheld teleop app (Retroid Pocket / Android) |
@@ -66,7 +66,7 @@ flowchart LR
 
 | Component | Model | Role |
 |---|---|---|
-| Robot base | ZSBot **Genisom L1W** | `genisom_l1w_ros2` (zsibot SDK, UDP) |
+| Robot base | any quadruped (legged or wheel-legged) with a ROS 2 driver | robot package, [contract](src/xtras/README.md) |
 | LiDAR | Livox **MID-360** | FAST-LIO2 odometry, obstacle sectors, teleop lidar view |
 | Camera | Intel RealSense **D435i** | AprilTags, VLM inspection, people, teleop video |
 | Compute | NVIDIA Jetson (aarch64) | ROS 2 Humble, Ollama, TensorRT |
@@ -86,7 +86,7 @@ flowchart LR
 | [`robot_health`](src/robot_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, computer health |
 | [`robot_rviz`](src/robot_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
 | [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, site configuration |
-| [`robot_sim`](src/robot_sim) | simulated L1W (driver, LiDAR, FAST-LIO interfaces) for the whole stack, end-to-end test |
+| [`robot_sim`](src/robot_sim) | simulated quadruped (driver, LiDAR, FAST-LIO interfaces) for the whole stack, end-to-end test |
 
 ## Install on the robot
 
@@ -94,9 +94,10 @@ flowchart LR
 git clone --recursive https://github.com/DarmawanRobotics/Pashupati.git ~/dev/Pashupati
 cd ~/dev/Pashupati
 script/setup.sh                 # what is installed / missing
-script/setup.sh install         # tools, submodules, Livox-SDK2, zsibot SDK, rosdep, udev, Ollama + moondream, build
+git submodule add <robot repo url> src/xtras/robots/<name>   # the robot package, src/xtras/README.md
+script/setup.sh install         # tools, submodules, Livox-SDK2, robot SDK, rosdep, udev, Ollama + moondream, build
 script/setup.sh install service # systemd service, /etc/pashupati/pashupati.env + site.yaml
-sudoedit /etc/pashupati/pashupati.env   # robot id, route, tags, NETRA url + token
+sudoedit /etc/pashupati/pashupati.env   # ROBOT_BRINGUP + ROBOT_NS, robot id, route, tags, NETRA url + token
 sudoedit /etc/pashupati/site.yaml       # per-robot tuning (speeds, teleop token, ...)
 sudo systemctl start pashupati && journalctl -fu pashupati
 ```
@@ -119,7 +120,7 @@ On the robot during development: `script/start_tmux.sh teach|patrol` (one pane p
 
 ## Simulation
 
-The whole stack also runs against a simulated L1W ([robot_sim](src/robot_sim)), with no robot,
+The whole stack also runs against a simulated quadruped ([robot_sim](src/robot_sim)), with no robot,
 Gazebo or GPU:
 
 ```bash
@@ -169,7 +170,7 @@ or gamepad B), from NETRA, or with
 zero velocity reaches the robot and navigation is paused. Release is explicit: `estop_release`
 from the handheld or NETRA, or `{data: false}`. After a release, navigation stays paused until an
 operator resumes it.
-The driver's own stop is `ros2 service call /l1w/emergency_stop std_srvs/srv/Trigger`.
+The driver's own stop is `ros2 service call /<robot_ns>/emergency_stop std_srvs/srv/Trigger`.
 
 ## Patrol behaviour
 
@@ -215,7 +216,7 @@ the tuned values with **Save YAML**.
 | `/bridge/set_mode` | `robot_interfaces/SetMode` | control_mux_node |
 | `/bridge/estop` | `std_srvs/SetBool` (`true` engages, `false` releases) | control_mux_node |
 | `/anomaly_detector_node/check_now` | `std_srvs/Trigger` | anomaly_detector_node |
-| `/l1w/<command>` | `std_srvs/Trigger` | l1w_driver_node |
+| `/<robot_ns>/<command>` | `std_srvs/Trigger` | robot driver ([contract](src/xtras/README.md)) |
 
 </details>
 
@@ -224,7 +225,7 @@ the tuned values with **Save YAML**.
 
 | Topic | Type | Publisher |
 |---|---|---|
-| `/l1w/cmd_vel` | `geometry_msgs/Twist` | control_mux_node |
+| `/<robot_ns>/cmd_vel` | `geometry_msgs/Twist` | control_mux_node |
 | `/bridge/nav_cmd_vel`, `/bridge/remote_cmd_vel` | `geometry_msgs/Twist` | path_follower_node, teleop_udp_node |
 | `/bridge/mode` | `std_msgs/String` (latched) | control_mux_node |
 | `/bridge/estop_engaged`, `/bridge/estop_reason` | `std_msgs/Bool`, `std_msgs/String` (latched) | control_mux_node |
@@ -299,7 +300,7 @@ Pashupati/
 ├── script/                       # setup.sh, run_robot.sh (service), start_tmux.sh (dev), dev.sh
 └── src/
     ├── robot_* pashupati         # first-party packages
-    └── xtras/                    # submodules: genisom_l1w_ros2, livox_ros_driver2, realsense-ros, FAST_LIO, Leg-KILO
+    └── xtras/                    # submodules: livox_ros_driver2, realsense-ros, FAST_LIO, Leg-KILO; robots/<your robot>
 ```
 
 ## License

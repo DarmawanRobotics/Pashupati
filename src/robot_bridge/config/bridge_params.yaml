@@ -36,9 +36,10 @@ teleop_udp_node:
     max_vy: 0.5
     max_wz: 1.5
     telemetry_hz: 10.0
-    robot_command_prefix: /l1w/       # Trigger services of the robot driver
-    robot_commands: [stand_up, sit_down, emergency_stop, move_mode, balance_stand_mode,
-                     lock_mode, slow_speed, normal_speed, fast_speed]
+    robot_command_prefix: /robot/     # driver services; robot.launch.py sets /<robot_ns>/
+    # Commands shown on the handheld, each a std_srvs/Trigger <prefix><name> of the robot driver.
+    # Add the robot's own (gait, speed modes, ...) in the site file, see src/xtras/README.md.
+    robot_commands: [stand_up, sit_down, emergency_stop]
     routes_dir: /home/robot/dev/Pashupati/map
     map_frame: map
     base_frame: base_link

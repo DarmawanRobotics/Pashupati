@@ -33,8 +33,9 @@ class HealthMonitorNode(Node):
                 '/livox/lidar:5.0',
                 '/perception/sector_scan:5.0',
                 '/camera/camera/color/image_raw/compressed:5.0',
-                '/l1w/odom:10.0',
+                '/{robot_ns}/odom:10.0',
             ],
+            'robot_ns': 'robot',
             'max_cpu_temp_c': 85.0,
             'max_memory_percent': 92.0,
             'min_disk_free_gb': 5.0,
@@ -46,7 +47,7 @@ class HealthMonitorNode(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         p = lambda name: self.get_parameter(name).value  # noqa: E731
-        self._expected = parse_topic_specs(p('topics'))
+        self._expected = parse_topic_specs(p('topics'), str(p('robot_ns')))
         self._trackers = {topic: RateTracker() for topic in self._expected}
         self._subscribed: set[str] = set()
         self._limits = (

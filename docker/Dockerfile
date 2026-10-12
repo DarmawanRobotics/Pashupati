@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-# Pashupati dev container: ROS 2 Humble, vendor SDKs, all rosdep keys, XFCE desktop over VNC/noVNC.
+# Pashupati dev container: ROS 2 Humble, Livox-SDK2, all rosdep keys, XFCE desktop over VNC/noVNC.
 ARG ROS_DISTRO=humble
 
 # Only the package manifests, so the rosdep layer is rebuilt when dependencies change, not code.
@@ -32,10 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-rviz2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Vendor SDKs through the same installer the robot uses
+# Sensor SDK through the same installer the robot uses (robot SDKs: see src/xtras/README.md)
 COPY script/setup.sh /opt/pashupati/setup.sh
-COPY src/xtras/drivers/genisom_l1w_ros2/script/setup.sh /opt/pashupati/genisom_setup.sh
-RUN GENISOM_SETUP=/opt/pashupati/genisom_setup.sh /opt/pashupati/setup.sh install livox genisom
+RUN /opt/pashupati/setup.sh install livox
 
 # ROS dependencies of every package in src/
 COPY --from=manifests /src /tmp/src

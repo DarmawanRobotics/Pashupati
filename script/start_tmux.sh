@@ -2,8 +2,9 @@
 # Usage: script/start_tmux.sh [teach|patrol]   (development; production: pashupati.service)
 #   teach:  odometry keeps the map, record a route with the RViz panel or the handheld
 #   patrol: map off, route loaded, navigation ready (start it from the panel)
-# Env: WS, ODOMETRY (fast_lio | leg_kilo), ROUTE, TAGS, ROBOT_NS, CC_URL + CC_TOKEN (command
-#      center), RVIZ=0 (headless), DETACH=1 (do not attach, e.g. systemd)
+# Env: WS, ODOMETRY (fast_lio | leg_kilo), ROUTE, TAGS, ROBOT_NS, ROBOT_BRINGUP (robot package,
+#      <package>[/<file>.launch.py], empty: started elsewhere), ROBOT_PRESTART, CC_URL + CC_TOKEN
+#      (command center), RVIZ=0 (headless), DETACH=1 (do not attach, e.g. systemd)
 set -euo pipefail
 
 MODE="${1:-patrol}"
@@ -12,7 +13,8 @@ ODOMETRY="${ODOMETRY:-fast_lio}"
 WS="${WS:-/home/robot/dev/Pashupati}"
 ROUTE="${ROUTE:-$WS/map/example/example_waypoint.csv}"
 TAGS="${TAGS:-$WS/map/example/tag_config.json}"
-ROBOT_NS="${ROBOT_NS:-l1w}"
+ROBOT_NS="${ROBOT_NS:-robot}"
+ROBOT_BRINGUP="${ROBOT_BRINGUP:-}"
 CC_URL="${CC_URL:-}"
 CC_TOKEN="${CC_TOKEN:-}"
 RVIZ="${RVIZ:-1}"
@@ -25,9 +27,9 @@ if [[ "$MODE" != "teach" && "$MODE" != "patrol" ]]; then
 fi
 SAVE_MAP=$([[ "$MODE" == "teach" ]] && echo true || echo false)
 
-# Stop the vendor services that would fight for the robot
-if command -v robot-launch >/dev/null; then
-    robot-launch stop forward || true
+# Robot-specific preparation, e.g. stopping a vendor autostart that would fight for the robot
+if [[ -n "${ROBOT_PRESTART:-}" ]]; then
+    bash -c "$ROBOT_PRESTART" || true
 fi
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 
@@ -42,7 +44,14 @@ tmux new-session -d -s "$SESSION" -n robot
 tmux split-window -v -t "$SESSION:robot"
 tmux split-window -h -t "$SESSION:robot.0"
 tmux split-window -h -t "$SESSION:robot.2"
-run robot.0 "ros2 launch l1w_bringup bringup.launch.py namespace:=$ROBOT_NS"
+if [[ -n "$ROBOT_BRINGUP" ]]; then
+    ROBOT_PKG="${ROBOT_BRINGUP%%/*}"
+    ROBOT_LAUNCH="bringup.launch.py"
+    [[ "$ROBOT_BRINGUP" == */* ]] && ROBOT_LAUNCH="${ROBOT_BRINGUP#*/}"
+    run robot.0 "ros2 launch $ROBOT_PKG $ROBOT_LAUNCH namespace:=$ROBOT_NS"
+else
+    tmux send-keys -t "$SESSION:robot.0" "# ROBOT_BRINGUP unset: start the robot driver here" C-m
+fi
 sleep 3
 run robot.1 "ros2 launch robot_odometry odometry.launch.py method:=$ODOMETRY save_map:=$SAVE_MAP \
 localization:=true tags_config_file:=$TAGS leg_odom_topic:=/$ROBOT_NS/odom"

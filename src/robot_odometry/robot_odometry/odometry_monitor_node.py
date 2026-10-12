@@ -24,7 +24,7 @@ class OdometryMonitorNode(Node):
         """Declare parameters, subscribe and start the watchdog."""
         super().__init__('odometry_monitor_node')
         self.declare_parameter('odom_topic', '/Odometry')
-        self.declare_parameter('leg_odom_topic', '/l1w/odom')   # empty: no cross-check
+        self.declare_parameter('leg_odom_topic', '/robot/odom')   # empty: no cross-check
         self.declare_parameter('stale_sec', 0.5)
         self.declare_parameter('max_speed_mps', 3.0)
         self.declare_parameter('max_z_drift_m', 0.5)            # 0: off (ramps, other floors)

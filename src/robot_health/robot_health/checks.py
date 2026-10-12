@@ -29,12 +29,13 @@ class RateTracker:
         return (len(self._stamps) - 1) / span
 
 
-def parse_topic_specs(specs: list[str]) -> dict[str, float]:
-    """Parse 'topic:min_hz' strings."""
+def parse_topic_specs(specs: list[str], robot_ns: str = 'robot') -> dict[str, float]:
+    """Parse 'topic:min_hz' strings; '{robot_ns}' in a topic becomes the robot namespace."""
     out = {}
     for spec in specs:
         if not spec:
             continue
+        spec = spec.replace('{robot_ns}', robot_ns.strip('/'))
         topic, _, hz = spec.rpartition(':')
         try:
             out[topic or spec] = float(hz) if topic else 0.0

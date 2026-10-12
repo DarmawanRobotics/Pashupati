@@ -28,6 +28,8 @@ def test_topic_specs():
     """'topic:hz' strings parse, bare topics get 0 Hz."""
     expected = {'/a': 5.0, '/b/c': 12.5, '/d': 0.0}
     assert parse_topic_specs(['/a:5', '/b/c:12.5', '/d', '']) == expected
+    assert parse_topic_specs(['/{robot_ns}/odom:10'], '/dog/') == {'/dog/odom': 10.0}
+    assert parse_topic_specs(['/{robot_ns}/odom:10']) == {'/robot/odom': 10.0}
 
 
 def test_disk_free_is_reported():

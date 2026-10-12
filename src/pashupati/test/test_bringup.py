@@ -11,6 +11,7 @@ from pashupati.bringup import (
     resolve_mode,
     resolve_namespace,
     resolve_odometry,
+    resolve_robot_bringup,
 )
 import pytest
 
@@ -33,11 +34,26 @@ def test_modes_and_odometry():
 
 def test_namespace():
     """Driver namespaces are plain ROS names, slashes around them are dropped."""
-    assert resolve_namespace('/l1w/') == 'l1w'
-    assert resolve_namespace('fleet/l1w_2') == 'fleet/l1w_2'
-    for bad in ('', '1robot', 'l1w-2', 'a//b'):
+    assert resolve_namespace('/robot/') == 'robot'
+    assert resolve_namespace('fleet/dog_2') == 'fleet/dog_2'
+    for bad in ('', '1robot', 'dog-2', 'a//b'):
         with pytest.raises(BringupError):
             resolve_namespace(bad)
+
+
+def test_robot_bringup():
+    """Any robot package: '<pkg>' (bringup.launch.py) or '<pkg>/<file>'; empty means elsewhere."""
+    assert resolve_robot_bringup('') is None
+    assert resolve_robot_bringup('  ') is None
+    assert resolve_robot_bringup('go2_bringup') == ('go2_bringup', 'bringup.launch.py')
+    assert resolve_robot_bringup('lite3_bringup/robot.launch.py') == (
+        'lite3_bringup',
+        'robot.launch.py',
+    )
+    assert resolve_robot_bringup('dog/sensors.launch.xml') == ('dog', 'sensors.launch.xml')
+    for bad in ('2dog', 'dog/', 'dog/../x.launch.py', 'dog/bringup.py', 'a b'):
+        with pytest.raises(BringupError):
+            resolve_robot_bringup(bad)
 
 
 def test_site_config(tmp_path):
@@ -100,13 +116,13 @@ def launch_context(module, **overrides):
 
 
 def test_launch_starts_every_node_once():
-    """robot.launch.py builds every Pashupati node (sensors off: no robot needed)."""
+    """robot.launch.py builds every Pashupati node (no robot package: no robot needed)."""
     pytest.importorskip('launch_ros')
     from launch_ros.actions import Node
     from launch.utilities import perform_substitutions
 
     module = load_launch_module()
-    context = launch_context(module, sensors='false', mode='teach', site_config='')
+    context = launch_context(module, robot_bringup='', mode='teach', site_config='')
     actions = module.launch_setup(context)
 
     def text(value):  # a str (Jazzy) or a list of substitutions (Humble)
@@ -122,12 +138,40 @@ def test_launch_starts_every_node_once():
 
 
 def test_launch_rejects_bad_arguments():
-    """A wrong mode or namespace stops the launch with a clear error."""
+    """A wrong mode, namespace or robot package stops the launch with a clear error."""
     pytest.importorskip('launch_ros')
     module = load_launch_module()
-    for overrides in ({'mode': 'auto'}, {'odometry': 'gmapping'}, {'robot_ns': 'l1w-2'}):
+    for overrides in (
+        {'mode': 'auto'},
+        {'odometry': 'gmapping'},
+        {'robot_ns': 'dog-2'},
+        {'robot_bringup': 'no_such_robot_package'},
+        {'robot_bringup': 'pashupati/missing.launch.py'},
+    ):
+        overrides = {'robot_bringup': '', **overrides}
         with pytest.raises(BringupError):
-            module.launch_setup(launch_context(module, sensors='false', **overrides))
+            module.launch_setup(launch_context(module, **overrides))
+
+
+def test_launch_includes_the_robot_package():
+    """robot_bringup includes that package's launch file with namespace:=robot_ns."""
+    pytest.importorskip('launch_ros')
+    from launch.actions import IncludeLaunchDescription
+
+    module = load_launch_module()
+    # any installed launch file stands in for a robot package here
+    context = launch_context(
+        module, robot_bringup='pashupati/robot.launch.py', robot_ns='dog', site_config=''
+    )
+    robot = [
+        a for a in module.launch_setup(context)
+        if isinstance(a, IncludeLaunchDescription)
+        and dict(a.launch_arguments).get('namespace') == 'dog'
+    ]
+    assert len(robot) == 1
+    source = robot[0].launch_description_source
+    source.get_launch_description(context)  # resolves the path
+    assert source.location.endswith(os.path.join('pashupati', 'launch', 'robot.launch.py'))
 
 
 def test_health_watches_every_started_node():

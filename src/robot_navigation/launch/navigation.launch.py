@@ -24,12 +24,12 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'cmd_vel_topic',
                 default_value='cmd_vel',
-                description="Robot velocity topic, e.g. '/l1w/cmd_vel'",
+                description="Robot velocity topic, e.g. '/robot/cmd_vel'",
             ),
             DeclareLaunchArgument(
                 'battery_topic',
                 default_value='battery',
-                description="sensor_msgs/BatteryState topic, e.g. '/l1w/battery'",
+                description="sensor_msgs/BatteryState topic, e.g. '/robot/battery'",
             ),
             Node(
                 package='robot_navigation',

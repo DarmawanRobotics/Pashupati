@@ -2,7 +2,7 @@ fleet_uplink_node:
   ros__parameters:
     server_url: ""                    # e.g. https://netra.example.com (empty: spool only)
     token: ""                         # robot token issued by the command center
-    robot_id: l1w-01
+    robot_id: robot-01
     verify_tls: true
     telemetry_hz: 1.0
     upload_period_sec: 5.0

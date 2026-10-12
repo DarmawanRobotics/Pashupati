@@ -21,7 +21,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Software-in-the-loop L1W simulator for the whole Pashupati stack',
+    description='Software-in-the-loop quadruped simulator for the whole Pashupati stack',
     license='Apache-2.0',
     extras_require={
         'test': [

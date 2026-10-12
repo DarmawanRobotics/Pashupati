@@ -13,6 +13,11 @@ import yaml
 MODES = {'patrol': 'patrol', 'teach': 'teach', 'mapping': 'teach'}  # mapping: old name of teach
 ODOMETRY_METHODS = ('fast_lio', 'leg_kilo', 'external')  # external: simulator / own estimator
 NAMESPACE_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*(/[A-Za-z][A-Za-z0-9_]*)*$')
+# robot_bringup: '<package>' or '<package>/<file>.launch.(py|xml|yaml)'
+ROBOT_BRINGUP_RE = re.compile(
+    r'^([A-Za-z][A-Za-z0-9_]*)(?:/([A-Za-z0-9_.-]+\.launch\.(?:py|xml|yaml)))?$'
+)
+DEFAULT_ROBOT_LAUNCH = 'bringup.launch.py'
 
 # Every node robot.launch.py starts, by node name (the keys of a site configuration file).
 NODES = (
@@ -61,11 +66,30 @@ def resolve_odometry(value: str) -> str:
 
 
 def resolve_namespace(value: str) -> str:
-    """Return the robot driver namespace without slashes around it, e.g. 'l1w'."""
+    """Return the robot driver namespace without slashes around it, e.g. 'robot'."""
     ns = str(value).strip().strip('/')
     if not NAMESPACE_RE.match(ns):
         raise BringupError(f'robot_ns:={value!r} is not a valid ROS namespace')
     return ns
+
+
+def resolve_robot_bringup(value: str):
+    """
+    Parse robot_bringup: '<package>' or '<package>/<file>.launch.py' -> (package, launch file).
+
+    The robot package (driver, URDF, sensors) is the only robot-specific part of the stack, see
+    src/xtras/README.md. None when empty: the robot is started elsewhere (simulator, vendor
+    service).
+    """
+    text = str(value).strip()
+    if not text:
+        return None
+    match = ROBOT_BRINGUP_RE.match(text)
+    if not match:
+        raise BringupError(
+            f"robot_bringup:={value!r}, use '<package>' or '<package>/<file>.launch.py'"
+        )
+    return match.group(1), match.group(2) or DEFAULT_ROBOT_LAUNCH
 
 
 def load_site_config(path: str):

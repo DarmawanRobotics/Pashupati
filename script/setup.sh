@@ -7,17 +7,19 @@
 #   script/setup.sh install livox build  # install only these
 #   script/setup.sh install all          # every component, including ros and service
 #
-# Components: ros tools submodules livox genisom legkilo rosdep realsense_udev ollama people_model
+# Components: ros tools submodules livox robot legkilo rosdep realsense_udev ollama people_model
 #             build service network
-# Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), GENISOM_SETUP (genisom submodule script),
-#      VLM_MODEL (moondream), PEOPLE_MODEL (models/yolo11n.engine), FORCE=1 (reinstall anyway)
+# Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), ROBOT_SETUP (the robot package's own
+#      installer, `<script> check|install`, e.g. for a vendor SDK; see src/xtras/README.md),
+#      ROBOT_IP (robot SDK address for the network check), VLM_MODEL (moondream),
+#      PEOPLE_MODEL (models/yolo11n.engine), FORCE=1 (reinstall anyway)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 LIVOX_SDK_REPO="${LIVOX_SDK_REPO:-https://github.com/Livox-SDK/Livox-SDK2.git}"
 LIVOX_SDK_REF="${LIVOX_SDK_REF:-master}"
-GENISOM_SETUP="${GENISOM_SETUP:-$ROOT/src/xtras/drivers/genisom_l1w_ros2/script/setup.sh}"
+ROBOT_SETUP="${ROBOT_SETUP:-}"
 SERVICE_NAME=pashupati
 ENV_FILE=/etc/pashupati/pashupati.env
 SITE_FILE=/etc/pashupati/site.yaml
@@ -25,11 +27,11 @@ VLM_MODEL="${VLM_MODEL:-moondream}"
 PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n.engine}"
 REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"
-ROBOT_IP="${ROBOT_IP:-192.168.234.1}"
+ROBOT_IP="${ROBOT_IP:-}"
 
-ALL=(ros tools submodules livox genisom legkilo rosdep realsense_udev ollama people_model build service
+ALL=(ros tools submodules livox robot legkilo rosdep realsense_udev ollama people_model build service
      network)
-DEFAULT_INSTALL=(tools submodules livox genisom legkilo rosdep realsense_udev ollama build)
+DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense_udev ollama build)
 
 SUDO=$([[ "$(id -u)" -eq 0 ]] && echo "" || echo "sudo")
 IN_DOCKER=$([[ -f /.dockerenv ]] && echo 1 || echo 0)
@@ -108,13 +110,15 @@ install_livox() {
     rm -rf "$tmp"
 }
 
-check_genisom() {
-    [[ -x "$GENISOM_SETUP" ]] || { echo "no $GENISOM_SETUP (install submodules)"; return 1; }
-    "$GENISOM_SETUP" check
+# The robot package may bring its own installer (vendor SDK, udev rules, ...): ROBOT_SETUP.
+check_robot() {
+    [[ -n "$ROBOT_SETUP" ]] || { echo "skipped, no ROBOT_SETUP"; return 0; }
+    [[ -x "$ROBOT_SETUP" ]] || { echo "ROBOT_SETUP $ROBOT_SETUP is not executable"; return 1; }
+    "$ROBOT_SETUP" check
 }
-install_genisom() {
-    [[ -x "$GENISOM_SETUP" ]] || install_submodules
-    "$GENISOM_SETUP" install
+install_robot() {
+    [[ -x "$ROBOT_SETUP" ]] || { echo "set ROBOT_SETUP to the robot package's installer"; return 1; }
+    "$ROBOT_SETUP" install
 }
 
 # Leg-KILO (src/xtras/slam/leg_kilo, odometry:=leg_kilo) builds Iridescence and needs these.
@@ -258,14 +262,15 @@ EOF
 }
 
 check_network() {
-    local ok=0 out=()
-    for pair in "livox=$LIVOX_IP" "robot=$ROBOT_IP"; do
+    local ok=0 out=() pairs=("livox=$LIVOX_IP")
+    [[ -n "$ROBOT_IP" ]] && pairs+=("robot=$ROBOT_IP")
+    for pair in "${pairs[@]}"; do
         if ping -c1 -W1 "${pair#*=}" >/dev/null 2>&1; then out+=("${pair} up"); else out+=("${pair} down"); ok=1; fi
     done
     echo "${out[*]}"; return $ok
 }
 install_network() {
-    echo "configure the interfaces by hand: Livox on 192.168.123.0/24, robot SDK on 192.168.234.0/24"
+    echo "configure the interfaces by hand: Livox on 192.168.123.0/24, the robot as its driver says"
     return 1
 }
 

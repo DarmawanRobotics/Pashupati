@@ -3,14 +3,13 @@
 <package format="3">
   <name>pashupati</name>
   <version>0.3.0</version>
-  <description>The Pashupati patrol robot: one launch for the whole stack with respawning nodes and a per-robot site configuration, used by the systemd service.</description>
+  <description>The Pashupati patrol robot: one launch for the whole stack on any quadruped (the robot package is pluggable) with respawning nodes and a per-robot site configuration, used by the systemd service.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <exec_depend>l1w_bringup</exec_depend>
   <exec_depend>apriltag_ros</exec_depend>
   <exec_depend>robot_odometry</exec_depend>
   <exec_depend>robot_localization</exec_depend>
