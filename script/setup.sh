@@ -20,6 +20,7 @@ LIVOX_SDK_REF="${LIVOX_SDK_REF:-master}"
 GENISOM_SETUP="${GENISOM_SETUP:-$ROOT/src/xtras/drivers/genisom_l1w_ros2/script/setup.sh}"
 SERVICE_NAME=pashupati
 ENV_FILE=/etc/pashupati/pashupati.env
+SITE_FILE=/etc/pashupati/site.yaml
 VLM_MODEL="${VLM_MODEL:-moondream}"
 PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n.engine}"
 REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
@@ -216,7 +217,12 @@ install_service() {
     user=$(id -un)
     if [[ ! -f "$ENV_FILE" ]]; then
         $SUDO install -D -m 640 -o root -g "$(id -gn)" "$ROOT/script/pashupati.env.example" "$ENV_FILE"
-        log "edit $ENV_FILE (route, tags, NETRA url/token)"
+        log "edit $ENV_FILE (robot id, route, tags, NETRA url/token)"
+    fi
+    if [[ ! -f "$SITE_FILE" ]]; then
+        $SUDO install -D -m 640 -o root -g "$(id -gn)" \
+            "$ROOT/src/pashupati/config/site.example.yaml" "$SITE_FILE"
+        log "edit $SITE_FILE (per-robot tuning, teleop token)"
     fi
     $SUDO tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null <<EOF
 [Unit]

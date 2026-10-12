@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the robot stack in the foreground (systemd ExecStart). Settings come from the environment,
-# normally /etc/pashupati/pashupati.env: MODE, ODOMETRY, ROUTE, TAGS, ROBOT_NS, CC_URL, CC_TOKEN,
-# ROS_DOMAIN_ID, PEOPLE, INSPECTION.
+# normally /etc/pashupati/pashupati.env: ROBOT_ID, MODE, ODOMETRY, ROUTE, TAGS, ROBOT_NS, CC_URL,
+# CC_TOKEN, SITE_CONFIG, ROS_DOMAIN_ID, PEOPLE, INSPECTION.
 set -eo pipefail
 
 WS="${WS:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -20,7 +20,12 @@ export ROS_LOG_DIR="${ROS_LOG_DIR:-$HOME/.ros/log}"
 # Keep ROS logs from filling the disk: delete runs older than a week.
 find "$ROS_LOG_DIR" -mindepth 1 -maxdepth 1 -mtime +7 -exec rm -rf {} + 2>/dev/null || true
 
-exec ros2 launch pashupati_bringup robot.launch.py \
+# Version shown in the first log line and in the journal
+PASHUPATI_GIT="$(git -C "$WS" describe --always --dirty --tags 2>/dev/null || echo unknown)"
+export PASHUPATI_GIT
+
+exec ros2 launch pashupati robot.launch.py \
+    robot_id:="${ROBOT_ID:-}" \
     mode:="${MODE:-patrol}" \
     odometry:="${ODOMETRY:-fast_lio}" \
     route:="${ROUTE:-}" \
@@ -29,4 +34,5 @@ exec ros2 launch pashupati_bringup robot.launch.py \
     cc_url:="${CC_URL:-}" \
     cc_token:="${CC_TOKEN:-}" \
     people:="${PEOPLE:-true}" \
-    inspection:="${INSPECTION:-true}"
+    inspection:="${INSPECTION:-true}" \
+    site_config:="${SITE_CONFIG:-/etc/pashupati/site.yaml}"

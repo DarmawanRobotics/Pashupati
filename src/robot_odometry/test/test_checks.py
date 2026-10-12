@@ -49,3 +49,5 @@ def test_split_args():
     assert ros == ['--ros-args', '--params-file', 'p.yaml']
     assert cmd == ['/bin/fl', '--ros-args', '-r', 'x']
     assert split_args(['--', 'a'])[0] == []
+    ros, _ = split_args(['--params-file', 'a.yaml', '--params-file', 'site.yaml', '--', 'x'])
+    assert ros == ['--ros-args', '--params-file', 'a.yaml', '--params-file', 'site.yaml']
