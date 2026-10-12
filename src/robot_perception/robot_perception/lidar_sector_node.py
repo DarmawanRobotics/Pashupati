@@ -2,7 +2,6 @@
 import math
 
 from geometry_msgs.msg import Point
-from livox_ros_driver2.msg import CustomMsg
 import numpy as np
 import rclpy
 from rclpy.duration import Duration
@@ -90,6 +89,8 @@ class LidarSectorNode(Node):
             topic = self.get_parameter('pointcloud_topic').value
             self.create_subscription(PointCloud2, topic, self.pointcloud_callback, 10)
         elif input_type == 'livox':
+            from livox_ros_driver2.msg import CustomMsg  # only needed for raw Livox input
+
             self.create_subscription(CustomMsg, 'livox/lidar', self.livox_callback, 10)
         else:
             raise ValueError(f"input_type must be 'livox' or 'pointcloud2', got {input_type!r}")
@@ -151,7 +152,7 @@ class LidarSectorNode(Node):
 
         return max(0.0, length)
 
-    def livox_callback(self, msg: CustomMsg):
+    def livox_callback(self, msg):
         """Convert a Livox CustomMsg to an Nx3 array and process it."""
         n = msg.point_num
         xyz = np.empty((n, 3), dtype=np.float32)
