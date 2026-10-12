@@ -86,6 +86,7 @@ flowchart LR
 | [`robot_health`](src/robot_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, computer health |
 | [`robot_rviz`](src/robot_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
 | [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, site configuration |
+| [`robot_sim`](src/robot_sim) | simulated L1W (driver, LiDAR, FAST-LIO interfaces) for the whole stack, end-to-end test |
 
 ## Install on the robot
 
@@ -115,6 +116,22 @@ script/dev.sh vnc     # TigerVNC localhost:5901 or http://localhost:6080/vnc.htm
 ```
 
 On the robot during development: `script/start_tmux.sh teach|patrol` (one pane per part, RViz).
+
+## Simulation
+
+The whole stack also runs against a simulated L1W ([robot_sim](src/robot_sim)), with no robot,
+Gazebo or GPU:
+
+```bash
+ros2 launch robot_sim sim.launch.py autostart:=true rviz:=true
+# a person steps onto the route
+ros2 topic pub --once /sim/obstacles geometry_msgs/msg/PoseArray "{poses: [{position: {x: 2.0, y: -3.0}}]}"
+```
+
+The simulated robot localizes itself and patrols a loop with an inspection stop. It stops for the
+person and drives on once they are gone. The handheld (token `sim`) and NETRA (`cc_url:=`) connect
+to it as they would to a real robot. Use it to try parameters, routes and new code before they go
+on the robot.
 
 ## Workflow
 
@@ -266,7 +283,9 @@ Every package runs flake8 and pep257 plus its own tests. Navigation simulations 
 controller around a noisy loop and an out-and-back corridor; bridge, fleet, inspection, health and
 perception have unit tests for their protocol and logic; in-process ROS tests drive the real teleop
 gateway over UDP, the odometry gate / monitor / route recorder with fake sensors, the path follower
-state changes and the launch description. CI runs all of it on every pull request
+state changes and the launch description. An end-to-end test runs the whole stack in the
+simulator: it patrols through a stop, stops for a person on the route, drives on, cannot be driven
+into a person from the handheld, and must shut down without a single dead node or traceback. CI runs all of it on every pull request
 ([.github/workflows/ci.yml](.github/workflows/ci.yml)); branch and commit rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md), changes in [CHANGELOG.md](CHANGELOG.md).
 

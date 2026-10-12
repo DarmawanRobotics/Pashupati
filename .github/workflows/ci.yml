@@ -18,7 +18,7 @@ env:
     realsense2_camera apriltag_draw
   PACKAGES: >-
     robot_interfaces robot_odometry robot_localization robot_perception robot_navigation
-    robot_bridge robot_fleet robot_inspection robot_health robot_rviz pashupati
+    robot_bridge robot_fleet robot_inspection robot_health robot_rviz pashupati robot_sim
 
 jobs:
   scripts:
@@ -78,10 +78,13 @@ jobs:
           source install/setup.bash
           ros2 launch pashupati robot.launch.py --show-args > /dev/null
           ros2 launch robot_odometry odometry.launch.py --show-args > /dev/null
+          ros2 launch robot_sim sim.launch.py --show-args > /dev/null
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: build/*/test_results/**/*.xml
+          path: |
+            build/*/test_results/**/*.xml
+            /tmp/pashupati_sim_*.log
           if-no-files-found: ignore

@@ -4,8 +4,9 @@
 
 ## How it was tested
 
-- [ ] `colcon test` passes (CI green)
-- [ ] Tried on the robot / in the dev container: <!-- what you ran and saw -->
+- [ ] `colcon test` passes (CI green, simulator end-to-end test included)
+- [ ] Tried in the simulator (`ros2 launch robot_sim sim.launch.py`), on the robot or in the dev
+      container: <!-- what you ran and saw -->
 
 ## Checklist
 

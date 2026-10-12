@@ -58,6 +58,10 @@ versions follow [SemVer](https://semver.org).
 - CI: build, unit + in-process ROS tests, lint (flake8, pep257, shellcheck, YAML) on every PR.
 - `odometry:=external`: no estimator is started, `/Odometry` comes from elsewhere (the simulator);
   the odometry monitor and route recorder still run.
+- `robot_sim`: the production stack on a simulated L1W (2D world, ray-cast LiDAR, the driver and
+  FAST-LIO interfaces, people dropped in at runtime, stand-in inspection), and an end-to-end CI
+  test: patrol through a stop, stop for a person, drive on, the handheld cannot drive into a
+  person, clean shutdown.
 
 ### Changed
 - **Breaking:** `pashupati_bringup` → `pashupati` (`ros2 launch pashupati robot.launch.py`),
