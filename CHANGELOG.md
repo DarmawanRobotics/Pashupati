@@ -6,6 +6,9 @@ versions follow [SemVer](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- The control mux forwarded NaN / infinite velocities (the protective field computed a NaN
+  scale and let them through); they are now dropped as zero, and every command is capped at
+  the robot's speed envelope (`max_vx`, `max_vy`, `max_wz`).
 - `path_follower_node` crashed on its first FOLLOWING → BLOCKED / OFF_PATH / EMERGENCY_STOP change
   (rclpy refuses to change a log call site's severity); the respawned node came back with
   navigation inactive.

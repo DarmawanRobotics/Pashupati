@@ -24,6 +24,10 @@ In `remote` mode navigation is paused (and resumed when switching back). The rob
 command as soon as the active source goes silent: teleop after `remote_timeout_sec`, navigation
 after `nav_timeout_sec`.
 
+**Speed envelope.** No source can command more than `max_vx` / `max_vy` / `max_wz` (1.0 m/s,
+0.5 m/s, 1.5 rad/s): x and y are scaled down together, so the robot keeps its heading. A command
+with a NaN or infinite value, from a controller bug or a bad route, is replaced by zero and logged.
+
 **Protective field.** Every forwarded command is limited to a speed the robot can still stop at,
 after `field.reaction_time` and braking at `field.max_decel`, `field.margin` short of the nearest
 obstacle in its swept path (box `field.front` / `field.rear` / `field.half_width`, from the 360°

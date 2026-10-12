@@ -8,7 +8,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from robot_bridge import protective_field
-from robot_bridge.mux import ControlMux, MODES
+from robot_bridge.mux import ControlMux, envelope, MODES
 from robot_interfaces.msg import SectorScan
 from robot_interfaces.srv import SetMode
 from std_msgs.msg import Bool, String
@@ -22,7 +22,8 @@ class ControlMuxNode(Node):
     Forwards navigation (auto) or teleop (remote) velocity, zeroes the robot when the active
     source goes silent, holds it still while the software e-stop is engaged, and limits every
     command to a speed the robot can still stop at before the nearest obstacle in its path
-    (protective field on perception/safety_scan).
+    (protective field on perception/safety_scan). Nothing non-finite or outside the robot's
+    speed envelope (max_vx, max_vy, max_wz) is ever forwarded, whichever source sent it.
     """
 
     def __init__(self):
@@ -33,6 +34,9 @@ class ControlMuxNode(Node):
         self.declare_parameter('nav_timeout_sec', 0.5)
         self.declare_parameter('pause_nav_on_remote', True)
         self.declare_parameter('estop_hold_hz', 10.0)
+        self.declare_parameter('max_vx', 1.0)
+        self.declare_parameter('max_vy', 0.5)
+        self.declare_parameter('max_wz', 1.5)
         self.declare_parameter('field_in_auto', True)
         self.declare_parameter('field_in_remote', True)
         self.declare_parameter('safety_scan_timeout_sec', 0.5)
@@ -52,6 +56,9 @@ class ControlMuxNode(Node):
         }
         self._scan_timeout = float(self.get_parameter('safety_scan_timeout_sec').value)
         self._stale_remote_speed = float(self.get_parameter('stale_remote_speed').value)
+        self._envelope = tuple(
+            abs(float(self.get_parameter(name).value)) for name in ('max_vx', 'max_vy', 'max_wz')
+        )
         self._obstacles = []
         self._scan_time = None
         self._field_state = None
@@ -93,13 +100,30 @@ class ControlMuxNode(Node):
         """Forward navigation commands in auto mode."""
         out = self._mux.on_nav(msg, self.now())
         if out is not None:
-            self._cmd_pub.publish(self.apply_field(out))
+            self._cmd_pub.publish(self.gate(out))
 
     def remote_callback(self, msg: Twist):
         """Forward teleop commands in remote mode."""
         out = self._mux.on_remote(msg, self.now())
         if out is not None:
-            self._cmd_pub.publish(self.apply_field(out))
+            self._cmd_pub.publish(self.gate(out))
+
+    def gate(self, cmd: Twist) -> Twist:
+        """Last checks before the robot: finite values, speed envelope, protective field."""
+        rest = (cmd.linear.z, cmd.angular.x, cmd.angular.y)
+        limited = envelope(cmd.linear.x, cmd.linear.y, cmd.angular.z, *self._envelope)
+        if limited is None or not all(math.isfinite(v) for v in rest):
+            self.get_logger().error(
+                f'dropped a non-finite {self._mux.mode} command', throttle_duration_sec=1.0
+            )
+            return Twist()
+        if limited != (cmd.linear.x, cmd.linear.y, cmd.angular.z):
+            self.get_logger().warn(
+                f'{self._mux.mode} command above the speed envelope, scaled down',
+                throttle_duration_sec=5.0,
+            )
+            cmd.linear.x, cmd.linear.y, cmd.angular.z = limited
+        return self.apply_field(cmd)
 
     def scan_callback(self, msg: SectorScan):
         """Keep the obstacle points of the latest 360 deg safety scan."""

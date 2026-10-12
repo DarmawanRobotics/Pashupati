@@ -5,6 +5,11 @@ control_mux_node:
     nav_timeout_sec: 0.5              # zero the robot when navigation goes silent in auto mode
     pause_nav_on_remote: true         # pause navigation while the remote drives
     estop_hold_hz: 10.0               # zero commands per second while the e-stop is engaged
+    # Speed envelope: no source may command more (x and y are scaled together, keeping the
+    # direction); non-finite commands are dropped as zero.
+    max_vx: 1.0                       # m/s
+    max_vy: 0.5                       # m/s
+    max_wz: 1.5                       # rad/s
 
     # Protective field: limit every command to a speed that still stops `margin` before the
     # nearest obstacle in the swept path (perception/safety_scan, 360 deg).

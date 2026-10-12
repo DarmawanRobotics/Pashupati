@@ -1,4 +1,23 @@
+import math
+
 MODES = ('auto', 'remote')
+
+
+def envelope(vx: float, vy: float, wz: float, max_vx: float, max_vy: float, max_wz: float):
+    """
+    Return (vx, vy, wz) inside the robot's speed envelope, or None if a value is not finite.
+
+    Linear x and y are scaled together, so the direction of travel is kept; the yaw rate is
+    clamped on its own.
+    """
+    if not all(math.isfinite(v) for v in (vx, vy, wz)):
+        return None
+    scale = 1.0
+    if abs(vx) > max_vx:
+        scale = min(scale, max_vx / abs(vx))
+    if abs(vy) > max_vy:
+        scale = min(scale, max_vy / abs(vy))
+    return vx * scale, vy * scale, max(-max_wz, min(max_wz, wz))
 
 
 class ControlMux:

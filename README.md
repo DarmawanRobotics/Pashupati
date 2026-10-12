@@ -167,7 +167,7 @@ The driver's own stop is `ros2 service call /l1w/emergency_stop std_srvs/srv/Tri
 | Loop patrol | restarts closed routes, ends the lap on low battery | `loop_route`, `low_battery_percentage` |
 | Safety | stops on stale avoidance / odometry, e-stop hysteresis, `BLOCKED`, `OFF_PATH`, teleop watchdog | `*_timeout_sec`, `off_path_*` |
 | Protective field | speed and separation monitoring in the mux for navigation and the handheld, in every direction: v·t + v²/2a ≤ clearance − margin; no fresh 360° scan, no autonomous motion | `field.*`, `safety_scan_timeout_sec` |
-| Control mux | AUTO (navigation) or REMOTE (handheld); remote pauses navigation; zero when the active source goes silent | `bridge/set_mode` |
+| Control mux | AUTO (navigation) or REMOTE (handheld); remote pauses navigation; zero when the active source goes silent; speed envelope, non-finite commands dropped | `bridge/set_mode`, `max_v*` |
 | Software e-stop | latched in the mux: only zero reaches the robot until an explicit release, navigation stays paused | `bridge/estop` |
 | Resilience | respawning nodes, supervised service, route remembered, uploads spooled offline | — |
 

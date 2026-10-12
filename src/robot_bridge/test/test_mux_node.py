@@ -148,3 +148,25 @@ def test_field_stops_navigation_without_a_fresh_scan(rig):
     rig.spin(0.8)
     rig.drive(0.4)
     assert rig.out[-1].linear.x == 0.0 and rig.field_states[-1] == 'stale'
+
+
+def test_non_finite_commands_never_reach_the_robot(rig):
+    """A NaN or inf from any source becomes zero, even with nothing in the way."""
+    rig.drive(0.3)
+    assert abs(rig.out[-1].linear.x - 0.3) < 1e-6
+    for bad in (float('nan'), float('inf')):
+        rig.drive(bad)
+        out = rig.out[-1]
+        assert (out.linear.x, out.linear.y, out.angular.z) == (0.0, 0.0, 0.0)
+    cmd = Twist()
+    cmd.linear.x, cmd.angular.y = 0.3, float('nan')  # a field the gate does not limit
+    rig.nav.publish(cmd)
+    rig.spin(0.3)
+    assert rig.out[-1].linear.x == 0.0
+
+
+def test_commands_are_capped_at_the_speed_envelope(rig):
+    """2 m/s forward + 1 m/s left becomes 1.0 / 0.5 m/s: the same heading, within the limits."""
+    rig.drive(2.0, vy=1.0)
+    out = rig.out[-1]
+    assert abs(out.linear.x - 1.0) < 1e-6 and abs(out.linear.y - 0.5) < 1e-6
