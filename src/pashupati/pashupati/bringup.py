@@ -94,6 +94,13 @@ def load_site_config(path: str):
     return [path], warnings
 
 
+def expected_nodes(started: list[str], odometry: str) -> list[str]:
+    """Return every node the health monitor must see: launched ones plus the odometry nodes."""
+    estimator = 'fastlio_mapping_node' if odometry == 'fast_lio' else 'legkilo'
+    extra = [estimator, 'odometry_monitor_node', 'route_recorder_node', 'apriltag']
+    return sorted({*started, *extra, 'health_monitor_node'})
+
+
 def non_empty(overrides: dict) -> dict:
     """Drop empty overrides so an unset launch argument never hides the site configuration."""
     return {k: v for k, v in overrides.items() if v not in ('', None)}

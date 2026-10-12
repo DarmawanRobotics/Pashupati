@@ -9,10 +9,17 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from robot_health.checks import (
-    cpu_temperature, disk_free_gb, memory_percent, parse_topic_specs, RateTracker,
+    cpu_temperature,
+    disk_free_gb,
+    memory_percent,
+    missing_nodes,
+    overall_level,
+    parse_topic_specs,
+    RateTracker,
+    state_issues,
 )
 from rosidl_runtime_py.utilities import get_message
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 
 class HealthMonitorNode(Node):
@@ -33,6 +40,8 @@ class HealthMonitorNode(Node):
             'min_disk_free_gb': 5.0,
             'disk_path': '~',
             'publish_hz': 1.0,
+            'expected_nodes': [''],
+            'startup_grace_sec': 30.0,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -46,10 +55,24 @@ class HealthMonitorNode(Node):
             float(p('min_disk_free_gb')),
         )
         self._disk_path = p('disk_path')
+        self._expected_nodes = [n for n in p('expected_nodes') if n]
+        self._grace_until = time.monotonic() + float(p('startup_grace_sec'))
+        self._states = {'odometry': '', 'localization': '', 'field': '', 'estop': False}
 
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self._diag_pub = self.create_publisher(DiagnosticArray, 'pashupati/diagnostics', 10)
         self._status_pub = self.create_publisher(String, 'health/status', latched)
+        for topic, key in (
+            ('odometry/status', 'odometry'),
+            ('localization/status', 'localization'),
+            ('bridge/protective_field', 'field'),
+        ):
+            self.create_subscription(
+                String, topic, lambda m, k=key: self._states.update({k: m.data}), latched
+            )
+        self.create_subscription(
+            Bool, 'bridge/estop_engaged', lambda m: self._states.update(estop=m.data), latched
+        )
         self.create_timer(5.0, self.discover)
         self.create_timer(1.0 / float(p('publish_hz')), self.publish)
         self.discover()
@@ -99,24 +122,45 @@ class HealthMonitorNode(Node):
                 issues.append(f'{label} {value:.0f}')
             statuses.append(self.status(f'system {label}', not bad, f'{value}', {}))
 
+        critical = state_issues(
+            self._states['odometry'], self._states['field'], bool(self._states['estop'])
+        )
+        if self._expected_nodes and now > self._grace_until:
+            names = [n for n, _ in self.get_node_names_and_namespaces()]
+            for name in missing_nodes(self._expected_nodes, names):
+                critical.append(f'node {name} not running')
+        for issue in critical:
+            statuses.append(self.status(issue, False, issue, {}, error=True))
+        issues = critical + issues
+
         array = DiagnosticArray()
         array.header.stamp = self.get_clock().now().to_msg()
         array.status = statuses
         self._diag_pub.publish(array)
         summary = {
             'ok': not issues,
+            'level': overall_level(issues, critical),
             'issues': issues,
             'topics': rates,
+            'odometry': self._states['odometry'] or None,
+            'localization': self._states['localization'] or None,
+            'field': self._states['field'] or None,
+            'estop': bool(self._states['estop']),
             **{k: (round(v, 1) if v is not None else None) for k, v in system.items()},
         }
         self._status_pub.publish(String(data=json.dumps(summary)))
 
     @staticmethod
-    def status(name: str, ok: bool, message: str, values: dict) -> DiagnosticStatus:
-        """Return a DiagnosticStatus."""
+    def status(
+        name: str, ok: bool, message: str, values: dict, error: bool = False
+    ) -> DiagnosticStatus:
+        """Return a DiagnosticStatus (WARN when not ok, ERROR for critical issues)."""
         s = DiagnosticStatus()
         s.name = f'pashupati: {name}'
-        s.level = DiagnosticStatus.OK if ok else DiagnosticStatus.WARN
+        if ok:
+            s.level = DiagnosticStatus.OK
+        else:
+            s.level = DiagnosticStatus.ERROR if error else DiagnosticStatus.WARN
         s.message = message
         s.values = [KeyValue(key=k, value=str(v)) for k, v in values.items()]
         return s
