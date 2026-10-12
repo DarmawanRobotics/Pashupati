@@ -41,3 +41,28 @@ def test_route_summary():
     """Length, stops and loop closure from a CSV."""
     s = summarize_csv('# x,y,yaw,dwell\n0,0,0,0\n3,4,0,5\n0,0.5,0,0\n')
     assert s == {'length_m': 9.61, 'points': 3, 'stops': 1, 'closed': True}
+
+
+def test_spool_quarantines_unreadable_items(tmp_path):
+    """A corrupted item is moved aside instead of blocking every later upload."""
+    spool = Spool(str(tmp_path))
+    spool.put('anomaly', {'category': 'trash'}, {'image.jpg': b'jpg'})
+    (item,) = spool.items()
+    (tmp_path / item.split('/')[-1] / 'meta.json').write_text('{broken')
+    try:
+        Spool.load(item)
+        raise AssertionError('corrupted meta.json must not load')
+    except ValueError:
+        spool.quarantine(item)
+    assert spool.items() == []
+    assert len(list((tmp_path / '.failed').iterdir())) == 1
+
+
+def test_route_ids_cannot_escape_the_routes_dir():
+    """Only plain ids are accepted for downloaded routes."""
+    from robot_fleet.routes import safe_route_id
+
+    for good in ('42', 42, 'route-7', 'a1b2_c3.v2'):
+        assert safe_route_id(good)
+    for bad in ('', None, '../etc/passwd', '/abs', 'a/b', '.hidden', 'x' * 65, ['1']):
+        assert not safe_route_id(bad)

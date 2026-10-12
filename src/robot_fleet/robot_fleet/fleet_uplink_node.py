@@ -18,7 +18,7 @@ from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
 from robot_fleet.anomaly import parse_result
 from robot_fleet.crowd import CrowdAggregator
-from robot_fleet.routes import summarize_csv
+from robot_fleet.routes import safe_route_id, summarize_csv
 from robot_fleet.spool import Spool
 from robot_interfaces.msg import MissionStatus, NavigationStatus, StopPointEvent
 from robot_interfaces.srv import LoadPath
@@ -229,36 +229,49 @@ class FleetUplinkNode(Node):
         urls = {'anomaly': '/api/v1/robot/anomalies', 'route': '/api/v1/robot/routes'}
         types = {'.jpg': 'image/jpeg', '.csv': 'text/csv'}
         while self._running:
-            for item in self._spool.items():
-                kind, meta, files = Spool.load(item)
-                multipart = {
-                    name: (
-                        name,
-                        data,
-                        types.get(os.path.splitext(name)[1], 'application/octet-stream'),
-                    )
-                    for name, data in files.items()
-                }
-                try:
-                    reply = requests.post(
-                        self._base_url + urls[kind],
-                        headers=self.headers(),
-                        data={'meta': json.dumps(meta)},
-                        files=multipart,
-                        timeout=20,
-                        verify=self._verify,
-                    )
-                except Exception as error:  # noqa: B902
-                    self.get_logger().warn(f'upload failed: {error}', throttle_duration_sec=30.0)
-                    break
-                if reply.status_code < 300 or reply.status_code == 409:
-                    Spool.remove(item)
-                elif reply.status_code in (400, 413, 422):
-                    self.get_logger().error(f'{kind} {meta.get("uid")} rejected: {reply.text}')
-                    Spool.remove(item)
-                else:
-                    break
+            try:
+                self.upload_pending(requests, urls, types)
+            except Exception as error:  # noqa: B902  keep the uploader alive whatever happens
+                self.get_logger().error(f'upload loop: {error!r}', throttle_duration_sec=30.0)
             time.sleep(period)
+
+    def upload_pending(self, requests, urls: dict, types: dict):
+        """Upload every spooled item once, oldest first; stop at the first transient failure."""
+        for item in self._spool.items():
+            try:
+                kind, meta, files = Spool.load(item)
+                url = self._base_url + urls[kind]
+            except (OSError, KeyError, ValueError) as error:
+                self.get_logger().error(f'unreadable spool item {item} ({error}), quarantined')
+                self._spool.quarantine(item)
+                continue
+            multipart = {
+                name: (
+                    name,
+                    data,
+                    types.get(os.path.splitext(name)[1], 'application/octet-stream'),
+                )
+                for name, data in files.items()
+            }
+            try:
+                reply = requests.post(
+                    url,
+                    headers=self.headers(),
+                    data={'meta': json.dumps(meta)},
+                    files=multipart,
+                    timeout=20,
+                    verify=self._verify,
+                )
+            except Exception as error:  # noqa: B902
+                self.get_logger().warn(f'upload failed: {error}', throttle_duration_sec=30.0)
+                return
+            if reply.status_code < 300 or reply.status_code == 409:
+                Spool.remove(item)
+            elif reply.status_code in (400, 413, 422):
+                self.get_logger().error(f'{kind} {meta.get("uid")} rejected: {reply.text}')
+                Spool.remove(item)
+            else:
+                return
 
     # ------------------------------------------------------------------ state
 
@@ -411,12 +424,13 @@ class FleetUplinkNode(Node):
         try:
             with open(msg.data, 'rb') as f:
                 data = f.read()
+            recorded_at = os.path.getmtime(msg.data)
         except OSError as error:
             self.get_logger().error(f'cannot read route {msg.data}: {error}')
             return
         meta = {
             'name': os.path.splitext(os.path.basename(msg.data))[0],
-            'recorded_at': os.path.getmtime(msg.data),
+            'recorded_at': recorded_at,
             'source_path': msg.data,
             **summarize_csv(data.decode(errors='ignore')),
         }
@@ -463,7 +477,11 @@ class FleetUplinkNode(Node):
             return
 
         def done(future):
-            result = future.result()
+            try:
+                result = future.result()
+            except Exception as error:  # noqa: B902  report the failure instead of raising
+                self.ack(cid, False, f'{client.srv_name} failed: {error}')
+                return
             ok = bool(result and getattr(result, 'success', True))
             text = getattr(result, 'message', '') if result else 'no response'
             if ok and then:
@@ -478,6 +496,9 @@ class FleetUplinkNode(Node):
         import requests
 
         route_id = args.get('route_id')
+        if not safe_route_id(route_id):
+            self.ack(cid, False, f'invalid route_id {route_id!r}')
+            return
         path = os.path.join(self._routes_dir, 'command_center', f'{route_id}.csv')
         try:
             reply = requests.get(
