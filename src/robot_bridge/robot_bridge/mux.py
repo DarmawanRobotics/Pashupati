@@ -2,15 +2,24 @@ MODES = ('auto', 'remote')
 
 
 class ControlMux:
-    """Chooses which velocity command reaches the robot: navigation (auto) or teleop (remote)."""
+    """
+    Chooses which velocity command reaches the robot: navigation (auto) or teleop (remote).
 
-    def __init__(self, mode: str = 'auto', remote_timeout: float = 0.3):
+    A latched software e-stop overrides both: while it is engaged nothing but zero reaches the
+    robot, and only an explicit release clears it. The watchdog zeroes the robot once when the
+    active source goes silent (teleop after remote_timeout, navigation after nav_timeout).
+    """
+
+    def __init__(self, mode: str = 'auto', remote_timeout: float = 0.3, nav_timeout: float = 0.5):
         if mode not in MODES:
             raise ValueError(f'mode must be one of {MODES}')
         self.mode = mode
         self._remote_timeout = remote_timeout
-        self._remote_stamp = None
+        self._nav_timeout = nav_timeout
+        self._stamp = None  # last forwarded command time of the active source
         self._stale_sent = True
+        self.estop = False
+        self.estop_reason = ''
 
     def set_mode(self, mode: str) -> bool:
         """Switch mode; returns True when it changed."""
@@ -18,28 +27,49 @@ class ControlMux:
             raise ValueError(f'mode must be one of {MODES}')
         changed = mode != self.mode
         self.mode = mode
-        self._remote_stamp = None
+        self._stamp = None
         self._stale_sent = False
         return changed
 
-    def on_nav(self, cmd):
+    def engage_estop(self, reason: str) -> bool:
+        """Latch the e-stop; returns True when it was not engaged yet."""
+        changed = not self.estop
+        self.estop = True
+        self.estop_reason = reason or 'unspecified'
+        self._stale_sent = False
+        return changed
+
+    def release_estop(self) -> bool:
+        """Clear the e-stop; returns True when it was engaged."""
+        changed = self.estop
+        self.estop = False
+        self.estop_reason = ''
+        self._stamp = None
+        return changed
+
+    def on_nav(self, cmd, now: float = 0.0):
         """Return the command to forward for a navigation command, or None to drop it."""
-        return cmd if self.mode == 'auto' else None
+        if self.estop or self.mode != 'auto':
+            return None
+        self._stamp = now
+        self._stale_sent = False
+        return cmd
 
     def on_remote(self, cmd, now: float):
         """Return the command to forward for a teleop command, or None to drop it."""
-        if self.mode != 'remote':
+        if self.estop or self.mode != 'remote':
             return None
-        self._remote_stamp = now
+        self._stamp = now
         self._stale_sent = False
         return cmd
 
     def watchdog(self, now: float) -> bool:
-        """Return True once when teleop went silent in remote mode, or right after a switch."""
+        """Return True once when the active source went silent, after a switch or an e-stop."""
         if self._stale_sent:
             return False
-        if self.mode == 'remote' and self._remote_stamp is not None:
-            if now - self._remote_stamp < self._remote_timeout:
+        if not self.estop and self._stamp is not None:
+            timeout = self._remote_timeout if self.mode == 'remote' else self._nav_timeout
+            if now - self._stamp < timeout:
                 return False
         self._stale_sent = True
         return True

@@ -35,6 +35,8 @@ versions follow [SemVer](https://semver.org).
   respawn), odometry monitor (`odometry/status`, `odometry/restarted`), optional Leg-KILO, route
   recorder (`route/record`, `route/mark_stop_point`, `route/saved`).
 - Site configuration `/etc/pashupati/site.yaml` applied on top of every node's defaults.
+- Latched software e-stop in the control mux (`bridge/estop`, handheld `estop` / `emergency_stop`,
+  NETRA `estop`), `ESTOP` alert to NETRA; the mux also zeroes the robot when navigation goes silent.
 - CI: build, unit + in-process ROS tests, lint (flake8, pep257, shellcheck, YAML) on every PR.
 
 ### Changed

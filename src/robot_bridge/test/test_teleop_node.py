@@ -8,6 +8,7 @@ import pytest
 
 rclpy = pytest.importorskip('rclpy')
 Twist = pytest.importorskip('geometry_msgs.msg').Twist
+String = pytest.importorskip('std_msgs.msg').String
 SingleThreadedExecutor = pytest.importorskip('rclpy.executors').SingleThreadedExecutor
 TeleopUdpNode = pytest.importorskip('robot_bridge.teleop_udp_node').TeleopUdpNode
 
@@ -29,9 +30,12 @@ class Rig:
         rclpy.init(args=['--ros-args', '-p', f'port:={self.port}', '-p', f'token:={TOKEN}'])
         self.node = TeleopUdpNode()
         self.listener = rclpy.create_node('teleop_test_listener')
-        self.twists = []
+        self.twists, self.estop_requests = [], []
         self.listener.create_subscription(
             Twist, 'bridge/remote_cmd_vel', self.twists.append, 10
+        )
+        self.listener.create_subscription(
+            String, 'bridge/estop_request', lambda m: self.estop_requests.append(m.data), 10
         )
         self.executor = SingleThreadedExecutor()
         self.executor.add_node(self.node)
@@ -149,3 +153,15 @@ def test_route_outside_routes_dir_is_refused(rig):
         rig.node.route_path('/etc/passwd')
     with pytest.raises(ValueError):
         rig.node.route_path('../../etc/passwd')
+
+
+def test_handheld_estop_latches_without_waiting_for_services(rig):
+    """Handheld estop and emergency_stop publish an e-stop request at once (no mux needed)."""
+    a = rig.client()
+    rig.send(a, {'t': 'hello'})
+    rig.send(a, {'t': 'cmd', 'id': 1, 'name': 'estop'})
+    rig.send(a, {'t': 'cmd', 'id': 2, 'name': 'emergency_stop'})
+    rig.spin(0.3)
+    assert rig.estop_requests == ['handheld estop', 'handheld emergency_stop']
+    acks = {m['id']: m for m in rig.received(a) if m['t'] == 'ack'}
+    assert acks[1]['ok'] is False  # no mux in this test: the service is reported unavailable

@@ -41,6 +41,8 @@ the robot runs it once and resends the cached `ack`.
 
 | `name` | `args` | Effect |
 |---|---|---|
+| `estop` | | latch the software e-stop: only zero reaches the robot, navigation pauses |
+| `estop_release` | | release it; navigation stays paused until `nav_resume` |
 | `set_mode` | `mode`: `auto` \| `remote` | choose who drives; `remote` pauses navigation |
 | `nav_start`, `nav_stop` | | start / stop navigation |
 | `nav_pause`, `nav_resume` | | hold / continue without losing progress |
@@ -51,7 +53,7 @@ the robot runs it once and resends the cached `ack`.
 | `get_route` | | resend the loaded route stream |
 | `localize` | | localize from a visible AprilTag |
 | `record_tags` | | record AprilTag poses |
-| `stand_up`, `sit_down`, `emergency_stop`, `move_mode`, `balance_stand_mode`, `lock_mode`, `slow_speed`, `normal_speed`, `fast_speed` | | robot driver commands (`robot_commands` parameter) |
+| `stand_up`, `sit_down`, `emergency_stop` (also latches the software e-stop), `move_mode`, `balance_stand_mode`, `lock_mode`, `slow_speed`, `normal_speed`, `fast_speed` | | robot driver commands (`robot_commands` parameter) |
 
 ## Robot → client (JSON)
 
@@ -59,7 +61,7 @@ the robot runs it once and resends the cached `ack`.
 |---|---|
 | `welcome` | `commands` (list), `limits` ([vx, vy, wz] maxima) |
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
-| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
+| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
 | `pong` | `ts` |
 | `busy` | `msg`: another device is driving, retry later |
 | `bye` | robot shutting down |

@@ -23,7 +23,7 @@ from robot_fleet.spool import Spool
 from robot_interfaces.msg import MissionStatus, NavigationStatus, StopPointEvent
 from robot_interfaces.srv import LoadPath
 from sensor_msgs.msg import BatteryState, CompressedImage
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -82,7 +82,9 @@ class FleetUplinkNode(Node):
             'driver': None,
             'people': 0,
             'health': None,
+            'estop': False,
         }
+        self._estop_reason = ''
         self._patrol = None
         self._lap = 0
         self._stop_index = None
@@ -125,6 +127,8 @@ class FleetUplinkNode(Node):
         self._start_nav = self.create_client(SetBool, 'navigation/start_nav')
         self._pause = self.create_client(SetBool, 'navigation/pause')
         self._localize = self.create_client(Trigger, 'localization/start')
+        self._estop = self.create_client(SetBool, 'bridge/estop')
+        self._estop_request_pub = self.create_publisher(String, 'bridge/estop_request', 10)
 
     def make_subscriptions(self, anomaly_topic: str, image_topic: str, evidence_topic: str):
         """Subscribe to state, events, people, routes and anomalies."""
@@ -134,6 +138,8 @@ class FleetUplinkNode(Node):
         self.create_subscription(StopPointEvent, 'navigation/stop_point_event', self.on_stop, 10)
         self.create_subscription(String, 'localization/status', self.on_localization, latched)
         self.create_subscription(String, 'bridge/mode', self.on_mode, latched)
+        self.create_subscription(Bool, 'bridge/estop_engaged', self.on_estop, latched)
+        self.create_subscription(String, 'bridge/estop_reason', self.on_estop_reason, latched)
         self.create_subscription(String, 'health/status', self.on_health, latched)
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
@@ -368,6 +374,26 @@ class FleetUplinkNode(Node):
         """Cache the control mode."""
         self._state['mode'] = msg.data
 
+    def on_estop_reason(self, msg: String):
+        """Remember why the e-stop was engaged (published just before the state)."""
+        self._estop_reason = msg.data
+
+    def on_estop(self, msg: Bool):
+        """Track the software e-stop and alert the command center when it engages."""
+        engaged = bool(msg.data)
+        if engaged and not self._state['estop']:
+            self.send(
+                {
+                    'type': 'alert',
+                    'state': 'ESTOP',
+                    'message': f'e-stop engaged ({self._estop_reason or "unknown"})',
+                    'pose': self.pose(),
+                    **self.patrol_context(),
+                },
+                durable=True,
+            )
+        self._state['estop'] = engaged
+
     def on_health(self, msg: String):
         """Cache the health summary (ok, issues, system figures)."""
         try:
@@ -502,6 +528,11 @@ class FleetUplinkNode(Node):
             self.call(self._pause, SetBool.Request(data=name == 'pause'), cid)
         elif name == 'localize':
             self.call(self._localize, Trigger.Request(), cid)
+        elif name == 'estop':
+            self._estop_request_pub.publish(String(data='command center'))
+            self.call(self._estop, SetBool.Request(data=True), cid)
+        elif name == 'estop_release':
+            self.call(self._estop, SetBool.Request(data=False), cid)
         else:
             self.ack(cid, False, f'unknown command {name}')
 
