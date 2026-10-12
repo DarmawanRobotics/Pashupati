@@ -57,6 +57,7 @@ class TeleopUdpNode(Node):
         defaults = {
             'port': protocol.PORT,
             'token': '',
+            'robot_name': '',
             'client_timeout_sec': 2.0,
             'max_vx': 1.0,
             'max_vy': 0.5,
@@ -82,6 +83,9 @@ class TeleopUdpNode(Node):
         p = lambda name: self.get_parameter(name).value  # noqa: E731
 
         self._token = p('token')
+        self._robot_name = p('robot_name') or socket.gethostname()
+        self._seq = 0
+        self._client_name = ''
         self._client_timeout = float(p('client_timeout_sec'))
         self._limits = (float(p('max_vx')), float(p('max_vy')), float(p('max_wz')))
         self._routes_dir = p('routes_dir')
@@ -224,6 +228,9 @@ class TeleopUdpNode(Node):
             except BlockingIOError:
                 break
             message = protocol.decode_json(data)
+            if message is not None and message.get('t') == 'discover':
+                self.reply_beacon(addr)
+                continue
             if message is None or (self._token and message.get('k') != self._token):
                 continue
             self.handle(message, addr)
@@ -239,7 +246,9 @@ class TeleopUdpNode(Node):
             if addr != self._client:
                 self.get_logger().info(f'teleop client {addr} ({message.get("name", "?")})')
             self._client = addr
+            self._client_name = str(message.get('name', ''))[:32]
             streams = message.get('streams', {})
+            self.set_camera_fps(streams.get('camera_fps'))
             self._streams = {k: bool(streams.get(k, False)) for k in self._streams}
             self.send_json(
                 {
@@ -260,6 +269,7 @@ class TeleopUdpNode(Node):
             self.send_json({'t': 'pong', 'ts': message.get('ts')})
         elif kind == 'streams':
             self._streams.update({k: bool(v) for k, v in message.items() if k in self._streams})
+            self.set_camera_fps(message.get('camera_fps'))
         elif kind == 'bye':
             self._client = None
             self._remote_pub.publish(Twist())
@@ -397,9 +407,36 @@ class TeleopUdpNode(Node):
         return [round(p.x, 3), round(p.y, 3), round(yaw_of(t.transform.rotation), 3)]
 
     def send_state(self):
-        """Send the telemetry snapshot."""
+        """Send the telemetry snapshot; seq lets the client measure packet loss."""
         if self._client is not None:
-            self.send_json({'t': 'state', 'pose': self.pose(), **self._state})
+            self._seq += 1
+            self.send_json({'t': 'state', 'seq': self._seq, 'pose': self.pose(), **self._state})
+
+    def reply_beacon(self, addr):
+        """Answer a LAN discovery probe (no token needed, nothing sensitive)."""
+        alive = (
+            self._client is not None
+            and time.monotonic() - self._client_seen < self._client_timeout
+        )
+        beacon = {
+            't': 'beacon',
+            'name': self._robot_name,
+            'secured': bool(self._token),
+            'in_use_by': self._client_name if alive else '',
+            'mode': self._state.get('mode'),
+            'battery': (self._state.get('battery') or {}).get('pct'),
+        }
+        try:
+            self._sock.sendto(protocol.encode_json(beacon), addr)
+        except OSError:
+            pass
+
+    def set_camera_fps(self, fps):
+        """Let the handheld lower or restore the camera rate, capped by camera_fps."""
+        if isinstance(fps, bool) or not isinstance(fps, (int, float)) or not math.isfinite(fps):
+            return  # absent, text or NaN (json accepts NaN): keep the current rate
+        limit = max(float(self.get_parameter('camera_fps').value), 0.1)
+        self._camera_period = 1.0 / min(max(float(fps), 0.5), limit)
 
     # ------------------------------------------------------------------ streams
 

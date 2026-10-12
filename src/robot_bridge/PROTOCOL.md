@@ -12,14 +12,20 @@ with JSON datagrams (control) and chunked binary datagrams (streams). No ROS on 
 
 If the robot is configured with a `token`, every client message must include `"k": "<token>"`.
 
+## Discovery
+
+Any device may broadcast `{"t": "discover"}` to UDP port 9870 (no token needed). Every robot answers
+the sender with `{"t": "beacon", "name", "secured" (token required), "in_use_by" (name of the
+connected handheld or ""), "mode", "battery"}`; the handheld lists robots without typing an IP.
+
 ## Client → robot
 
 | `t` | Fields | Meaning |
 |---|---|---|
-| `hello` | `name`, `streams: {camera: bool, lidar: bool}` | register / keep alive |
+| `hello` | `name`, `streams: {camera: bool, lidar: bool, camera_fps?: number}` | register / keep alive |
 | `joy` | `vx`, `vy` (m/s), `wz` (rad/s) | teleop velocity, send at 20–30 Hz; only used in `remote` mode |
 | `cmd` | `id` (int, unique per command), `name`, `args` (object) | run a command, see below |
-| `streams` | `camera`, `lidar` (bool) | change subscriptions |
+| `streams` | `camera`, `lidar` (bool), `camera_fps` (number, capped by the `camera_fps` parameter) | change subscriptions and camera rate |
 | `ping` | `ts` | latency probe, echoed as `pong` |
 | `bye` | | leave |
 
@@ -46,7 +52,7 @@ the robot runs it once and resends the cached `ack`.
 |---|---|
 | `welcome` | `commands` (list), `limits` ([vx, vy, wz] maxima) |
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
-| `state` | `mode`, `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
+| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
 | `pong` | `ts` |
 | `bye` | robot shutting down |
 
