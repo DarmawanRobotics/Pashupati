@@ -1,6 +1,6 @@
-# Leg-KILO (DarmawanRobotics fork, branch pashupati) for the Livox Mid-360 on the Genisom L1W.
+# Leg-KILO (DarmawanRobotics fork, branch pashupati) for a Livox Mid-360 on a quadruped.
 # Based on upstream config/m3dgr_mid360.yaml. KILO mode (leg kinematics) needs per-foot contact
-# forces in a unitree HighState message, which the L1W SDK does not provide, so this runs LIO.
+# forces in a unitree HighState message, which most robot drivers do not publish, so this runs LIO.
 # odometry.launch.py overrides backend_enable with save_map.
 
 # Pashupati outputs (fork options)

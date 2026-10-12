@@ -27,17 +27,9 @@ try:
 except ImportError:  # raw images need OpenCV, compressed ones do not
     cv2 = None
 
-ROBOT_COMMANDS = [
-    'stand_up',
-    'sit_down',
-    'emergency_stop',
-    'move_mode',
-    'balance_stand_mode',
-    'lock_mode',
-    'slow_speed',
-    'normal_speed',
-    'fast_speed',
-]
+# std_srvs/Trigger services every quadruped driver should offer under its namespace; robot-specific
+# extras (gait or speed modes, ...) are added per robot with robot_commands in the site file.
+ROBOT_COMMANDS = ['stand_up', 'sit_down', 'emergency_stop']
 
 
 def yaw_of(q) -> float:
@@ -73,7 +65,7 @@ class TeleopUdpNode(Node):
             'max_vy': 0.5,
             'max_wz': 1.5,
             'telemetry_hz': 10.0,
-            'robot_command_prefix': '/l1w/',
+            'robot_command_prefix': '/robot/',
             'robot_commands': ROBOT_COMMANDS,
             'routes_dir': '/home/robot/dev/Pashupati/map',
             'map_frame': 'map',

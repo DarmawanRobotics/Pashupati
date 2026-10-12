@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Software-in-the-loop L1W: replaces the robot driver, the LiDAR and FAST-LIO for the real stack.
+Software-in-the-loop quadruped: replaces the robot driver, LiDAR and FAST-LIO for the real stack.
 
 Consumes /<ns>/cmd_vel like the driver and publishes what the stack expects from the robot:
 FAST-LIO's /Odometry, camera_init->body and /cloud_registered_body, the URDF transforms of the
@@ -38,14 +38,14 @@ def quaternion_z(yaw: float):
 
 
 class SimRobotNode(Node):
-    """Kinematic L1W with a ray-cast Mid-360 in a 2D world."""
+    """Kinematic quadruped with a ray-cast Mid-360 in a 2D world."""
 
     def __init__(self):
         """Load the world, declare parameters and start the simulation timers."""
         super().__init__('sim_robot_node')
         defaults = {
             'world_file': '',
-            'robot_ns': 'l1w',
+            'robot_ns': 'robot',
             'rate_hz': 50.0,
             'odom_rate_hz': 20.0,
             'lidar_rate_hz': 10.0,

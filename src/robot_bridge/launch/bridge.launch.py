@@ -16,7 +16,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument('params_file', default_value=params),
-            DeclareLaunchArgument('robot_ns', default_value='l1w'),
+            DeclareLaunchArgument('robot_ns', default_value='robot'),
             Node(
                 package='robot_bridge',
                 executable='control_mux_node',
@@ -30,7 +30,10 @@ def generate_launch_description():
                 executable='teleop_udp_node',
                 name='teleop_udp_node',
                 output='screen',
-                parameters=[LaunchConfiguration('params_file')],
+                parameters=[
+                    LaunchConfiguration('params_file'),
+                    {'robot_command_prefix': ['/', robot_ns, '/']},
+                ],
                 remappings=[
                     ('cmd_vel', ['/', robot_ns, '/cmd_vel']),
                     ('battery', ['/', robot_ns, '/battery']),

@@ -1,4 +1,4 @@
-# FAST-LIO2 (hku-mars ROS2 branch) tuned for a Livox Mid-360 on the Genisom L1W, indoor mall.
+# FAST-LIO2 (hku-mars ROS2 branch) tuned for a Livox Mid-360 on a quadruped, indoor mall.
 # Changes from the upstream mid360.yaml are marked with "was".
 fastlio_mapping_node:   # must match the node name in odometry.launch.py
     ros__parameters:

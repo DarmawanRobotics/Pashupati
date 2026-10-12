@@ -40,5 +40,5 @@ health_monitor_node:
       - /cloud_registered_body:5.0
       - /perception/sector_scan:5.0
       - /perception/safety_scan:5.0
-      - /l1w/odom:10.0
+      - /{robot_ns}/odom:10.0
       - /Odometry:8.0

@@ -1,6 +1,6 @@
 # robot_sim
 
-Software-in-the-loop L1W. The production stack runs unchanged against a simulated robot:
+Software-in-the-loop quadruped. The production stack runs unchanged against a simulated robot:
 localization, perception, navigation, the control mux with its protective field and e-stop, the
 teleop gateway, the NETRA uplink and the health monitor. It needs no Gazebo and no GPU. One Python
 node holds a 2D world, a kinematic body and a ray-cast LiDAR.
@@ -16,15 +16,16 @@ The robot localizes itself and patrols a loop around a block of shops with one i
 
 | On the robot | In `sim_robot_node` |
 |---|---|
-| `l1w_driver`: `/l1w/cmd_vel` → motion, `/l1w/odom`, `/l1w/battery` | holonomic body with acceleration limits; stops when commands are older than `cmd_timeout_sec` |
+| robot driver: `/robot/cmd_vel` → motion, `/robot/odom`, `/robot/battery` | holonomic body with acceleration limits; stops when commands are older than `cmd_timeout_sec` |
 | Livox MID-360 + FAST-LIO2 | ray-cast scan at three heights; `/cloud_registered_body` in `body`, `/Odometry` and `camera_init → body` (drift-free) |
 | URDF | `base_link → livox_frame → livox_imu_frame` |
 | AprilTag relocalization | `/initialpose` at the world's start pose until `localization/status` reports a source |
 | VLM inspection | `sim/inspect` (`std_srvs/Trigger`) answers `clear` |
 | People and boxes | `sim/obstacles` (`geometry_msgs/PoseArray`, map frame): circles of `obstacle_radius` |
 
-Everything else is `pashupati/robot.launch.py`, started with `odometry:=external` and
-`sensors:=false`. Person detection and the VLM are off. The site file
+Everything else is `pashupati/robot.launch.py`, started with `odometry:=external` and no
+robot package (`robot_bringup:=''`). `sim_robot_node` implements the same interface a real robot
+package must provide ([src/xtras/README.md](../xtras/README.md)). Person detection and the VLM are off. The site file
 [config/sim_site.yaml](config/sim_site.yaml) switches the LiDAR input to the point cloud and sends
 routes, the spool and the route state to `/tmp/pashupati_sim`.
 
@@ -35,7 +36,7 @@ routes, the spool and the route state to `/tmp/pashupati_sim`.
 | `autostart` | `false` | start the patrol once localized; otherwise `navigation/start_nav` |
 | `rviz` | `false` | RViz with the `robot_rviz` panels |
 | `cc_url`, `cc_token` | empty | report to NETRA as `sim-01` |
-| `robot_ns` | `l1w` | driver namespace |
+| `robot_ns` | `robot` | driver namespace |
 
 ## Things to try
 

@@ -42,7 +42,7 @@ path_follower_node:
     approach.yaw_tolerance_deg: 3.0   # deg
 
     # std_srvs/Trigger services called on navigation start/stop ("" = skip).
-    # Genisom L1W example: /l1w/sdk_control_right and /l1w/remote_control_right
+    # e.g. robot driver services that hand motion control to the SDK and back to the vendor remote
     auto_mode_on_service: ""
     auto_mode_off_service: ""
 

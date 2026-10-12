@@ -149,7 +149,7 @@ def generate_launch_description():
                 description='Extra parameter file applied on top of the defaults (if it exists).',
             ),
             DeclareLaunchArgument(
-                'leg_odom_topic', default_value='/l1w/odom', description='"" disables the check'
+                'leg_odom_topic', default_value='/robot/odom', description='"" disables the check'
             ),
             DeclareLaunchArgument('params_file', default_value=config('odometry_params.yaml')),
             DeclareLaunchArgument('fast_lio_params_file', default_value=config('fast_lio.yaml')),

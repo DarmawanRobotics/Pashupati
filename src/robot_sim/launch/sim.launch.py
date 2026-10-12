@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The whole Pashupati stack on a simulated L1W, no robot needed.
+The whole Pashupati stack on a simulated quadruped, no robot needed.
 
     ros2 launch robot_sim sim.launch.py                    # localizes itself, waits for start_nav
     ros2 launch robot_sim sim.launch.py autostart:=true    # patrols right away
@@ -53,7 +53,7 @@ def launch_setup(context):
                 'cc_url': arg('cc_url'),
                 'cc_token': arg('cc_token'),
                 'site_config': os.path.join(share, 'config', 'sim_site.yaml'),
-                'sensors': 'false',
+                'robot_bringup': '',
                 'people': 'false',
                 'inspection': 'false',
                 'health': 'true',
@@ -93,7 +93,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'route', default_value=os.path.join(share, 'config', 'routes', 'mall_loop.csv')
             ),
-            DeclareLaunchArgument('robot_ns', default_value='l1w'),
+            DeclareLaunchArgument('robot_ns', default_value='robot'),
             DeclareLaunchArgument(
                 'autostart', default_value='false', description='start the patrol when localized'
             ),

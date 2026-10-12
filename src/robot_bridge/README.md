@@ -14,7 +14,7 @@ velocity, and holds the robot still while the software e-stop is engaged.
 | sub | `bridge/nav_cmd_vel` | `geometry_msgs/Twist` (path follower output) |
 | sub | `bridge/remote_cmd_vel` | `geometry_msgs/Twist` (teleop) |
 | sub | `bridge/estop_request` | `std_msgs/String`: engage the e-stop with this reason, no reply |
-| pub | `cmd_vel` | `geometry_msgs/Twist` (remap to the robot, e.g. `/l1w/cmd_vel`) |
+| pub | `cmd_vel` | `geometry_msgs/Twist` (remap to the robot, e.g. `/robot/cmd_vel`) |
 | pub | `bridge/mode` | `std_msgs/String`, latched |
 | pub | `bridge/estop_engaged`, `bridge/estop_reason` | `std_msgs/Bool`, `std_msgs/String`, latched |
 | srv | `bridge/set_mode` | `robot_interfaces/SetMode` (`auto` \| `remote`) |
@@ -54,7 +54,7 @@ the loaded route. The wire format is in [PROTOCOL.md](PROTOCOL.md).
 ## Run
 
 ```bash
-ros2 launch robot_bridge bridge.launch.py robot_ns:=l1w
+ros2 launch robot_bridge bridge.launch.py robot_ns:=robot
 ros2 launch robot_navigation navigation.launch.py cmd_vel_topic:=/bridge/nav_cmd_vel ...
 ```
 

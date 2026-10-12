@@ -1,6 +1,6 @@
 # Dev container
 
-ROS 2 Humble with every dependency of `src/` (rosdep), Livox-SDK2 and the zsibot SDK, plus a
+ROS 2 Humble with every dependency of `src/` (rosdep) and Livox-SDK2, plus a
 desktop over VNC for RViz. The repo is bind-mounted at the same path as on the robot
 (`/home/robot/dev/Pashupati`), so configs and launch defaults behave the same. `build/`,
 `install/` and `log/` live in Docker volumes (fast on macOS, kept across restarts).
@@ -18,8 +18,10 @@ VNC password defaults to `pashupati` (`VNC_PASSWORD=... script/dev.sh up` to cha
 bound to localhost only. Inside the desktop, right-click for a terminal and run `rviz2`.
 
 Rebuild the image (`script/dev.sh up` does it automatically) after a `package.xml` gains a
-dependency or a vendor SDK changes; code changes only need `script/dev.sh build`.
+dependency changes; code changes only need `script/dev.sh build`.
 
-The genisom submodule must contain `script/setup.sh` (it installs the zsibot SDK into the image).
+A robot package under `src/` gets its ROS dependencies through rosdep like every other package;
+a vendor SDK it needs is installed inside the container with `ROBOT_SETUP=... script/setup.sh
+install robot` (see [src/xtras/README.md](../src/xtras/README.md)).
 Docker Desktop on macOS cannot do DDS multicast to the robot, so use the container for building,
 tests and offline tools; view the live robot over VNC on the robot or a Linux laptop on its network.

@@ -11,4 +11,4 @@ RViz panels, each addable from **Panels → Add New Panel**:
 
 `rviz/robot.rviz` loads Mission, Status and Tuning with the navigation, avoidance, route and tag
 markers. Robot topics are relative; remap them on the command line, e.g.
-`rviz2 -d robot.rviz --ros-args -r battery:=/l1w/battery -r cmd_vel:=/l1w/cmd_vel`.
+`rviz2 -d robot.rviz --ros-args -r battery:=/robot/battery -r cmd_vel:=/robot/cmd_vel`.

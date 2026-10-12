@@ -24,7 +24,7 @@ start until the IMU has been still and level for `still_sec`. It runs again on e
 - stale `/Odometry`
 - jumps
 - z drift on a flat floor, which points to a tilted start
-- LIO speed that disagrees with the robot's own `/l1w/odom`, which points to a degenerate corridor
+- LIO speed that disagrees with the robot's own `/<robot_ns>/odom`, which points to a degenerate corridor
   or slip
 - restarts, published on `odometry/restarted`; `localization_node` then drops `map → odom`
 
@@ -66,9 +66,9 @@ running on the robot:
 Build dependencies come from `script/setup.sh install legkilo`. Without the submodule, the rest of
 the workspace builds as before.
 
-On the L1W, Leg-KILO runs in **LIO** mode. Its `KILO` mode adds leg kinematics, but it needs
-per-foot contact forces in a Unitree `HighState`, and the L1W SDK does not provide that. The L1W
-also rolls on its wheels, which breaks the static-foot assumption.
+Leg-KILO runs in **LIO** mode here. Its `KILO` mode adds leg kinematics, but it needs per-foot
+contact forces in a Unitree `HighState`, which most robot drivers do not publish. On a
+wheel-legged robot, the wheels also break its static-foot assumption.
 
 In teach (`save_map:=true`) its backend runs: submaps, loop closure, and recording under
 `leg_kilo/legkilo/result/temp/`. On patrol the backend is off.

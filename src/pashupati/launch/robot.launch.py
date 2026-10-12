@@ -5,14 +5,17 @@ The whole Pashupati robot in one launch (production: pashupati.service).
     ros2 launch pashupati robot.launch.py                    # patrol
     ros2 launch pashupati robot.launch.py mode:=teach        # keep the map, record a route
     ros2 launch pashupati robot.launch.py odometry:=leg_kilo
+    ros2 launch pashupati robot.launch.py robot_bringup:=my_dog_bringup/bringup.launch.py
 
-Every Pashupati node respawns 3 s after it dies. A site configuration file (by default
-/etc/pashupati/site.yaml) is applied on top of the package defaults of every node.
+Works with any quadruped: its driver, URDF and sensors come from a robot package started with
+robot_bringup (contract in src/xtras/README.md). Every Pashupati node respawns 3 s after it dies.
+A site configuration file (by default /etc/pashupati/site.yaml) is applied on top of the package
+defaults of every node.
 """
 
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -20,10 +23,14 @@ from launch.actions import (
     LogInfo,
     OpaqueFunction,
 )
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.launch_description_sources import (
+    AnyLaunchDescriptionSource,
+    PythonLaunchDescriptionSource,
+)
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from pashupati.bringup import (
+    BringupError,
     expected_nodes,
     load_site_config,
     non_empty,
@@ -31,6 +38,7 @@ from pashupati.bringup import (
     resolve_mode,
     resolve_namespace,
     resolve_odometry,
+    resolve_robot_bringup,
     truthy,
 )
 
@@ -42,6 +50,26 @@ def share(package: str, *path: str) -> str:
     return os.path.join(get_package_share_directory(package), *path)
 
 
+def robot_bringup_action(value: str, ns: str):
+    """Include the robot package's launch file with namespace:=<robot_ns>, or None if unset."""
+    robot = resolve_robot_bringup(value)
+    if robot is None:
+        return None
+    package, launch_file = robot
+    try:
+        path = share(package, 'launch', launch_file)
+    except PackageNotFoundError as error:
+        raise BringupError(
+            f'robot_bringup: package {package!r} is not built in this workspace '
+            '(add the robot package, see src/xtras/README.md)'
+        ) from error
+    if not os.path.isfile(path):
+        raise BringupError(f'robot_bringup: {path} does not exist')
+    return IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(path), launch_arguments={'namespace': ns}.items()
+    )
+
+
 def launch_setup(context):
     """Validate the arguments and build every action of the robot."""
     arg = lambda name: LaunchConfiguration(name).perform(context)  # noqa: E731
@@ -49,6 +77,7 @@ def launch_setup(context):
     odometry = resolve_odometry(arg('odometry'))
     ns = resolve_namespace(arg('robot_ns'))
     site, warnings = load_site_config(arg('site_config'))
+    robot = robot_bringup_action(arg('robot_bringup'), ns)
 
     def topic(name: str) -> str:
         return f'/{ns}/{name}'
@@ -83,18 +112,13 @@ def launch_setup(context):
     actions = [
         LogInfo(
             msg=f'Pashupati {version} ({git}) robot_id={arg("robot_id") or "(fleet default)"} '
-            f'robot_ns={ns} mode={mode} odometry={odometry} '
-            f'site_config={site[0] if site else "(none)"}'
+            f'robot_ns={ns} robot_bringup={arg("robot_bringup") or "(started elsewhere)"} '
+            f'mode={mode} odometry={odometry} site_config={site[0] if site else "(none)"}'
         ),
         *[LogInfo(msg=f'WARNING {w}') for w in warnings],
     ]
-    if truthy(arg('sensors')):
-        actions.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(share('l1w_bringup', 'launch', 'bringup.launch.py')),
-                launch_arguments={'namespace': ns}.items(),
-            )
-        )
+    if robot is not None:
+        actions.append(robot)
     actions.append(
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(share('robot_odometry', 'launch', 'odometry.launch.py')),
@@ -148,6 +172,7 @@ def launch_setup(context):
             'robot_bridge',
             'teleop_udp_node',
             [bridge],
+            {'robot_command_prefix': f'/{ns}/'},
             remappings=[
                 ('cmd_vel', topic('cmd_vel')),
                 ('battery', topic('battery')),
@@ -182,7 +207,7 @@ def launch_setup(context):
                 'robot_health',
                 'health_monitor_node',
                 [share('robot_health', 'config', 'health_params.yaml')],
-                {'expected_nodes': expected_nodes(started, odometry)},
+                {'expected_nodes': expected_nodes(started, odometry), 'robot_ns': ns},
             )
         )
     return actions
@@ -197,7 +222,14 @@ def generate_launch_description():
                 'robot_id', default_value=env('ROBOT_ID'), description='fleet id; empty: yaml'
             ),
             DeclareLaunchArgument(
-                'robot_ns', default_value=env('ROBOT_NS', 'l1w'), description='driver namespace'
+                'robot_ns',
+                default_value=env('ROBOT_NS', 'robot'),
+                description='namespace of the robot driver (/<robot_ns>/cmd_vel, /odom, ...)',
+            ),
+            DeclareLaunchArgument(
+                'robot_bringup',
+                default_value=env('ROBOT_BRINGUP'),
+                description='robot package <pkg>[/<file>.launch.py]; empty: started elsewhere',
             ),
             DeclareLaunchArgument(
                 'mode', default_value=env('MODE', 'patrol'), description='patrol | teach'
@@ -219,9 +251,6 @@ def generate_launch_description():
                 'site_config',
                 default_value=env('SITE_CONFIG', '/etc/pashupati/site.yaml'),
                 description='per-robot parameter overrides; missing file: none',
-            ),
-            DeclareLaunchArgument(
-                'sensors', default_value='true', description='robot driver, Livox and RealSense'
             ),
             DeclareLaunchArgument(
                 'people', default_value=env('PEOPLE', 'true'), description='person detection'

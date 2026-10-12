@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the robot stack in the foreground (systemd ExecStart). Settings come from the environment,
-# normally /etc/pashupati/pashupati.env: ROBOT_ID, MODE, ODOMETRY, ROUTE, TAGS, ROBOT_NS, CC_URL,
-# CC_TOKEN, SITE_CONFIG, ROS_DOMAIN_ID, PEOPLE, INSPECTION.
+# normally /etc/pashupati/pashupati.env: ROBOT_ID, ROBOT_NS, ROBOT_BRINGUP, ROBOT_PRESTART, MODE,
+# ODOMETRY, ROUTE, TAGS, CC_URL, CC_TOKEN, SITE_CONFIG, ROS_DOMAIN_ID, PEOPLE, INSPECTION.
 set -eo pipefail
 
 WS="${WS:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -11,9 +11,9 @@ source /opt/ros/humble/setup.bash
 source "$WS/install/setup.bash"
 set -u
 
-# The vendor autostart fights for the robot; stop it first.
-if command -v robot-launch >/dev/null; then
-    robot-launch stop forward || true
+# Robot-specific preparation, e.g. stopping a vendor autostart that would fight for the robot.
+if [[ -n "${ROBOT_PRESTART:-}" ]]; then
+    bash -c "$ROBOT_PRESTART" || echo "ROBOT_PRESTART failed, starting anyway" >&2
 fi
 
 export ROS_LOG_DIR="${ROS_LOG_DIR:-$HOME/.ros/log}"
@@ -30,7 +30,8 @@ exec ros2 launch pashupati robot.launch.py \
     odometry:="${ODOMETRY:-fast_lio}" \
     route:="${ROUTE:-}" \
     tags:="${TAGS:-}" \
-    robot_ns:="${ROBOT_NS:-l1w}" \
+    robot_ns:="${ROBOT_NS:-robot}" \
+    robot_bringup:="${ROBOT_BRINGUP:-}" \
     cc_url:="${CC_URL:-}" \
     cc_token:="${CC_TOKEN:-}" \
     people:="${PEOPLE:-true}" \

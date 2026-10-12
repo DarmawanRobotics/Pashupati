@@ -14,8 +14,7 @@ env:
   # Vendor packages that live in src/xtras (submodules) or need hardware SDKs; CI builds and
   # tests the Pashupati packages only.
   ROSDEP_SKIP: >-
-    livox_ros_driver2 fast_lio legkilo l1w_bringup l1w_description l1w_driver
-    realsense2_camera apriltag_draw
+    livox_ros_driver2 fast_lio legkilo realsense2_camera apriltag_draw
   PACKAGES: >-
     robot_interfaces robot_odometry robot_localization robot_perception robot_navigation
     robot_bridge robot_fleet robot_inspection robot_health robot_rviz pashupati robot_sim

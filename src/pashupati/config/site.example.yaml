@@ -2,6 +2,7 @@
 # A normal ROS 2 parameter file keyed by node name, applied on top of every package default, so
 # tuning for one mall or one robot never needs a change in the repository. Unknown node names are
 # reported at start; a broken file stops the launch.
+# Robot-specific values (footprint, speed envelope, commands): see src/xtras/README.md.
 
 path_follower_node:
   ros__parameters:
@@ -19,7 +20,7 @@ teleop_udp_node:
 
 fleet_uplink_node:
   ros__parameters:
-    robot_id: l1w-01                  # ROBOT_ID in the env file wins when set
+    robot_id: robot-01                # ROBOT_ID in the env file wins when set
 
 # lidar_sector_node:
 #   ros__parameters:

@@ -59,7 +59,7 @@ StatusPanel::StatusPanel(QWidget * parent)
 
 void StatusPanel::setupRos()
 {
-  // Relative names: remap from the rviz2 command line, e.g. -r battery:=/l1w/battery
+  // Relative names: remap from the rviz2 command line, e.g. -r battery:=/robot/battery
   battery_sub_ = node_->create_subscription<sensor_msgs::msg::BatteryState>(
     "battery", 10, std::bind(&StatusPanel::batteryCallback, this, std::placeholders::_1));
   motor_temp_sub_ = node_->create_subscription<std_msgs::msg::Float32MultiArray>(

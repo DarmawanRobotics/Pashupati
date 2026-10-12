@@ -3,7 +3,7 @@
 Launch prefix: wait until the IMU is still and level, then exec the real command.
 
 FAST-LIO estimates gravity and the IMU biases from its first ~10 IMU samples and assumes the robot
-is not moving. Starting it while the L1W is standing up or being carried bakes a tilted gravity
+is not moving. Starting it while the robot is standing up or being carried bakes a tilted gravity
 into the whole run. Used as a launch prefix, so a respawned FAST-LIO waits again:
 
     wait_still [--params-file odometry_params.yaml] -- fastlio_mapping --ros-args ...
