@@ -4,7 +4,8 @@ from robot_navigation.utils.avoidance.base_avoidance import AvoidanceAlgorithm, 
 
 
 class VfhAvoidance(AvoidanceAlgorithm):
-    """Simplified Vector Field Histogram.
+    """
+    Simplified Vector Field Histogram.
 
     Only when the frontal cone is blocked, steers toward the passable gap edge closest to
     straight ahead; with no passable gap it slows to a stop.

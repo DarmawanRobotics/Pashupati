@@ -10,7 +10,8 @@ from robot_navigation.utils.avoidance.base_avoidance import (
 
 
 class FollowGapAvoidance(AvoidanceAlgorithm):
-    """Follow-the-gap avoidance.
+    """
+    Follow-the-gap avoidance.
 
     Inflates the closest obstacle by a safety bubble and steers to the centre of the widest
     remaining gap, only while the frontal cone is blocked.

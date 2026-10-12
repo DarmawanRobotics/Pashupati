@@ -18,7 +18,8 @@ class ApproachCommand:
 
 
 class FinalApproach:
-    """Brings the robot exactly onto a target x, y, yaw.
+    """
+    Brings the robot exactly onto a target x, y, yaw.
 
     Holonomic robots (legged, omni) close x/y/yaw simultaneously in the body frame; differential
     robots turn toward the point, drive to it, then rotate to the target yaw.

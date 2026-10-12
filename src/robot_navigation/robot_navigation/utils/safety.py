@@ -1,5 +1,6 @@
 class SafetySupervisor:
-    """Debounces emergency stops and detects blocked and off-path conditions.
+    """
+    Debounces emergency stops and detects blocked and off-path conditions.
 
     All times are seconds from a monotonic clock supplied by the caller.
     """

@@ -34,12 +34,12 @@ class PathProgress:
 
     @property
     def path(self) -> list[tuple[float, float]]:
-        """The tracked path."""
+        """Return the tracked path."""
         return self._path
 
     @property
     def index(self) -> int:
-        """Current nearest path index."""
+        """Return the current nearest path index."""
         return self._index
 
     def segment_heading(self, i: int) -> float:

@@ -7,7 +7,7 @@ class SlewLimiter:
 
     @property
     def value(self) -> float:
-        """Current output value."""
+        """Return the current output value."""
         return self._value
 
     def step(self, target: float, dt: float) -> float:
@@ -30,7 +30,7 @@ class LowPassFilter:
 
     @property
     def value(self) -> float:
-        """Current filtered value."""
+        """Return the current filtered value."""
         return self._value
 
     def step(self, target: float) -> float:
