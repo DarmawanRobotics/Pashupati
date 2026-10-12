@@ -102,18 +102,38 @@ class LocalizationNode(Node):
         self.get_logger().info(f'localization_node ready with {len(self._tag_poses)} tag(s)')
 
     def load_tag_poses(self, filepath: str) -> dict:
-        """Load a {tag_frame: {x,y,z,qx,qy,qz,qw}} JSON file into tag_frame -> 4x4 matrix."""
+        """
+        Load a {tag_frame: {x,y,z,qx,qy,qz,qw}} JSON file into tag_frame -> 4x4 matrix.
+
+        A missing file is normal before the first teach (localization/record_tags creates it);
+        a broken file or entry is reported and skipped instead of crashing the node.
+        """
         if not filepath:
             self.get_logger().warn('tags_config_file not set, AprilTag localization disabled')
             return {}
-        with open(filepath, 'r') as f:
-            raw = json.load(f)
-        return {
-            frame: pose_values_to_matrix(
-                [v['x'], v['y'], v['z'], v['qx'], v['qy'], v['qz'], v['qw']]
+        try:
+            with open(filepath, 'r') as f:
+                raw = json.load(f)
+        except FileNotFoundError:
+            self.get_logger().warn(
+                f'{filepath} does not exist yet, record tags with localization/record_tags'
             )
-            for frame, v in raw.items()
-        }
+            return {}
+        except (OSError, ValueError) as error:
+            self.get_logger().error(f'cannot read tag poses from {filepath}: {error}')
+            return {}
+        if not isinstance(raw, dict):
+            self.get_logger().error(f'{filepath} must be a JSON object of tag poses')
+            return {}
+        poses = {}
+        for frame, v in raw.items():
+            try:
+                poses[frame] = pose_values_to_matrix(
+                    [float(v[k]) for k in ('x', 'y', 'z', 'qx', 'qy', 'qz', 'qw')]
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                self.get_logger().error(f'{filepath}: tag "{frame}" skipped ({error})')
+        return poses
 
     def try_start_bridge(self):
         """Wait for base_link->imu from the URDF, then publish the static frame bridge once."""
