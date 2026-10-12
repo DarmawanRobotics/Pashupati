@@ -5,6 +5,7 @@ import math
 import os
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from robot_interfaces.srv import MarkStopPoint
 from std_msgs.msg import String
@@ -170,12 +171,14 @@ def main(args=None):
 
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

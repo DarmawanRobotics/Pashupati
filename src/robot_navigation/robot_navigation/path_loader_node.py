@@ -6,6 +6,7 @@ import os
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from robot_interfaces.msg import Waypoint, WaypointPath
@@ -169,12 +170,14 @@ def main(args=None):
     node = PathLoaderNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@ import time
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseArray
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
@@ -261,7 +262,7 @@ class FleetUplinkNode(Node):
 
     # ------------------------------------------------------------------ state
 
-    def context(self) -> dict:
+    def patrol_context(self) -> dict:
         """Return the patrol context attached to events."""
         return {
             'patrol_id': (self._patrol or {}).get('patrol_id'),
@@ -286,7 +287,7 @@ class FleetUplinkNode(Node):
                 'type': 'telemetry',
                 'pose': self.pose(),
                 'patrol': self._patrol,
-                **self.context(),
+                **self.patrol_context(),
                 **self._state,
             }
         )
@@ -304,7 +305,7 @@ class FleetUplinkNode(Node):
                     'state': msg.state,
                     'message': msg.message,
                     'pose': self.pose(),
-                    **self.context(),
+                    **self.patrol_context(),
                 },
                 durable=True,
             )
@@ -333,7 +334,7 @@ class FleetUplinkNode(Node):
                 'x': msg.x,
                 'y': msg.y,
                 'yaw_deg': msg.yaw_deg,
-                **self.context(),
+                **self.patrol_context(),
             },
             durable=True,
         )
@@ -380,7 +381,7 @@ class FleetUplinkNode(Node):
         """Send a finished crowd window."""
         snapshot = self._crowd.flush(time.time())
         if snapshot:
-            self.send({'type': 'crowd', **snapshot, **self.context()}, durable=True)
+            self.send({'type': 'crowd', **snapshot, **self.patrol_context()}, durable=True)
 
     def on_image(self, msg: CompressedImage):
         """Keep the latest camera frame for anomaly snapshots."""
@@ -397,7 +398,7 @@ class FleetUplinkNode(Node):
             return
         meta = {
             **result,
-            **self.context(),
+            **self.patrol_context(),
             'pose': self.pose(),
             'stop_index': self._stop_index,
             'detector': 'robot',
@@ -426,7 +427,8 @@ class FleetUplinkNode(Node):
     def patrol_event(self, event: str, **extra):
         """Report a patrol lifecycle event."""
         self.send(
-            {'type': 'patrol_event', 'event': event, **extra, **self.context()}, durable=True
+            {'type': 'patrol_event', 'event': event, **extra, **self.patrol_context()},
+            durable=True,
         )
 
     def ack(self, cid, ok: bool, msg: str):
@@ -521,13 +523,15 @@ def main(args=None):
     node = FleetUplinkNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.shutdown()
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

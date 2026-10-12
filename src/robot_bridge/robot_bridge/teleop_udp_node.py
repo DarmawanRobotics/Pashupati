@@ -9,6 +9,7 @@ from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import Twist
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
@@ -233,13 +234,13 @@ class TeleopUdpNode(Node):
                 continue
             if message is None or (self._token and message.get('k') != self._token):
                 continue
-            self.handle(message, addr)
+            self.handle_message(message, addr)
         if self._client and time.monotonic() - self._client_seen > self._client_timeout:
             self.get_logger().warn(f'teleop client {self._client} timed out')
             self._client = None
             self._remote_pub.publish(Twist())
 
-    def handle(self, message: dict, addr):
+    def handle_message(self, message: dict, addr):
         """Dispatch one client message."""
         kind = message['t']
         if kind == 'hello':
@@ -528,13 +529,15 @@ def main(args=None):
     node = TeleopUdpNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.send_json({'t': 'bye'})
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

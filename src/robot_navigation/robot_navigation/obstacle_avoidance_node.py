@@ -4,6 +4,7 @@ import math
 from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from robot_interfaces.msg import AvoidanceCommand, SectorScan
 from robot_navigation.utils import visualization as viz
@@ -196,12 +197,14 @@ def main(args=None):
     node = ObstacleAvoidanceNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':
