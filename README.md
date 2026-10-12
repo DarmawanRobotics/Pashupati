@@ -23,7 +23,8 @@ instead of a global planner:
   stops, record the AprilTags that anchor the map. The route is uploaded to NETRA automatically.
 - **Repeat** — routes are resampled and smoothed, followed by a swappable controller with a
   curvature-aware speed profile, blended with reactive avoidance on a 32-sector LiDAR scan; at
-  every stop the robot converges to 5 cm / 3° and inspects.
+  every stop the robot converges to 5 cm / 3° and inspects. A 360° protective field caps every
+  command at a speed the robot can still stop at before the nearest obstacle in its path.
 - **Inspect** — Moondream (local VLM via Ollama) checks each stop for trash, spills, floor damage
   or a fallen person; findings go to NETRA for final detection, validation and Telegram alerts.
 - **Sense crowds** — people seen by the camera are placed on the floor plan and aggregated into
@@ -165,7 +166,8 @@ The driver's own stop is `ros2 service call /l1w/emergency_stop std_srvs/srv/Tri
 | Inspection | VLM check at each stop, waits for the result, then dwells | `inspection_services`, `inspection_timeout_sec` |
 | Loop patrol | restarts closed routes, ends the lap on low battery | `loop_route`, `low_battery_percentage` |
 | Safety | stops on stale avoidance / odometry, e-stop hysteresis, `BLOCKED`, `OFF_PATH`, teleop watchdog | `*_timeout_sec`, `off_path_*` |
-| Control mux | AUTO (navigation) or REMOTE (handheld); remote pauses navigation; zero when the active source goes silent | `bridge/set_mode` |
+| Protective field | speed and separation monitoring in the mux for navigation and the handheld, in every direction: v·t + v²/2a ≤ clearance − margin; no fresh 360° scan, no autonomous motion | `field.*`, `safety_scan_timeout_sec` |
+| Control mux | AUTO (navigation) or REMOTE (handheld); remote pauses navigation; zero when the active source goes silent; speed envelope, non-finite commands dropped | `bridge/set_mode`, `max_v*` |
 | Software e-stop | latched in the mux: only zero reaches the robot until an explicit release, navigation stays paused | `bridge/estop` |
 | Resilience | respawning nodes, supervised service, route remembered, uploads spooled offline | — |
 
@@ -210,6 +212,7 @@ the tuned values with **Save YAML**.
 | `/bridge/mode` | `std_msgs/String` (latched) | control_mux_node |
 | `/bridge/estop_engaged`, `/bridge/estop_reason` | `std_msgs/Bool`, `std_msgs/String` (latched) | control_mux_node |
 | `/bridge/estop_request` | `std_msgs/String` (reason) | any node: engages the e-stop |
+| `/bridge/protective_field` | `std_msgs/String` (latched): `clear`, `limited`, `stop`, `stale`, `off` | control_mux_node |
 | `/odometry/status` | `std_msgs/String` (latched) | odometry_monitor_node |
 | `/odometry/restarted` | `std_msgs/Empty` | odometry_monitor_node |
 | `/localization/status` | `std_msgs/String` (latched) | localization_node |
@@ -217,6 +220,7 @@ the tuned values with **Save YAML**.
 | `/navigation/status`, `/navigation/mission_status`, `/navigation/stop_point_event` | robot_interfaces | path_follower_node |
 | `/navigation/markers`, `/navigation/route_markers`, `/navigation/avoidance_markers` | `MarkerArray` | navigation |
 | `/perception/sector_scan` | `robot_interfaces/SectorScan` | lidar_sector_node |
+| `/perception/safety_scan` | `robot_interfaces/SectorScan` (360°, all blocked when the LiDAR is blind) | lidar_sector_node |
 | `/perception/people` | `geometry_msgs/PoseArray` | person_detector_node |
 | `/anomaly_detector/result` | `std_msgs/String` (JSON) | anomaly_detector_node |
 | `/health/status` | `std_msgs/String` (JSON, latched) | health_monitor_node |

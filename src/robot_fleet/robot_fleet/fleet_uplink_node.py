@@ -83,6 +83,7 @@ class FleetUplinkNode(Node):
             'people': 0,
             'health': None,
             'estop': False,
+            'field': None,
         }
         self._estop_reason = ''
         self._patrol = None
@@ -139,6 +140,12 @@ class FleetUplinkNode(Node):
         self.create_subscription(String, 'localization/status', self.on_localization, latched)
         self.create_subscription(String, 'bridge/mode', self.on_mode, latched)
         self.create_subscription(Bool, 'bridge/estop_engaged', self.on_estop, latched)
+        self.create_subscription(
+            String,
+            'bridge/protective_field',
+            lambda m: self._state.update(field=m.data),
+            latched,
+        )
         self.create_subscription(String, 'bridge/estop_reason', self.on_estop_reason, latched)
         self.create_subscription(String, 'health/status', self.on_health, latched)
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
