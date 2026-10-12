@@ -83,7 +83,7 @@ flowchart LR
 | [`robot_bridge`](src/robot_bridge) | auto/remote control mux, UDP teleop gateway ([protocol](src/robot_bridge/PROTOCOL.md)) |
 | [`robot_fleet`](src/robot_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/robot_fleet/API.md)) |
 | [`robot_inspection`](src/robot_inspection) | Moondream anomaly detection at stop points |
-| [`robot_health`](src/robot_health) | sensor-rate and computer health |
+| [`robot_health`](src/robot_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, computer health |
 | [`robot_rviz`](src/robot_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
 | [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, site configuration |
 
@@ -178,7 +178,7 @@ the tuned values with **Save YAML**.
 
 | | |
 |---|---|
-| Health | `ros2 topic echo /health/status` — sensor rates, CPU temperature, memory, disk; also on the handheld and in NETRA |
+| Health | `ros2 topic echo /health/status` — `level` ok / warn / error; error for a missing node, lost odometry, a stale safety scan or an engaged e-stop; sensor rates, CPU temperature, memory, disk; also on the handheld and in NETRA |
 | Logs | `journalctl -fu pashupati`; ROS logs older than 7 days are pruned at start |
 | Debug view | RViz `robot_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
 | Update | `git pull && git submodule update --init --recursive && script/setup.sh install build && sudo systemctl restart pashupati` |

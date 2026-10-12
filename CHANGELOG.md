@@ -43,6 +43,8 @@ versions follow [SemVer](https://semver.org).
 - Protective field (speed and separation monitoring) in the control mux: every command, navigation
   or handheld, in any direction, is limited to a speed that stops before the nearest obstacle in
   the swept path; 360° `perception/safety_scan` with LiDAR-blind detection.
+- Health monitor: missing nodes (the launch passes the list it starts), lost odometry, stale safety
+  scan and e-stop reported as critical (`level: error`) next to sensor rates and the computer.
 - CI: build, unit + in-process ROS tests, lint (flake8, pep257, shellcheck, YAML) on every PR.
 
 ### Changed

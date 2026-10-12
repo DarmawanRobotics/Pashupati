@@ -4,6 +4,7 @@ import os
 
 from pashupati.bringup import (
     BringupError,
+    expected_nodes,
     load_site_config,
     non_empty,
     package_version,
@@ -127,3 +128,11 @@ def test_launch_rejects_bad_arguments():
     for overrides in ({'mode': 'auto'}, {'odometry': 'gmapping'}, {'robot_ns': 'l1w-2'}):
         with pytest.raises(BringupError):
             module.launch_setup(launch_context(module, sensors='false', **overrides))
+
+
+def test_health_watches_every_started_node():
+    """The health monitor expects every launched node plus the odometry ones."""
+    names = expected_nodes(['path_follower_node', 'control_mux_node'], 'fast_lio')
+    assert names == sorted(names) and len(names) == len(set(names))
+    assert {'path_follower_node', 'fastlio_mapping_node', 'health_monitor_node'} <= set(names)
+    assert 'legkilo' in expected_nodes([], 'leg_kilo')

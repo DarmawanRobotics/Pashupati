@@ -71,3 +71,28 @@ def disk_free_gb(path: str) -> float | None:
         return shutil.disk_usage(os.path.expanduser(path)).free / 1e9
     except OSError:
         return None
+
+
+def missing_nodes(expected: list[str], running) -> list[str]:
+    """Return the expected node names (with or without a leading /) that are not running."""
+    names = {'/' + n.lstrip('/') for n in running}
+    return [n for n in expected if n and '/' + n.lstrip('/') not in names]
+
+
+def state_issues(odometry: str, field: str, estop: bool) -> list[str]:
+    """Return issues from the odometry, protective-field and e-stop states."""
+    issues = []
+    if odometry.startswith(('lost', 'degraded')):
+        issues.append(f'odometry {odometry}')
+    if field == 'stale':
+        issues.append('safety scan stale: navigation stopped')
+    if estop:
+        issues.append('e-stop engaged')
+    return issues
+
+
+def overall_level(issues: list[str], critical: list[str]) -> str:
+    """Return 'ok', 'warn' (something degraded) or 'error' (the robot cannot patrol)."""
+    if critical:
+        return 'error'
+    return 'warn' if issues else 'ok'

@@ -24,6 +24,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from pashupati.bringup import (
+    expected_nodes,
     load_site_config,
     non_empty,
     package_version,
@@ -52,15 +53,19 @@ def launch_setup(context):
     def topic(name: str) -> str:
         return f'/{ns}/{name}'
 
+    started = []  # node names, for the health monitor's liveness check
+
     def node(package, executable, defaults, overrides=None, remappings=None, **kwargs):
         """Pashupati node: package defaults, then the site file, then non-empty overrides."""
         params = [*defaults, *site]
         if overrides and non_empty(overrides):
             params.append(non_empty(overrides))
+        name = kwargs.pop('name', executable)
+        started.append(name)
         return Node(
             package=package,
             executable=executable,
-            name=kwargs.pop('name', executable),
+            name=name,
             parameters=params,
             remappings=remappings or [],
             respawn=True,
@@ -177,6 +182,7 @@ def launch_setup(context):
                 'robot_health',
                 'health_monitor_node',
                 [share('robot_health', 'config', 'health_params.yaml')],
+                {'expected_nodes': expected_nodes(started, odometry)},
             )
         )
     return actions
