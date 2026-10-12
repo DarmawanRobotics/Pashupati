@@ -7,7 +7,7 @@
 #   script/setup.sh install livox build  # install only these
 #   script/setup.sh install all          # every component, including ros and service
 #
-# Components: ros tools submodules livox robot legkilo rosdep realsense_udev ollama people_model
+# Components: ros tools submodules livox robot legkilo rosdep realsense ollama people_model
 #             build service network
 # Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), ROBOT_SETUP (the robot package's own
 #      installer, `<script> check|install`, e.g. for a vendor SDK; see src/xtras/README.md),
@@ -29,9 +29,9 @@ REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"
 ROBOT_IP="${ROBOT_IP:-}"
 
-ALL=(ros tools submodules livox robot legkilo rosdep realsense_udev ollama people_model build service
+ALL=(ros tools submodules livox robot legkilo rosdep realsense ollama people_model build service
      network)
-DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense_udev ollama build)
+DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense ollama build)
 
 SUDO=$([[ "$(id -u)" -eq 0 ]] && echo "" || echo "sudo")
 IN_DOCKER=$([[ -f /.dockerenv ]] && echo 1 || echo 0)
@@ -156,14 +156,34 @@ install_rosdep() {
     rosdep install --from-paths "$ROOT/src" --ignore-src -r -y --rosdistro "$ROS_DISTRO"
 }
 
-check_realsense_udev() {
-    [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
-    [[ -f "$REALSENSE_RULES" ]] && echo "$REALSENSE_RULES" && return 0
-    echo "RealSense udev rules missing (camera needs root)"; return 1
+# RealSense: the ROS driver comes from apt (it pulls librealsense2); the camera needs udev rules.
+REALSENSE_PKG="ros-$ROS_DISTRO-realsense2-camera"
+realsense_rules() {
+    local f
+    for f in /etc/udev/rules.d/*realsense*.rules /lib/udev/rules.d/*realsense*.rules; do
+        [[ -f "$f" ]] && echo "$f" && return 0
+    done
+    return 1
 }
-install_realsense_udev() {
-    curl -fsSL https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules \
-        | $SUDO tee "$REALSENSE_RULES" >/dev/null
+check_realsense() {
+    dpkg -s "$REALSENSE_PKG" >/dev/null 2>&1 || { echo "$REALSENSE_PKG not installed"; return 1; }
+    [[ "$IN_DOCKER" == "1" ]] && echo "$REALSENSE_PKG (udev skipped in docker)" && return 0
+    local rules
+    rules=$(realsense_rules) || { echo "RealSense udev rules missing (camera needs root)"; return 1; }
+    echo "$REALSENSE_PKG, $rules"
+}
+install_realsense() {
+    dpkg -s "$REALSENSE_PKG" >/dev/null 2>&1 || apt_install "$REALSENSE_PKG"
+    [[ "$IN_DOCKER" == "1" ]] && return 0
+    realsense_rules >/dev/null && return 0
+    local shipped
+    shipped=$(find "/opt/ros/$ROS_DISTRO" -name '*realsense*.rules' 2>/dev/null | head -n1 || true)
+    if [[ -n "$shipped" ]]; then
+        $SUDO cp "$shipped" "$REALSENSE_RULES"
+    else
+        curl -fsSL https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules \
+            | $SUDO tee "$REALSENSE_RULES" >/dev/null
+    fi
     $SUDO udevadm control --reload-rules && $SUDO udevadm trigger
 }
 

@@ -7,7 +7,6 @@ launch. Nothing else in the repository depends on a robot brand.
 | Path | What |
 |---|---|
 | `drivers/livox_ros_driver2` | Livox Mid-360 driver (submodule) |
-| `drivers/realsense2_ros` | RealSense driver (submodule) |
 | `slam/fast_lio2` | FAST-LIO2, `odometry:=fast_lio` (submodule) |
 | `slam/leg_kilo` | Leg-KILO fork, `odometry:=leg_kilo` (optional submodule, see [robot_odometry](../robot_odometry)) |
 | `robots/<name>` | your robot package, added per deployment |
@@ -63,7 +62,7 @@ robots that must hand motion control from the vendor remote to the SDK.
 
 ```
 base_link ─┬─ livox_frame ── livox_imu_frame     (LiDAR and its IMU)
-           └─ camera_link ── camera_*_frame      (RealSense driver)
+           └─ camera_link ── camera_*_frame      (RealSense driver, `ros-humble-realsense2-camera`)
 ```
 
 - `base_link` is the centre of the body: x forward, z up (REP-103).
@@ -75,7 +74,9 @@ base_link ─┬─ livox_frame ── livox_imu_frame     (LiDAR and its IMU)
 - **LiDAR: Livox Mid-360** through `livox_ros_driver2`, with `xfer_format: 1`. The cloud goes to `/livox/lidar`, the IMU to `/livox/imu`. FAST-LIO and the odometry start gate use both.
   - Another LiDAR needs its own FAST-LIO preprocess settings (`robot_odometry/config/fast_lio.yaml`).
   - It also needs `lidar_sector_node` `input_type: pointcloud2`.
-- **Camera** (AprilTag localization, VLM inspection, people, handheld video). It publishes:
+- **Camera** (AprilTag localization, VLM inspection, people, handheld video). For the RealSense the
+  driver comes from apt (`script/setup.sh install realsense`: `ros-humble-realsense2-camera` and
+  the udev rules); the robot package only launches it. It publishes:
   - `/camera/camera/color/image_raw`
   - `/camera/camera/color/image_raw/compressed`
   - `camera_info`

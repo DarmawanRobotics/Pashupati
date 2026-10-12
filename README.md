@@ -99,7 +99,7 @@ git clone --recursive https://github.com/DarmawanRobotics/Pashupati.git ~/dev/Pa
 cd ~/dev/Pashupati
 script/setup.sh                 # what is installed / missing
 git submodule add <robot repo url> src/xtras/robots/<name>   # the robot package, src/xtras/README.md
-script/setup.sh install         # tools, submodules, Livox-SDK2, robot SDK, rosdep, udev, Ollama + moondream, build
+script/setup.sh install         # tools, submodules, Livox-SDK2, robot SDK, rosdep, RealSense (apt + udev), Ollama + moondream, build
 script/setup.sh install service # systemd service, /etc/pashupati/pashupati.env + site.yaml
 sudoedit /etc/pashupati/pashupati.env   # ROBOT_BRINGUP + ROBOT_NS, robot id, route, tags, NETRA url + token
 sudoedit /etc/pashupati/site.yaml       # per-robot tuning (speeds, teleop token, ...)
@@ -305,7 +305,7 @@ Pashupati/
 ├── script/                       # setup.sh, run_robot.sh (service), start_tmux.sh (dev), dev.sh
 └── src/
     ├── robot_* pashupati         # first-party packages
-    └── xtras/                    # submodules: livox_ros_driver2, realsense-ros, FAST_LIO, Leg-KILO; robots/<your robot>
+    └── xtras/                    # submodules: livox_ros_driver2, FAST_LIO, Leg-KILO; robots/<your robot>
 ```
 
 ## License

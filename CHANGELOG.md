@@ -64,6 +64,10 @@ versions follow [SemVer](https://semver.org).
   person, clean shutdown.
 
 ### Changed
+- The RealSense driver comes from apt (`ros-humble-realsense2-camera`) instead of the
+  `realsense-ros` submodule, which is removed. `script/setup.sh install realsense` installs it and
+  the udev rules (from the package when it ships them, so it also works offline); the component
+  replaces `realsense_udev`.
 - **Following uses x, y and yaw.** The new default `holonomic` controller does three things:
   - It walks toward a carrot on the route in any direction of the body: cross-track errors close
     sideways without weaving, and the robot backs up or strafes when the route is behind or beside
