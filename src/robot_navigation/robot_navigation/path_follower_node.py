@@ -577,8 +577,11 @@ class PathFollowerNode(Node):
     def publish_status(self, stamp, status, message):
         """Publish NavigationStatus, logging once per state transition."""
         if status != self._last_status:
-            log = self.get_logger().warn if status in self._WARN_STATES else self.get_logger().info
-            log(f'[{status}] {message}')
+            # one call site per severity: rclpy raises if a call site changes its severity
+            if status in self._WARN_STATES:
+                self.get_logger().warn(f'[{status}] {message}')
+            else:
+                self.get_logger().info(f'[{status}] {message}')
         self._last_status = status
         msg = NavigationStatus()
         msg.header.stamp = stamp
