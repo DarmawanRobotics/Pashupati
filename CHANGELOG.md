@@ -36,6 +36,9 @@ versions follow [SemVer](https://semver.org).
   traceback (exit 1); the teleop gateway frees its UDP port as soon as it stops.
 - A stop whose inspection services are all down now reports `inspected` with `not available`
   right away; before, no inspection event was sent for it at all.
+- `systemctl stop` / restart interrupted every node twice (systemd and `ros2 launch` both sent
+  SIGINT), so nodes died mid-shutdown with a `KeyboardInterrupt`. The service now signals only
+  `ros2 launch` (`KillMode=mixed`); re-run `script/setup.sh install service` to update the unit.
 
 ### Added
 - Teleop LAN discovery (`discover` → `beacon` with name, token required, who is driving,

@@ -49,6 +49,9 @@ pure-logic tests also run with plain `pytest` on a laptop.
   the robot.
 - **systemd env files** (`/etc/pashupati/pashupati.env`) take no comments after a value: systemd
   makes the comment part of the value.
+- **Signal only `ros2 launch`.** Stop the stack with one SIGINT to the launch process (systemd does
+  this with `KillMode=mixed`), not to its process group: launch forwards it to every node, and a
+  second SIGINT interrupts the nodes in the middle of their shutdown.
 
 ## Safety-relevant changes
 
