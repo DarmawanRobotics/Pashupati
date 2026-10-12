@@ -11,8 +11,7 @@ path_follower_node:
 
 obstacle_avoidance_node:
   ros__parameters:
-    safe_distance: 1.5
-    emergency_distance: 0.75
+    emergency_distance: 0.75          # m from base_link, hard stop in the front cone
 
 teleop_udp_node:
   ros__parameters:

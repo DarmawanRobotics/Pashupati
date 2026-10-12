@@ -64,6 +64,17 @@ versions follow [SemVer](https://semver.org).
   person, clean shutdown.
 
 ### Changed
+- **Following uses x, y and yaw.** The new default `holonomic` controller does three things:
+  - It walks toward a carrot on the route in any direction of the body: cross-track errors close
+    sideways without weaving, and the robot backs up or strafes when the route is behind or beside
+    it (after a stop, when starting off the route).
+  - It keeps its heading along the route.
+  - It caps sideways and reverse speed.
+- **Obstacles: path shift.** Obstacles on the route are passed by sliding sideways, within
+  `path_shift.max_offset` (0.8 m) of the route and on the 360° safety scan. The robot returns
+  once the obstacle is past its body, and stops short when there is no gap.
+- Reactive avoidance (`avoidance_mode: reactive`, other controllers) now reacts within 1.0 m
+  instead of 1.5 m.
 - **Breaking:** `pashupati_bringup` → `pashupati` (`ros2 launch pashupati robot.launch.py`),
   `robot_mapping` merged into `robot_odometry`, `mapping/*` services → `route/*`, mode `mapping`
   → `teach` (old name still accepted).

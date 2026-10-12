@@ -2,7 +2,7 @@
 
 # PASHUPATI
 
-**Autonomous patrol & inspection stack for quadruped robots (legged or wheel-legged, any brand with a ROS 2 driver) — LiDAR-inertial teach-and-repeat navigation, reactive avoidance, on-robot VLM inspection, crowd sensing, handheld teleop and the NETRA command center.**
+**Autonomous patrol & inspection stack for quadruped robots (legged or wheel-legged, any brand with a ROS 2 driver) — LiDAR-inertial teach-and-repeat navigation that walks forward, sideways or backwards, path-shift obstacle avoidance, on-robot VLM inspection, crowd sensing, handheld teleop and the NETRA command center.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/DarmawanRobotics/Pashupati/ci.yml?branch=dev&style=for-the-badge&label=CI)](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml)
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-22314E?style=for-the-badge&logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
@@ -21,9 +21,13 @@ instead of a global planner:
 
 - **Teach** — drive the robot once (handheld or RViz) while FAST-LIO2 tracks it, mark inspection
   stops, record the AprilTags that anchor the map. The route is uploaded to NETRA automatically.
-- **Repeat** — routes are resampled and smoothed, followed by a swappable controller with a
-  curvature-aware speed profile, blended with reactive avoidance on a 32-sector LiDAR scan; at
-  every stop the robot converges to 5 cm / 3° and inspects. A 360° protective field caps every
+- **Repeat** — routes are resampled and smoothed, then followed with a curvature-aware speed
+  profile.
+  - The default controller uses all three axes of a legged robot: it closes errors sideways, backs
+    up or strafes when the route is beside or behind it, and keeps its heading along the route.
+  - Obstacles are passed by sliding sideways within a bounded offset from the route (path shift);
+    with no gap, the robot stops short.
+  - At every stop the robot converges to 5 cm / 3° and inspects. A 360° protective field caps every
   command at a speed the robot can still stop at before the nearest obstacle in its path.
 - **Inspect** — Moondream (local VLM via Ollama) checks each stop for trash, spills, floor damage
   or a fallen person; findings go to NETRA for final detection, validation and Telegram alerts.
@@ -177,9 +181,9 @@ The driver's own stop is `ros2 service call /<robot_ns>/emergency_stop std_srvs/
 | Feature | What it does | Key parameters |
 |---|---|---|
 | Route processing | dedup, resample, gradient smoothing between stop points; stops never move | `resample_spacing`, `smooth_weight_*` |
-| Controllers | `pure_pursuit`, `pid`, `mppi`, `lqr`, `stanley`, switchable live | `controller`, `<controller>.*` |
+| Controllers | `holonomic` (default: x, y and yaw, strafes and reverses, heading kept along the route), `pure_pursuit`, `pid`, `mppi`, `lqr`, `stanley`, switchable live | `controller`, `<controller>.*` |
 | Speed profile | curvature speed cap, braking into stops and the route end | `max_lateral_accel`, `approach_speed` |
-| Avoidance | `braitenberg`, `vfh`, `potential_field` (lateral push), `follow_gap` | `algorithm`, `safe_distance` |
+| Avoidance | path shift (default): slide sideways around obstacles on the 360° safety scan, never more than `max_offset` from the route, stop short without a gap; or reactive `braitenberg`, `vfh`, `potential_field`, `follow_gap` | `avoidance_mode`, `path_shift.*`, `algorithm` |
 | Final approach | x / y / yaw convergence (strafing) to 5 cm / 3° | `holonomic`, `approach.*` |
 | Inspection | VLM check at each stop, waits for the result, then dwells | `inspection_services`, `inspection_timeout_sec` |
 | Loop patrol | restarts closed routes, ends the lap on low battery | `loop_route`, `low_battery_percentage` |
@@ -285,8 +289,9 @@ controller around a noisy loop and an out-and-back corridor; bridge, fleet, insp
 perception have unit tests for their protocol and logic; in-process ROS tests drive the real teleop
 gateway over UDP, the odometry gate / monitor / route recorder with fake sensors, the path follower
 state changes and the launch description. An end-to-end test runs the whole stack in the
-simulator: it patrols through a stop, stops for a person on the route, drives on, cannot be driven
-into a person from the handheld, and must shut down without a single dead node or traceback. CI runs all of it on every pull request
+simulator. The robot slides around a person on the route and still does the stop, stops for a
+crowd and drives on once they leave, and cannot be driven into a person from the handheld. The
+stack must shut down without a single dead node or traceback. CI runs all of it on every pull request
 ([.github/workflows/ci.yml](.github/workflows/ci.yml)); branch and commit rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md), changes in [CHANGELOG.md](CHANGELOG.md).
 

@@ -3,6 +3,7 @@ import math
 import threading
 
 from geometry_msgs.msg import Twist
+import numpy as np
 from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
@@ -15,15 +16,18 @@ from robot_interfaces.msg import (
     AvoidanceCommand,
     MissionStatus,
     NavigationStatus,
+    SectorScan,
     StopPointEvent,
     WaypointPath,
 )
 from robot_navigation.utils import visualization
 from robot_navigation.utils.command_filter import LowPassFilter, SlewLimiter
+from robot_navigation.utils.controllers.holonomic_controller import HolonomicController
 from robot_navigation.utils.controllers.registry import create_controller
 from robot_navigation.utils.final_approach import FinalApproach
 from robot_navigation.utils.geometry import clamp, yaw_from_quaternion
 from robot_navigation.utils.path_processing import velocity_profile
+from robot_navigation.utils.path_shift import PathShift, PathShiftConfig
 from robot_navigation.utils.pose2d import Pose2D
 from robot_navigation.utils.safety import SafetySupervisor
 from robot_navigation.utils.speed_regulator import SpeedRegulator
@@ -74,7 +78,20 @@ DEFAULT_PARAMS = {
     'inspection_services': [''],
     'inspection_timeout_sec': 10.0,
     'require_localization': True,
-    'controller': 'pure_pursuit',
+    'controller': 'holonomic',
+    'avoidance_mode': 'path_shift',
+    'footprint.front': 0.40,
+    'footprint.rear': 0.40,
+    'footprint.half_width': 0.28,
+    'path_shift.max_offset': 0.8,
+    'path_shift.look_ahead': 2.0,
+    'path_shift.clearance': 0.10,
+    'path_shift.offset_rate': 0.3,
+    'path_shift.switch_cost': 0.5,
+    'path_shift.switch_margin': 0.05,
+    'path_shift.return_delay_sec': 0.5,
+    'path_shift.decel': 0.5,
+    'path_shift.stop_margin': 0.40,
     'speed_regulator_enabled': False,
     'speed_regulator.kp': 0.3,
     'speed_regulator.ki': 0.0,
@@ -82,7 +99,18 @@ DEFAULT_PARAMS = {
     'speed_regulator.min_scale': 0.3,
 }
 
+AVOIDANCE_MODES = ('path_shift', 'reactive')
+
 CONTROLLER_PARAMS = {
+    'holonomic': {
+        'lookahead_distance': 0.6,
+        'heading_lookahead': 0.6,
+        'goal_tolerance': 0.3,
+        'kp_yaw': 1.5,
+        'max_lateral_velocity': 0.25,
+        'max_reverse_velocity': 0.15,
+        'min_alignment_scale': 0.25,
+    },
     'pure_pursuit': {
         'lookahead_distance': 1.0,
         'goal_tolerance': 0.3,
@@ -129,8 +157,11 @@ class PathFollowerNode(Node):
     """
     Patrol a taught route with inspection stop points.
 
-    Follows the route with a selectable controller, blends reactive avoidance, and at each stop
-    point converges onto x/y/yaw, triggers the inspection services and dwells.
+    Follows the route with a selectable controller and at each stop point converges onto x/y/yaw,
+    triggers the inspection services and dwells. With the holonomic controller (legged robots) it
+    walks forward, sideways or backwards as the route needs and, in path_shift avoidance, slides
+    sideways around obstacles within path_shift.max_offset instead of steering away; other
+    controllers blend the reactive avoidance node's steering.
     """
 
     _WARN_STATES = {
@@ -161,6 +192,12 @@ class PathFollowerNode(Node):
 
         self._avoidance = AvoidanceCommand(velocity_scale=1.0)
         self._avoidance_time = None
+        self._scan_points = np.empty((0, 2))   # safety scan obstacles in base_link
+        self._scan_time = None
+        self._path_offset = 0.0                # applied lateral offset from the route (+left)
+        self._shift_target = 0.0
+        self._shift_free = math.inf
+        self._return_since = None              # when a smaller offset was first proposed
         self._nav_active = False
         self._paused = False
         self._battery_low = False
@@ -204,6 +241,13 @@ class PathFollowerNode(Node):
             AvoidanceCommand,
             'navigation/avoidance',
             self.avoidance_callback,
+            10,
+            callback_group=self._loop_group,
+        )
+        self.create_subscription(
+            SectorScan,
+            'perception/safety_scan',
+            self.safety_scan_callback,
             10,
             callback_group=self._loop_group,
         )
@@ -282,8 +326,10 @@ class PathFollowerNode(Node):
             key: type(default)(self.get_parameter(f'{name}.{key}').value)
             for key, default in CONTROLLER_PARAMS[name].items()
         }
-        if name in ('mppi', 'lqr', 'stanley'):
+        if name in ('holonomic', 'mppi', 'lqr', 'stanley'):
             params['max_angular_velocity'] = self._max_angular_velocity
+        if name == 'holonomic' and not self._holonomic:
+            params['max_lateral_velocity'] = 0.0  # the robot cannot strafe
         if name == 'lqr':
             params['dt'] = 1.0 / self._control_rate
         return params
@@ -321,6 +367,9 @@ class PathFollowerNode(Node):
         self._stop_point_skip_margin = int(p('stop_point_skip_margin').value)
         self._inspection_timeout = float(p('inspection_timeout_sec').value)
         self._require_localization = bool(p('require_localization').value)
+        self._avoidance_mode = str(p('avoidance_mode').value)
+        self._offset_rate = float(p('path_shift.offset_rate').value)
+        self._return_delay = float(p('path_shift.return_delay_sec').value)
 
         if touched('approach.', 'holonomic'):
             self._approach = FinalApproach(
@@ -354,6 +403,21 @@ class PathFollowerNode(Node):
                 off_path_slow_distance=float(p('off_path_slow_distance').value),
                 off_path_stop_distance=float(p('off_path_stop_distance').value),
             )
+        if touched('path_shift.', 'footprint.'):
+            self._path_shift = PathShift(
+                PathShiftConfig(
+                    max_offset=float(p('path_shift.max_offset').value),
+                    look_ahead=float(p('path_shift.look_ahead').value),
+                    front=float(p('footprint.front').value),
+                    rear=float(p('footprint.rear').value),
+                    half_width=float(p('footprint.half_width').value),
+                    clearance=float(p('path_shift.clearance').value),
+                    switch_cost=float(p('path_shift.switch_cost').value),
+                    switch_margin=float(p('path_shift.switch_margin').value),
+                    decel=float(p('path_shift.decel').value),
+                    stop_margin=float(p('path_shift.stop_margin').value),
+                )
+            )
         if touched('speed_regulator.'):
             self._speed_regulator = SpeedRegulator(
                 kp=float(p('speed_regulator.kp').value),
@@ -362,7 +426,7 @@ class PathFollowerNode(Node):
                 min_scale=float(p('speed_regulator.min_scale').value),
             )
         name = p('controller').value
-        if touched('controller', 'max_angular_velocity', f'{name}.'):
+        if touched('controller', 'max_angular_velocity', 'holonomic', f'{name}.'):
             self.build_controller(name)
         if touched(
             'target_linear_velocity',
@@ -391,6 +455,7 @@ class PathFollowerNode(Node):
         if name != self._controller_name and self._controller_name:
             self.get_logger().info(f'switched controller to {name}')
         self._controller_name = name
+        self.reset_path_shift()
 
     def compute_speed_profile(self):
         """Recompute the per-point speed limits for the current route."""
@@ -416,6 +481,11 @@ class PathFollowerNode(Node):
                     successful=False,
                     reason=f'unknown controller {param.value!r}, use {list(CONTROLLER_PARAMS)}',
                 )
+            if param.name == 'avoidance_mode' and param.value not in AVOIDANCE_MODES:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f'unknown avoidance_mode {param.value!r}, use {list(AVOIDANCE_MODES)}',
+                )
         with self._pending_lock:
             self._pending_params.update(param.name for param in params)
         return SetParametersResult(successful=True)
@@ -433,6 +503,7 @@ class PathFollowerNode(Node):
             [(x, y) for x, y, _, _ in self._waypoints], 0 if from_start else None
         )
         self._speed_regulator.reset()
+        self.reset_path_shift()
         self._follower_state = 'FOLLOWING'
         self._next_stop_index = self.find_next_stop_index(0)
 
@@ -452,6 +523,75 @@ class PathFollowerNode(Node):
         """Cache the latest avoidance signal and its arrival time."""
         self._avoidance = msg
         self._avoidance_time = self.get_clock().now()
+
+    def safety_scan_callback(self, msg: SectorScan):
+        """
+        Keep the obstacles of the 360 deg safety scan as points in base_link.
+
+        A sector only says something lies within its angle at that range, so it becomes three
+        points (centre and both edges): an obstacle is never thinner than its sectors.
+        """
+        ranges = np.asarray(msg.ranges, dtype=float)
+        start = msg.angle_min + np.arange(ranges.size) * msg.angle_increment
+        hit = np.isfinite(ranges) & (ranges < msg.range_max - 1e-3)
+        r = np.repeat(ranges[hit], 3)
+        a = (start[hit][:, None] + msg.angle_increment * np.array([0.0, 0.5, 1.0])).ravel()
+        self._scan_points = np.column_stack([r * np.cos(a), r * np.sin(a)])
+        self._scan_time = self.get_clock().now()
+
+    def reset_path_shift(self):
+        """Back onto the route itself (new route, lap, stop point or controller)."""
+        self._path_offset = self._shift_target = 0.0
+        self._shift_free = math.inf
+        self._return_since = None
+        if isinstance(self._controller, HolonomicController):
+            self._controller.set_offset(0.0)
+
+    def path_shifting(self) -> bool:
+        """Return True when obstacles are passed by sliding sideways (holonomic controller)."""
+        return (
+            self._avoidance_enabled
+            and self._avoidance_mode == 'path_shift'
+            and isinstance(self._controller, HolonomicController)
+        )
+
+    def update_path_shift(self, pose: Pose2D, dt: float):
+        """
+        Slide toward the offset that passes obstacles; return the speed limit, or None if stale.
+
+        The offset changes at most path_shift.offset_rate per second. The speed is limited so the
+        robot can stop before the first obstacle both where it is and where it is going.
+        """
+        if (
+            self._scan_time is None
+            or self.get_clock().now() - self._scan_time > self._avoidance_timeout
+        ):
+            return None
+        progress = self._controller.path_progress()
+        s_robot = progress.projection(pose)
+        c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+        local = self._scan_points
+        points = np.empty((0, 2))
+        if local.size:
+            points = np.column_stack(
+                [
+                    pose.x + c * local[:, 0] - s * local[:, 1],
+                    pose.y + s * local[:, 0] + c * local[:, 1],
+                ]
+            )
+        shift = self._path_shift
+        s_pts, d_pts = shift.path_coordinates(progress.path, progress.arc_lengths, s_robot, points)
+        self.set_shift_target(
+            shift.choose(s_pts, d_pts, s_robot, self._shift_target).offset, pose
+        )
+        target = self._shift_target
+        self._path_offset += clamp(target - self._path_offset, self._offset_rate * dt)
+        self._controller.set_offset(self._path_offset)
+        self._shift_free = min(
+            shift.free_at(s_pts, d_pts, s_robot, target),
+            shift.free_at(s_pts, d_pts, s_robot, self._path_offset),
+        )
+        return shift.speed_limit(self._shift_free)
 
     def call_trigger(self, client, timeout: float = 2.0):
         """Call a Trigger service and wait for it (requires the multi-threaded executor)."""
@@ -551,7 +691,11 @@ class PathFollowerNode(Node):
             f'lap {self._lap} | next stop {self._next_stop_index} of {stops} | '
             f'{self._follower_state}{flags}'
         )
-        self._mission_pub.publish(msg)
+        try:
+            self._mission_pub.publish(msg)
+        except Exception:  # noqa: B902  shutdown took the context away
+            if rclpy.ok():
+                raise
 
     def current_pose(self):
         """Look up map->base_link; None if unavailable or older than tf_timeout_sec."""
@@ -926,12 +1070,41 @@ class PathFollowerNode(Node):
             self._next_stop_index = self.find_next_stop_index(self._next_stop_index + 1)
         return False
 
+    def set_shift_target(self, offset: float, pose: Pose2D = None):
+        """
+        Accept a new path-shift offset.
+
+        Moving away from an obstacle happens at once; back toward the route only after that was
+        proposed for return_delay_sec, so the robot does not hop back and forth.
+        """
+        target = self._shift_target
+        if offset == target:
+            self._return_since = None
+            return
+        if abs(offset) < abs(target) and offset * target >= 0.0:
+            now = self.get_clock().now()
+            if self._return_since is None:
+                self._return_since = now
+            if (now - self._return_since).nanoseconds / 1e9 < self._return_delay:
+                return
+        self._return_since = None
+        where = f' at ({pose.x:.1f}, {pose.y:.1f})' if pose is not None else ''
+        if offset == 0.0:
+            self.get_logger().info(f'path shift: obstacle passed, back onto the route{where}')
+        elif target == 0.0 or offset * target < 0.0:
+            side = 'left' if offset > 0.0 else 'right'
+            self.get_logger().info(
+                f'path shift: passing an obstacle {abs(offset):.1f} m {side}{where}'
+            )
+        self._shift_target = offset
+
     def start_approach(self, index: int, is_goal: bool):
         """Switch to the final approach toward waypoint index."""
         self._follower_state = 'APPROACHING'
         self._approach_index = index
         self._approach_is_goal = is_goal
         self._approach.reset()
+        self.reset_path_shift()
         self._approach_start_time = self.get_clock().now()
 
     def handle_route_end(self):
@@ -947,6 +1120,14 @@ class PathFollowerNode(Node):
         self.start_approach(len(self._waypoints) - 1, is_goal=True)
 
     def control_loop(self):
+        """Run one control tick; a tick cut short by shutdown (context gone) ends quietly."""
+        try:
+            self.control_tick()
+        except Exception:  # noqa: B902
+            if rclpy.ok():
+                raise
+
+    def control_tick(self):
         """Run one control tick: safety checks, stop-point state machine, then path following."""
         with self._pending_lock:
             changed, self._pending_params = self._pending_params, set()
@@ -1012,7 +1193,9 @@ class PathFollowerNode(Node):
             return
 
         now_sec = now.nanoseconds / 1e9
-        cross_track = self.cross_track_error(pose)
+        shifting = self.path_shifting()
+        # sliding around an obstacle is not being off the route
+        cross_track = max(0.0, self.cross_track_error(pose) - abs(self._path_offset))
         slow, off_path = self._safety.off_path(cross_track)
         if off_path:
             self.publish_stop(hard=True)
@@ -1032,14 +1215,25 @@ class PathFollowerNode(Node):
         )
         if slow:
             target_speed = min(target_speed, self._min_linear_velocity)
+        if shifting:
+            limit = self.update_path_shift(pose, dt)
+            if limit is None:
+                self.publish_stop(hard=True)
+                self.publish_markers(
+                    stamp, 'AVOIDANCE_STALE', 'no fresh perception/safety_scan, stopped',
+                    pose.x, pose.y,
+                )
+                return
+            velocity_scale = min(1.0, limit / target_speed) if target_speed > 1e-3 else 1.0
+            target_speed = min(target_speed, limit)
         output = self._controller.update(pose, dt, target_speed)
-        target_angular = output.angular + steering_bias
-        target_linear = output.linear * velocity_scale
-        if self._speed_regulator_enabled:
-            target_linear *= self._speed_regulator.scale_for(target_angular, dt)
+        target_linear, target_lateral, target_angular = self.blend(
+            output, steering_bias, lateral_bias, velocity_scale, shifting, dt
+        )
 
         estop = self._safety.estop(emergency, now_sec)
-        blocked = self._safety.blocked(estop or velocity_scale < 0.05, now_sec)
+        stalled = estop or (target_speed < 0.05 if shifting else velocity_scale < 0.05)
+        blocked = self._safety.blocked(stalled, now_sec)
         if estop:
             self.publish_stop(hard=True)
         else:
@@ -1047,18 +1241,40 @@ class PathFollowerNode(Node):
             cmd.linear.x = self._linear_limiter.step(
                 clamp(target_linear, self._max_linear_velocity), dt
             )
-            lateral = self._lateral_filter.step(lateral_bias)
+            lateral = self._lateral_filter.step(clamp(target_lateral, self._max_linear_velocity))
             angular = self._angular_filter.step(clamp(target_angular, self._max_angular_velocity))
             cmd.linear.y = self._lateral_limiter.step(lateral, dt)
             cmd.angular.z = self._angular_limiter.step(angular, dt)
             self._cmd_vel_pub.publish(cmd)
 
         status = 'BLOCKED' if blocked else 'EMERGENCY_STOP' if estop else 'FOLLOWING'
+        shift_note = f'offset {self._path_offset:+.2f} m | ' if shifting else ''
         message = (
-            f'lap {self._lap} | {self._controller_name} | v_scale {velocity_scale:.2f} | '
-            f'cte {cross_track:.2f} m | next stop {self._next_stop_index}'
+            f'lap {self._lap} | {self._controller_name} | {shift_note}v_scale {velocity_scale:.2f}'
+            f' | cte {cross_track:.2f} m | next stop {self._next_stop_index}'
         )
         self.publish_markers(stamp, status, message, pose.x, pose.y, self._controller.debug_info())
+
+    def blend(self, output, steering_bias, lateral_bias, velocity_scale, shifting, dt):
+        """
+        Combine the controller output with avoidance into (forward, sideways, yaw rate) targets.
+
+        Path shift already moved the route the holonomic controller follows, so its output is
+        used as is. With reactive avoidance a holonomic robot turns its direction of travel by the
+        steering bias (keeping its heading), any other controller steers by it.
+        """
+        if shifting:
+            return output.linear, output.lateral, output.angular
+        if isinstance(self._controller, HolonomicController):
+            c, s = math.cos(steering_bias), math.sin(steering_bias)
+            vx = (c * output.linear - s * output.lateral) * velocity_scale
+            vy = (s * output.linear + c * output.lateral) * velocity_scale
+            return vx, vy + lateral_bias, output.angular
+        target_angular = output.angular + steering_bias
+        target_linear = output.linear * velocity_scale
+        if self._speed_regulator_enabled:
+            target_linear *= self._speed_regulator.scale_for(target_angular, dt)
+        return target_linear, lateral_bias, target_angular
 
     def cross_track_error(self, pose: Pose2D) -> float:
         """Distance from the robot to the route around the current progress index."""

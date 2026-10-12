@@ -1,3 +1,4 @@
+from robot_navigation.utils.controllers.holonomic_controller import HolonomicController
 from robot_navigation.utils.controllers.lqr_controller import LqrController
 from robot_navigation.utils.controllers.mppi_controller import MppiController
 from robot_navigation.utils.controllers.pid_controller import PidController
@@ -5,6 +6,7 @@ from robot_navigation.utils.controllers.pure_pursuit_controller import PurePursu
 from robot_navigation.utils.controllers.stanley_controller import StanleyController
 
 CONTROLLERS = {
+    'holonomic': HolonomicController,
     'pure_pursuit': PurePursuitController,
     'pid': PidController,
     'mppi': MppiController,

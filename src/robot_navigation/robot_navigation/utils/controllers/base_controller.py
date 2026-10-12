@@ -5,10 +5,11 @@ from robot_navigation.utils.pose2d import Pose2D
 
 @dataclass
 class ControllerOutput:
-    """Nominal (pre-avoidance) linear and angular velocity command from a path controller."""
+    """Nominal (pre-avoidance) body velocity command from a path controller."""
 
-    linear: float = 0.0
-    angular: float = 0.0
+    linear: float = 0.0   # m/s forward
+    angular: float = 0.0  # rad/s, +left
+    lateral: float = 0.0  # m/s, +left; only holonomic controllers set it
 
 
 class PathController:

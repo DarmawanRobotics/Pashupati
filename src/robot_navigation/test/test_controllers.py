@@ -5,6 +5,7 @@ from robot_navigation.utils.path_processing import process_route
 from sim_utils import drive, LOOP, noisy_route, OUT_AND_BACK
 
 PARAMS = {
+    'holonomic': {'lookahead_distance': 0.8},
     'pure_pursuit': {'lookahead_distance': 1.0},
     'pid': {'lookahead_distance': 1.0},
     'mppi': {'max_angular_velocity': 1.0, 'temperature': 0.05},

@@ -1,3 +1,4 @@
+from bisect import bisect_right
 from dataclasses import dataclass
 import math
 
@@ -31,6 +32,50 @@ class PathProgress:
         self._index = start_index or 0
         self._initialized = start_index is not None
         self._curvature = self.signed_curvatures()
+        self._s = [0.0]  # cumulative arc length at every point
+        for (ax, ay), (bx, by) in zip(self._path, self._path[1:]):
+            self._s.append(self._s[-1] + math.hypot(bx - ax, by - ay))
+
+    @property
+    def arc_lengths(self) -> list[float]:
+        """Cumulative arc length at every path point."""
+        return self._s
+
+    @property
+    def length(self) -> float:
+        """Total arc length of the path in metres."""
+        return self._s[-1] if self._path else 0.0
+
+    def projection(self, pose: Pose2D) -> float:
+        """Arc length of the robot's projection onto the segment at the progress index."""
+        if len(self._path) < 2:
+            return 0.0
+        i = min(self._index, len(self._path) - 2)
+        fraction = max(0.0, min(1.0, self.segment_fraction(i, pose)))
+        return self._s[i] + fraction * (self._s[i + 1] - self._s[i])
+
+    def point_at(self, s: float) -> tuple[float, float]:
+        """Point at arc length s (clamped to the path), linearly interpolated."""
+        if not self._path:
+            return 0.0, 0.0
+        if len(self._path) == 1 or s <= 0.0:
+            return self._path[0]
+        if s >= self._s[-1]:
+            return self._path[-1]
+        i = bisect_right(self._s, s) - 1
+        length = self._s[i + 1] - self._s[i]
+        t = (s - self._s[i]) / length if length > 1e-12 else 0.0
+        (ax, ay), (bx, by) = self._path[i], self._path[i + 1]
+        return ax + t * (bx - ax), ay + t * (by - ay)
+
+    def heading_between(self, s0: float, s1: float) -> float:
+        """Heading of the chord from arc length s0 to s1 (a smoothed path tangent)."""
+        ax, ay = self.point_at(s0)
+        bx, by = self.point_at(s1)
+        if math.hypot(bx - ax, by - ay) < 1e-6:
+            i = min(max(bisect_right(self._s, s0) - 1, 0), max(len(self._path) - 2, 0))
+            return self.segment_heading(i)
+        return math.atan2(by - ay, bx - ax)
 
     @property
     def path(self) -> list[tuple[float, float]]:

@@ -52,7 +52,7 @@ class ObstacleAvoidanceNode(Node):
         """Declare params, build the initial algorithm, and wire the scan subscription/output."""
         super().__init__('obstacle_avoidance_node')
         self.declare_parameter('algorithm', 'vfh')
-        self.declare_parameter('safe_distance', 1.5)
+        self.declare_parameter('safe_distance', 1.0)
         self.declare_parameter('emergency_distance', 0.75)
         self.declare_parameter('emergency_cone_deg', 60.0)
         for algorithm, params in ALGORITHM_PARAMS.items():
