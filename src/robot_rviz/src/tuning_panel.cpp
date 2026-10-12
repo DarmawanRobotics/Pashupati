@@ -26,7 +26,7 @@ using ParamType = rclcpp::ParameterType;
 
 /// Options of the parameters that select an algorithm; their groups are hidden unless selected.
 const std::map<std::string, std::vector<std::string>> kSelectors = {
-  {"controller", {"pure_pursuit", "pid", "mppi", "lqr", "stanley"}},
+  {"controller", {"holonomic", "pure_pursuit", "pid", "mppi", "lqr", "stanley"}},
   {"algorithm", {"braitenberg", "vfh", "potential_field", "follow_gap"}},
 };
 

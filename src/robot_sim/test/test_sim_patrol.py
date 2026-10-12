@@ -2,10 +2,11 @@
 End to end: the whole stack patrols the simulated mall.
 
 Starts `ros2 launch robot_sim sim.launch.py autostart:=true` (needs the workspace installed, as in
-`colcon test`), follows the patrol through the inspection stop, drops a person in front of the
-robot, checks it never touches them and drives on once they are gone. Then the handheld drives
-straight at a person, where only the protective field stands in the way. Finally no node may have
-died or printed a traceback. Set PASHUPATI_SKIP_SIM=1 to skip it.
+`colcon test`). A person steps onto the route: the robot slides around them without touching them
+or straying far, and completes the inspection stop. A crowd blocks the corridor: it stops short
+and drives on once they are gone. Then the handheld drives straight at a person, where only the
+protective field stands in the way. Finally no node may have died or printed a traceback. Set
+PASHUPATI_SKIP_SIM=1 to skip it.
 """
 
 import math
@@ -30,6 +31,9 @@ pytestmark = pytest.mark.skipif(
 DOMAIN = 70 + os.getpid() % 30
 PERSON_RADIUS = 0.25
 ROBOT_FRONT = 0.40
+ROBOT_HALF_WIDTH = 0.28
+MAX_OFFSET = 0.8      # path_shift.max_offset
+ROUTE_Y = -3.0        # the bottom corridor of the mall_loop route
 
 
 class Recorder:
@@ -146,34 +150,51 @@ def sim():
         assert not problems, '\n'.join(problems) + f'\nfull log: {log.name}'
 
 
-def test_patrol_stops_for_people_and_inspects(sim):
-    """Patrol through the stop point, stop for a person in the way, drive on after."""
+def test_patrol_slides_around_a_person_and_inspects(sim):
+    """A person on the route is passed sideways within max_offset; the stop is still done."""
     assert sim.spin_until(lambda: len(sim.poses) > 10, 60.0), 'simulator not publishing'
+    start_x = sim.poses[-1][1]
+    assert sim.spin_until(lambda: sim.poses[-1][1] > start_x + 0.2, 60.0), 'patrol did not start'
+
+    # someone stands on the route between the robot and the stop point (x = 0.1)
+    px, py = -2.0, ROUTE_Y
+    sim.place([(px, py)])
+    start = len(sim.poses)
     assert sim.spin_until(
         lambda: any(e.event == 'departed' for e in sim.events), 90.0
     ), f'stop point not completed, events: {[(e.index, e.event) for e in sim.events]}'
-    assert [e.event for e in sim.events][:3] == ['arrived', 'inspected', 'departed']
-    inspected = sim.events[1]
-    assert inspected.message.startswith('/sim/inspect: ok clear'), inspected.message
+    track = sim.poses[start:]
+    closest = min(math.hypot(p[1] - px, p[2] - py) for p in track)
+    assert closest > PERSON_RADIUS + ROBOT_HALF_WIDTH, f'robot came within {closest:.2f} m'
+    deviation = max(abs(p[2] - ROUTE_Y) for p in track if p[1] < 0.0)
+    assert deviation > 0.3, 'robot did not move aside (was the person on the route?)'
+    assert deviation < MAX_OFFSET + 0.1, f'robot strayed {deviation:.2f} m from the route'
 
-    # the stop is on the bottom corridor (y = -3) and the route goes on toward +x:
-    # a person steps onto the route 1.8 m ahead
+    assert [e.event for e in sim.events][:3] == ['arrived', 'inspected', 'departed']
+    assert 'timeout' not in sim.events[0].message, sim.events[0].message
+    assert sim.events[1].message.startswith('/sim/inspect: ok clear'), sim.events[1].message
+    sim.place([])
+
+
+def test_patrol_stops_for_a_crowd_and_drives_on(sim):
+    """People across the whole corridor: no gap within max_offset, the robot stops short."""
     _, x, _, _ = sim.poses[-1]
-    px, py = x + 1.8, -3.0
-    sim.place([(px, py)])
+    crowd = [(x + 2.2, y) for y in (-4.2, -3.6, -3.0, -2.4, -1.8)]
+    sim.place(crowd)
     start = len(sim.poses)
-    sim.spin_until(lambda: False, 8.0)
-    closest = min(math.hypot(p[1] - px, p[2] - py) for p in sim.poses[start:])
+    sim.spin_until(lambda: False, 10.0)
+    track = sim.poses[start:]
+    closest = min(math.hypot(p[1] - cx, p[2] - cy) for p in track for cx, cy in crowd)
     assert closest > PERSON_RADIUS + ROBOT_FRONT, f'robot came within {closest:.2f} m'
-    speed = math.hypot(sim.poses[-1][1] - sim.poses[-20][1], sim.poses[-1][2] - sim.poses[-20][2])
-    assert speed < 0.05, 'robot still moving toward the person'
+    speed = math.hypot(track[-1][1] - track[-20][1], track[-1][2] - track[-20][2])
+    assert speed < 0.05, 'robot still moving toward the crowd'
 
     # they walk away, the patrol goes on
     sim.place([])
     _, x0, y0, _ = sim.poses[-1]
     assert sim.spin_until(
         lambda: math.hypot(sim.poses[-1][1] - x0, sim.poses[-1][2] - y0) > 0.5, 15.0
-    ), 'robot did not drive on after the person left'
+    ), 'robot did not drive on after the crowd left'
 
 
 def test_handheld_cannot_drive_into_a_person(sim):

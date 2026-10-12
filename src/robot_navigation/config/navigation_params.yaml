@@ -53,7 +53,35 @@ path_follower_node:
 
     require_localization: true        # refuse start_nav until localization/status reports a source
 
-    controller: pure_pursuit          # pure_pursuit | pid | mppi | lqr | stanley
+    # holonomic (legged/omni robots: walks forward, sideways or backwards, heading kept along the
+    # route) | pure_pursuit | pid | mppi | lqr | stanley (steering only: forward + yaw)
+    controller: holonomic
+
+    holonomic.lookahead_distance: 0.6   # m, carrot ahead along the route; longer = gentler rejoin
+    holonomic.heading_lookahead: 0.6    # m, the heading follows the route direction this far ahead
+    holonomic.goal_tolerance: 0.3
+    holonomic.kp_yaw: 1.5               # rad/s per rad of heading error
+    holonomic.max_lateral_velocity: 0.25  # m/s sideways (0 when holonomic: false)
+    holonomic.max_reverse_velocity: 0.15  # m/s backwards, when the route is behind the robot
+    holonomic.min_alignment_scale: 0.25   # translation speed factor while the heading is far off
+
+    # Obstacles, with the holonomic controller:
+    #   path_shift: slide sideways around them along a line parallel to the route, heading kept,
+    #               never more than path_shift.max_offset away; stop short when there is no gap
+    #   reactive:   blend the obstacle_avoidance_node steering (the only mode of other controllers)
+    avoidance_mode: path_shift
+    footprint.front: 0.40             # m, base_link to the front edge (also used by the control mux)
+    footprint.rear: 0.40
+    footprint.half_width: 0.28
+    path_shift.max_offset: 0.8        # m, furthest the robot leaves the route to pass something
+    path_shift.look_ahead: 2.0        # m of route ahead of the front edge that must be free
+    path_shift.clearance: 0.10        # m, gap kept between the robot's side and an obstacle
+    path_shift.offset_rate: 0.3       # m/s, how fast it slides onto a new offset
+    path_shift.switch_cost: 0.5       # hysteresis: higher = keeps its side longer
+    path_shift.switch_margin: 0.05    # m, extra clearance a new offset needs (no flicker)
+    path_shift.return_delay_sec: 0.5  # s, a way back toward the route must stay free this long
+    path_shift.decel: 0.5             # m/s^2, braking used to slow down toward an obstacle
+    path_shift.stop_margin: 0.40      # m, stop this far before an obstacle (front edge)
 
     pure_pursuit.lookahead_distance: 1.0
     pure_pursuit.goal_tolerance: 0.3
@@ -91,7 +119,7 @@ path_follower_node:
 obstacle_avoidance_node:
   ros__parameters:
     algorithm: vfh                    # braitenberg | vfh | potential_field | follow_gap
-    safe_distance: 1.5                # m from base_link, obstacles closer than this shape the command
+    safe_distance: 1.0                # m from base_link, obstacles closer than this shape the command
     emergency_distance: 0.75          # m from base_link (~0.4 m from the robot's nose), hard stop
     emergency_cone_deg: 60.0          # deg, frontal cone checked for hard stop / blocked front
 

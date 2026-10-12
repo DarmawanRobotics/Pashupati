@@ -28,17 +28,29 @@ LOOP = [(0, 0), (10, 0), (10, 4), (0, 4), (0, 0)]
 OUT_AND_BACK = [(0, 0), (10, 0), (10, 0.8), (0, 0.8)]
 
 
+def step(pose, out, dt, max_yaw_rate=1.0):
+    """Move a pose by a body-frame command (forward, sideways, yaw rate) for dt."""
+    w = max(-max_yaw_rate, min(max_yaw_rate, out.angular))
+    pose.yaw += w * dt
+    c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+    pose.x += (out.linear * c - out.lateral * s) * dt
+    pose.y += (out.linear * s + out.lateral * c) * dt
+
+
+def straight(x0, x1, y=0.0, spacing=0.1):
+    """Points of a straight path along x."""
+    n = int(abs(x1 - x0) / spacing)
+    return [(x0 + (x1 - x0) * i / n, y) for i in range(n + 1)]
+
+
 def drive(controller, path_xy, speed=0.4, dt=0.05, max_time=200.0, start=Pose2D(0.0, 0.1, 0.0)):
-    """Unicycle simulation; returns (finished, cross-track errors)."""
+    """Kinematic simulation (unicycle unless the controller sets lateral); (finished, errors)."""
     pose = Pose2D(start.x, start.y, start.yaw)
     controller.set_path(path_xy)
     errors, t = [], 0.0
     while not controller.is_finished(pose) and t < max_time:
         out = controller.update(pose, dt, speed)
-        w = max(-1.0, min(1.0, out.angular))
-        pose.yaw += w * dt
-        pose.x += out.linear * math.cos(pose.yaw) * dt
-        pose.y += out.linear * math.sin(pose.yaw) * dt
+        step(pose, out, dt)
         i = controller.progress_index()
         near = path_xy[max(0, i - 30):i + 30]
         errors.append(min(math.hypot(px - pose.x, py - pose.y) for px, py in near))

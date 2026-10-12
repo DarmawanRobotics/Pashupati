@@ -77,13 +77,14 @@ write one by hand or record it by driving the sim.
 
 - `test/test_world.py` covers the ray casting, the kinematics and the FAST-LIO frame maths.
 - `test/test_sim_patrol.py` is the end-to-end test of the whole stack, and it runs in CI:
-  1. It launches the simulation and follows the patrol through the stop (`arrived` → `inspected` →
-     `departed`).
-  2. It puts a person on the route 1.8 m ahead and checks that the robot stops short of them.
-  3. It checks that the robot drives on once the person leaves.
-  4. In REMOTE, it pushes the handheld stick straight at a person 1.5 m away. Avoidance is out of
+  1. It launches the simulation and puts a person on the route before the stop. The robot must
+     slide around them without contact, stay within `path_shift.max_offset` of the route, and
+     still complete the stop (`arrived` → `inspected` → `departed`).
+  2. A crowd blocks the whole corridor: the robot must stop short of it, then drive on once it
+     leaves.
+  3. In REMOTE, it pushes the handheld stick straight at a person 1.5 m away. Avoidance is out of
      the loop there, so only the protective field can stop the robot short of them.
-  5. It fails if any node died or printed a traceback, including during shutdown.
+  4. It fails if any node died or printed a traceback, including during shutdown.
 
 The end-to-end test takes about a minute. Set `PASHUPATI_SKIP_SIM=1` to skip it. Its launch log is
 kept in `/tmp/pashupati_sim_*.log`.

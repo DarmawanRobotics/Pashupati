@@ -59,4 +59,5 @@ Anything that changes how the robot moves (speeds, limits, e-stop, avoidance, th
 teleop gateway) needs a test that drives the logic, a note in the PR on how it was tried on the robot
 (slow speed, open area, someone at the e-stop), and a CHANGELOG entry. Try it in the simulator
 first (`ros2 launch robot_sim sim.launch.py autostart:=true rviz:=true`); its end-to-end test
-(patrol, a person on the route, the handheld driving at a person) runs in CI and must stay green.
+(sliding around a person, stopping for a crowd, the handheld driving at a person) runs in CI and
+must stay green.
