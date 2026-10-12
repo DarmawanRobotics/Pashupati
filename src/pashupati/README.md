@@ -16,7 +16,7 @@ ros2 launch pashupati robot.launch.py route:=/path/route.csv people:=false
 | `robot_id` | `$ROBOT_ID` | fleet id reported to NETRA; empty: `fleet_params.yaml` / site file |
 | `robot_ns` | `$ROBOT_NS` or `l1w` | robot driver namespace (`/l1w/cmd_vel`, `/l1w/odom`, ...) |
 | `mode` | `$MODE` or `patrol` | `teach` keeps the map (FAST-LIO PCD / Leg-KILO backend, RAM grows); `mapping` still works |
-| `odometry` | `$ODOMETRY` or `fast_lio` | `fast_lio` or `leg_kilo` ([robot_odometry](../robot_odometry)) |
+| `odometry` | `$ODOMETRY` or `fast_lio` | `fast_lio`, `leg_kilo` or `external` (simulator) ([robot_odometry](../robot_odometry)) |
 | `route` | `$ROUTE` | route CSV; empty reloads the last route loaded through `navigation/load_path` |
 | `tags` | `$TAGS` | AprilTag map poses (JSON), created by `localization/record_tags` |
 | `cc_url`, `cc_token` | `$CC_URL`, `$CC_TOKEN` | NETRA command center |

@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ElementTree
 import yaml
 
 MODES = {'patrol': 'patrol', 'teach': 'teach', 'mapping': 'teach'}  # mapping: old name of teach
-ODOMETRY_METHODS = ('fast_lio', 'leg_kilo')
+ODOMETRY_METHODS = ('fast_lio', 'leg_kilo', 'external')  # external: simulator / own estimator
 NAMESPACE_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*(/[A-Za-z][A-Za-z0-9_]*)*$')
 
 # Every node robot.launch.py starts, by node name (the keys of a site configuration file).
@@ -96,8 +96,8 @@ def load_site_config(path: str):
 
 def expected_nodes(started: list[str], odometry: str) -> list[str]:
     """Return every node the health monitor must see: launched ones plus the odometry nodes."""
-    estimator = 'fastlio_mapping_node' if odometry == 'fast_lio' else 'legkilo'
-    extra = [estimator, 'odometry_monitor_node', 'route_recorder_node', 'apriltag']
+    estimator = {'fast_lio': ['fastlio_mapping_node'], 'leg_kilo': ['legkilo']}.get(odometry, [])
+    extra = [*estimator, 'odometry_monitor_node', 'route_recorder_node', 'apriltag']
     return sorted({*started, *extra, 'health_monitor_node'})
 
 

@@ -4,6 +4,7 @@ import pytest
 
 rclpy = pytest.importorskip('rclpy')
 BatteryState = pytest.importorskip('sensor_msgs.msg').BatteryState
+Trigger = pytest.importorskip('std_srvs.srv').Trigger
 PathFollowerNode = pytest.importorskip(
     'robot_navigation.path_follower_node'
 ).PathFollowerNode
@@ -39,3 +40,19 @@ def test_low_battery_flag_clears_after_charging(follower):
     assert battery(0.22)  # within the hysteresis band
     assert battery(float('nan'))  # unknown readings change nothing
     assert not battery(0.3)
+
+
+def test_stop_reports_inspection_when_every_inspector_is_down(follower):
+    """With no inspection service up, 'inspected' still goes out (saying so) at the stop."""
+    events = []
+    follower.publish_stop_event = lambda event, message='', index=None: events.append(
+        (event, message, index)
+    )
+    follower._inspection_clients = [follower.create_client(Trigger, 'no_such_inspector')]
+    follower._next_stop_index = 0
+    follower.start_inspection()
+    assert len(events) == 1
+    event, message, index = events[0]
+    assert (event, index) == ('inspected', 0)
+    assert 'no_such_inspector: not available' in message
+    assert follower._inspection_pending == 0

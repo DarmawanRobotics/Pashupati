@@ -205,7 +205,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'odometry',
                 default_value=env('ODOMETRY', 'fast_lio'),
-                description='fast_lio | leg_kilo',
+                description='fast_lio | leg_kilo | external (simulator)',
             ),
             DeclareLaunchArgument(
                 'route', default_value=env('ROUTE'), description='route CSV; empty: last loaded'

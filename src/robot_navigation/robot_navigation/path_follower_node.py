@@ -790,6 +790,11 @@ class PathFollowerNode(Node):
                     name, f, r
                 )
             )
+        if self._inspection_results and not self._inspection_pending:
+            # every inspector is down: report that now, the stop is not silently uninspected
+            self.publish_stop_event(
+                'inspected', ' | '.join(self._inspection_results), self._inspection_index
+            )
 
     def inspection_done(self, name: str, future, round_id: int):
         """Collect one inspection result; answers for an earlier stop are dropped."""
@@ -1092,6 +1097,10 @@ def main(args=None):
         executor.spin()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:  # noqa: B902
+        if rclpy.ok():
+            raise  # a real error while running
+        # else: Ctrl-C shut the context down under spin(), a normal stop
     finally:
         node.destroy_node()
         try:

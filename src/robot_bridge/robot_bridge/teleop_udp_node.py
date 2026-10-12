@@ -155,6 +155,11 @@ class TeleopUdpNode(Node):
         self.create_timer(1.0 / float(p('telemetry_hz')), self.send_state)
         self.get_logger().info(f'teleop UDP on port {p("port")}')
 
+    def destroy_node(self):
+        """Close the UDP socket with the node, so the port is free again at once."""
+        self._sock.close()
+        super().destroy_node()
+
     # ------------------------------------------------------------------ setup
 
     def make_clients(self, prefix: str, robot_commands: list):
@@ -634,6 +639,10 @@ def main(args=None):
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:  # noqa: B902
+        if rclpy.ok():
+            raise  # a real error while running
+        # else: Ctrl-C shut the context down under spin(), a normal stop
     finally:
         node.send_json({'t': 'bye'})
         node.destroy_node()

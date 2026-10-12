@@ -19,3 +19,4 @@ localization_node:
     auto_correct_period_sec: 0.0      # >0: re-correct drift from any visible tag every N s
     max_correction_m: 0.5             # reject auto corrections larger than this
     max_correction_deg: 15.0
+    map_odom_hz: 20.0                 # map->odom is republished on /tf at this rate

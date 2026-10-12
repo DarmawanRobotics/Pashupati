@@ -193,6 +193,10 @@ def main(args=None):
         executor.spin()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:  # noqa: B902
+        if rclpy.ok():
+            raise  # a real error while running
+        # else: Ctrl-C shut the context down under spin(), a normal stop
     finally:
         node.destroy_node()
         try:

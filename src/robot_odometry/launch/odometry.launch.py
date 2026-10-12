@@ -10,7 +10,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-METHODS = ('fast_lio', 'leg_kilo')
+METHODS = ('fast_lio', 'leg_kilo', 'external')  # external: simulator or another estimator
 
 
 def truthy(value: str) -> bool:
@@ -49,28 +49,37 @@ def launch_setup(context):
     prefix = f'{gate} {gate_params}--' if truthy(arg('wait_still')) else None
     common = {'output': 'screen', 'respawn': respawn, 'respawn_delay': 3.0}
 
+    estimators = []  # external: /Odometry and camera_init -> body come from elsewhere (robot_sim)
     if method == 'fast_lio':
-        estimator = Node(
-            package='fast_lio',
-            executable='fastlio_mapping',
-            name='fastlio_mapping_node',
-            parameters=[arg('fast_lio_params_file'), *site, {'pcd_save.pcd_save_en': save_map}],
-            prefix=prefix,
-            **common,
+        estimators.append(
+            Node(
+                package='fast_lio',
+                executable='fastlio_mapping',
+                name='fastlio_mapping_node',
+                parameters=[
+                    arg('fast_lio_params_file'),
+                    *site,
+                    {'pcd_save.pcd_save_en': save_map},
+                ],
+                prefix=prefix,
+                **common,
+            )
         )
-    else:
+    elif method == 'leg_kilo':
         config = leg_kilo_config(arg('leg_kilo_config_file'), backend=save_map)
         viewer = 'true' if truthy(arg('leg_kilo_viewer')) else 'false'
-        estimator = Node(
-            package='legkilo',
-            executable='legkilo_node',
-            arguments=['--config_file', config, f'--viewer={viewer}'],
-            prefix=prefix,
-            **common,
+        estimators.append(
+            Node(
+                package='legkilo',
+                executable='legkilo_node',
+                arguments=['--config_file', config, f'--viewer={viewer}'],
+                prefix=prefix,
+                **common,
+            )
         )
 
     actions = [
-        estimator,
+        *estimators,
         Node(
             package='robot_odometry',
             executable='odometry_monitor_node',
@@ -114,7 +123,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'method',
                 default_value=os.environ.get('ODOMETRY', 'fast_lio'),
-                description='fast_lio | leg_kilo (default: $ODOMETRY or fast_lio)',
+                description='fast_lio | leg_kilo | external (default: $ODOMETRY or fast_lio)',
             ),
             DeclareLaunchArgument(
                 'save_map',

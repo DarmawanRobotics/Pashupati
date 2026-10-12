@@ -29,6 +29,16 @@ versions follow [SemVer](https://semver.org).
   wrong stop.
 - The anomaly photo sent to NETRA is now the frame the VLM analysed (`anomaly_detector/evidence`).
 - No traceback from the TF listener thread when nodes stop.
+- `map → odom` is a dynamic transform on `/tf` (REP-105), republished at `map_odom_hz` and after
+  every relocalization. As a static transform it only worked on Humble: from Jazzy on, the static
+  broadcaster keeps the first value, so relocalizing had no effect.
+- A Ctrl-C that lands while a node builds its wait set no longer ends it with an `RCLError`
+  traceback (exit 1); the teleop gateway frees its UDP port as soon as it stops.
+- A stop whose inspection services are all down now reports `inspected` with `not available`
+  right away; before, no inspection event was sent for it at all.
+- `systemctl stop` / restart interrupted every node twice (systemd and `ros2 launch` both sent
+  SIGINT), so nodes died mid-shutdown with a `KeyboardInterrupt`. The service now signals only
+  `ros2 launch` (`KillMode=mixed`); re-run `script/setup.sh install service` to update the unit.
 
 ### Added
 - Teleop LAN discovery (`discover` → `beacon` with name, token required, who is driving,
@@ -46,6 +56,12 @@ versions follow [SemVer](https://semver.org).
 - Health monitor: missing nodes (the launch passes the list it starts), lost odometry, stale safety
   scan and e-stop reported as critical (`level: error`) next to sensor rates and the computer.
 - CI: build, unit + in-process ROS tests, lint (flake8, pep257, shellcheck, YAML) on every PR.
+- `odometry:=external`: no estimator is started, `/Odometry` comes from elsewhere (the simulator);
+  the odometry monitor and route recorder still run.
+- `robot_sim`: the production stack on a simulated L1W (2D world, ray-cast LiDAR, the driver and
+  FAST-LIO interfaces, people dropped in at runtime, stand-in inspection), and an end-to-end CI
+  test: patrol through a stop, stop for a person, drive on, the handheld cannot drive into a
+  person, clean shutdown.
 
 ### Changed
 - **Breaking:** `pashupati_bringup` → `pashupati` (`ros2 launch pashupati robot.launch.py`),

@@ -38,7 +38,9 @@ pure-logic tests also run with plain `pytest` on a laptop.
   `log = logger.warn if bad else logger.info`.
 - **Stop cleanly:** `main()` catches `KeyboardInterrupt` and `ExternalShutdownException` and wraps
   `rclpy.shutdown()` in `try/except`; a node with a spin-thread `TransformListener` stops that thread
-  in `destroy_node()`.
+  in `destroy_node()`. A Ctrl-C can land while the executor builds its wait set, so any other
+  exception from `spin()` is a normal stop when `rclpy.ok()` is already false; re-raise it only
+  while `rclpy.ok()` is true. Copy the `main()` of an existing node.
 - **Validate everything from the network** (teleop UDP, NETRA commands, spool files): clamp
   numbers, reject non-finite values, keep file paths inside their directory, never raise in a
   callback.
@@ -47,9 +49,14 @@ pure-logic tests also run with plain `pytest` on a laptop.
   the robot.
 - **systemd env files** (`/etc/pashupati/pashupati.env`) take no comments after a value: systemd
   makes the comment part of the value.
+- **Signal only `ros2 launch`.** Stop the stack with one SIGINT to the launch process (systemd does
+  this with `KillMode=mixed`), not to its process group: launch forwards it to every node, and a
+  second SIGINT interrupts the nodes in the middle of their shutdown.
 
 ## Safety-relevant changes
 
 Anything that changes how the robot moves (speeds, limits, e-stop, avoidance, the control mux, the
 teleop gateway) needs a test that drives the logic, a note in the PR on how it was tried on the robot
-(slow speed, open area, someone at the e-stop), and a CHANGELOG entry.
+(slow speed, open area, someone at the e-stop), and a CHANGELOG entry. Try it in the simulator
+first (`ros2 launch robot_sim sim.launch.py autostart:=true rviz:=true`); its end-to-end test
+(patrol, a person on the route, the handheld driving at a person) runs in CI and must stay green.

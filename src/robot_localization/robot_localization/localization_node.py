@@ -24,7 +24,13 @@ from robot_localization.utils.pose_localization import (
 from robot_localization.utils.tag_recording import average_poses, describe_pose, merge_into_file
 from std_msgs.msg import Empty, String
 from std_srvs.srv import Trigger
-from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
+from tf2_ros import (
+    Buffer,
+    StaticTransformBroadcaster,
+    TransformBroadcaster,
+    TransformException,
+    TransformListener,
+)
 import tf_transformations as tft
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -53,6 +59,7 @@ class LocalizationNode(Node):
         self.declare_parameter('auto_correct_period_sec', 0.0)
         self.declare_parameter('max_correction_m', 0.5)
         self.declare_parameter('max_correction_deg', 15.0)
+        self.declare_parameter('map_odom_hz', 20.0)
 
         p = self.get_parameter
         self._map = p('map_frame').value
@@ -68,6 +75,7 @@ class LocalizationNode(Node):
 
         self._tag_poses = self.load_tag_poses(p('tags_config_file').value)
         self._static_broadcaster = StaticTransformBroadcaster(self)
+        self._tf_broadcaster = TransformBroadcaster(self)
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
 
@@ -96,6 +104,7 @@ class LocalizationNode(Node):
         self._auto_timer = None
 
         self._bridge_timer = self.create_timer(0.5, self.try_start_bridge)
+        self.create_timer(1.0 / float(p('map_odom_hz').value), self.publish_map_odom)
         self._auto_start = bool(p('auto_localize_on_start').value)
         period = float(p('auto_correct_period_sec').value)
         if period > 0.0:
@@ -181,16 +190,31 @@ class LocalizationNode(Node):
         self._status_pub.publish(String(data=self._active_source if self._localized else 'none'))
 
     def broadcast_static(self):
-        """Publish map->odom, odom->camera_init (= base->imu) and body->base_link (= imu->base)."""
+        """Publish the fixed bridge: odom->camera_init (= base->imu), body->base_link (inverse)."""
         stamp = self.get_clock().now().to_msg()
         self._static_broadcaster.sendTransform(
             [
-                matrix_to_transform(self._m_map_odom, self._map, self._odom, stamp),
                 matrix_to_transform(self._m_base_imu, self._odom, self._lio_odom, stamp),
                 matrix_to_transform(
                     np.linalg.inv(self._m_base_imu), self._lio_body, self._base, stamp
                 ),
             ]
+        )
+        self.publish_map_odom()
+
+    def publish_map_odom(self):
+        """
+        Publish map->odom on /tf (REP-105), at map_odom_hz and right after every change.
+
+        It used to be a static transform, but it changes on every (re)localization and
+        StaticTransformBroadcaster keeps the first transform per child frame on newer ROS 2,
+        so corrections never reached the other nodes there.
+        """
+        if self._m_base_imu is None:
+            return
+        stamp = self.get_clock().now().to_msg()
+        self._tf_broadcaster.sendTransform(
+            matrix_to_transform(self._m_map_odom, self._map, self._odom, stamp)
         )
 
     def set_map_odom(self, m_map_odom: np.ndarray, source: str):
@@ -407,6 +431,10 @@ def main(args=None):
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:  # noqa: B902
+        if rclpy.ok():
+            raise  # a real error while running
+        # else: Ctrl-C shut the context down under spin(), a normal stop
     finally:
         node.destroy_node()
         try:

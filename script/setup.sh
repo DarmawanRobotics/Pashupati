@@ -242,7 +242,9 @@ Environment=RCUTILS_COLORIZED_OUTPUT=0
 ExecStart=$ROOT/script/run_robot.sh
 Restart=always
 RestartSec=5
+# SIGINT to ros2 launch only, which stops every node once; leftovers get SIGKILL after the timeout
 KillSignal=SIGINT
+KillMode=mixed
 TimeoutStopSec=30
 Nice=-5
 LimitNOFILE=65536
