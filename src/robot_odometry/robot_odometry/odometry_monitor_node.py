@@ -6,6 +6,7 @@ import time
 
 from nav_msgs.msg import Odometry
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from robot_odometry.checks import looks_like_restart, yaw_from_quaternion
@@ -156,7 +157,7 @@ def main(args=None):
     node = OdometryMonitorNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
