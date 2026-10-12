@@ -9,5 +9,5 @@ Messages and services shared by the patrol stack.
 | msg | `Waypoint`, `WaypointPath` | path_loader_node → path_follower_node |
 | msg | `NavigationStatus`, `MissionStatus`, `StopPointEvent` | path_follower_node → panel, bridge, fleet |
 | srv | `LoadPath` | `navigation/load_path` |
-| srv | `MarkStopPoint` | `mapping/mark_stop_point` |
+| srv | `MarkStopPoint` | `route/mark_stop_point` |
 | srv | `SetMode` | `bridge/set_mode` (`auto` \| `remote`) |

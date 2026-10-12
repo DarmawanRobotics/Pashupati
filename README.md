@@ -36,7 +36,7 @@ instead of a global planner:
 flowchart LR
     subgraph Robot[Robot — Jetson, ROS 2 Humble]
         DRV[l1w_driver] --- SENS[Livox MID-360 + RealSense D435i]
-        SENS --> FL[FAST-LIO2] --> LOC[localization]
+        SENS --> FL[FAST-LIO2 / Leg-KILO] --> LOC[localization]
         SENS --> PER[lidar sectors · AprilTag · people]
         LOC --> NAV[path follower + avoidance]
         PER --> NAV
@@ -56,6 +56,7 @@ flowchart LR
 |---|---|
 | **Pashupati** (this) | robot workspace |
 | [`genisom_l1w_ros2`](src/xtras/drivers/genisom_l1w_ros2) | L1W driver, URDF, sensor bringup, SDK installer (submodule) |
+| [`leg_kilo`](src/xtras/slam/leg_kilo) | Leg-KILO odometry, `pashupati` branch of the fork: headless options (submodule, optional) |
 | `netra` | command center: backend, dashboard, VPS deployment |
 | `flutter_teleop` | handheld teleop app (Retroid Pocket / Android) |
 
@@ -73,7 +74,7 @@ flowchart LR
 | Package | Role |
 |---|---|
 | [`robot_interfaces`](src/robot_interfaces) | messages and services |
-| [`robot_mapping`](src/robot_mapping) | FAST-LIO2 bringup, route recording |
+| [`robot_odometry`](src/robot_odometry) | LiDAR-inertial odometry (FAST-LIO2 or Leg-KILO), stillness gate, odometry monitor, route recording |
 | [`robot_localization`](src/robot_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
 | [`robot_perception`](src/robot_perception) | LiDAR sectors, AprilTag, person detection |
 | [`robot_navigation`](src/robot_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
@@ -110,16 +111,17 @@ script/dev.sh test
 script/dev.sh vnc     # TigerVNC localhost:5901 or http://localhost:6080/vnc.html
 ```
 
-On the robot during development: `script/start_tmux.sh mapping|patrol` (one pane per part, RViz).
+On the robot during development: `script/start_tmux.sh teach|patrol` (one pane per part, RViz).
 
 ## Workflow
 
 ### Teach
 
-1. Start in mapping mode (`MODE=mapping` in the env file, or `start_tmux.sh mapping`).
+1. Start in teach mode (`MODE=teach` in the env file, or `start_tmux.sh teach`). Keep the robot
+   standing still until odometry starts (`odometry/status` leaves `initializing`).
 2. Take the handheld, switch to **REMOTE**, hold the deadman and drive the route; **Rekam rute**
    starts recording, **Titik stop** marks inspection stops with a dwell time (or the RViz Mission
-   panel, or `mapping/path_record` / `mapping/mark_stop_point`).
+   panel, or `route/record` / `route/mark_stop_point`).
 3. Stand still in view of each AprilTag and **Record Tag Poses** (AprilTags panel or
    `localization/record_tags`) — tags recorded in the same session anchor the same map frame.
 4. Stop recording: the route is saved under `map/<date>/` and uploaded to NETRA. End near the start
@@ -177,8 +179,8 @@ the tuned values with **Save YAML**.
 
 | Service | Type | Node |
 |---|---|---|
-| `/mapping/path_record` | `std_srvs/SetBool` | path_recorder_node |
-| `/mapping/mark_stop_point` | `robot_interfaces/MarkStopPoint` | path_recorder_node |
+| `/route/record` | `std_srvs/SetBool` | route_recorder_node |
+| `/route/mark_stop_point` | `robot_interfaces/MarkStopPoint` | route_recorder_node |
 | `/localization/start`, `/localization/record_tags` | `std_srvs/Trigger` | localization_node |
 | `/navigation/load_path` | `robot_interfaces/LoadPath` | path_loader_node |
 | `/navigation/start_nav`, `/navigation/pause` | `std_srvs/SetBool` | path_follower_node |
@@ -196,6 +198,8 @@ the tuned values with **Save YAML**.
 | `/l1w/cmd_vel` | `geometry_msgs/Twist` | control_mux_node |
 | `/bridge/nav_cmd_vel`, `/bridge/remote_cmd_vel` | `geometry_msgs/Twist` | path_follower_node, teleop_udp_node |
 | `/bridge/mode` | `std_msgs/String` (latched) | control_mux_node |
+| `/odometry/status` | `std_msgs/String` (latched) | odometry_monitor_node |
+| `/odometry/restarted` | `std_msgs/Empty` | odometry_monitor_node |
 | `/localization/status` | `std_msgs/String` (latched) | localization_node |
 | `/navigation/waypoints` | `robot_interfaces/WaypointPath` (latched) | path_loader_node |
 | `/navigation/status`, `/navigation/mission_status`, `/navigation/stop_point_event` | robot_interfaces | path_follower_node |
@@ -204,7 +208,7 @@ the tuned values with **Save YAML**.
 | `/perception/people` | `geometry_msgs/PoseArray` | person_detector_node |
 | `/anomaly_detector/result` | `std_msgs/String` (JSON) | anomaly_detector_node |
 | `/health/status` | `std_msgs/String` (JSON, latched) | health_monitor_node |
-| `/mapping/route_saved` | `std_msgs/String` | path_recorder_node |
+| `/route/saved` | `std_msgs/String` | route_recorder_node |
 
 </details>
 
@@ -215,6 +219,8 @@ the tuned values with **Save YAML**.
 map → odom → camera_init → body → base_link ─┬─ livox_frame → livox_imu_frame
  (localization_node)  (FAST-LIO2)  (bridge)   └─ camera_link → camera_*_optical_frame
 ```
+
+`camera_init → body` comes from FAST-LIO2 or Leg-KILO (`odometry:=leg_kilo`), same frame names.
 
 </details>
 
@@ -252,7 +258,7 @@ Pashupati/
 ├── script/                       # setup.sh, run_robot.sh (service), start_tmux.sh (dev), dev.sh
 └── src/
     ├── robot_* pashupati_bringup # first-party packages
-    └── xtras/                    # submodules: genisom_l1w_ros2, livox_ros_driver2, realsense-ros, FAST_LIO
+    └── xtras/                    # submodules: genisom_l1w_ros2, livox_ros_driver2, realsense-ros, FAST_LIO, Leg-KILO
 ```
 
 ## License

@@ -3,7 +3,7 @@ import os
 
 from setuptools import find_packages, setup
 
-package_name = 'robot_mapping'
+package_name = 'robot_odometry'
 
 setup(
     name=package_name,
@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='FAST-LIO2 mapping and teach-and-repeat route recording with stop points',
+    description='LIO odometry (FAST-LIO2 or Leg-KILO), stillness gate, monitor, route recorder',
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -28,7 +28,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'path_recorder_node = robot_mapping.path_recorder_node:main',
+            'wait_still = robot_odometry.wait_still:main',
+            'odometry_monitor_node = robot_odometry.odometry_monitor_node:main',
+            'route_recorder_node = robot_odometry.route_recorder_node:main',
         ],
     },
 )

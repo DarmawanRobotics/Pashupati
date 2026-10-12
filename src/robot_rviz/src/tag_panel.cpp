@@ -13,7 +13,7 @@ TagPanel::TagPanel(QWidget * parent)
   record_button_ = new QPushButton("Record Tag Poses");
   record_button_->setToolTip(
     "Average the map pose of every visible tag for a few seconds and save it to the tag file. "
-    "Do this while mapping, with the robot standing still.");
+    "Do this while teaching, with the robot standing still.");
   localize_button_ = new QPushButton("Localize from Tag");
   localization_label_ = new QLabel("not localized");
   localization_label_->setWordWrap(true);

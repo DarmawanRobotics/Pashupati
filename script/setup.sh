@@ -7,8 +7,8 @@
 #   script/setup.sh install livox build  # install only these
 #   script/setup.sh install all          # every component, including ros and service
 #
-# Components: ros tools submodules livox genisom rosdep realsense_udev ollama people_model build
-#             service network
+# Components: ros tools submodules livox genisom legkilo rosdep realsense_udev ollama people_model
+#             build service network
 # Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), GENISOM_SETUP (genisom submodule script),
 #      VLM_MODEL (moondream), PEOPLE_MODEL (models/yolo11n.engine), FORCE=1 (reinstall anyway)
 set -euo pipefail
@@ -26,8 +26,9 @@ REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"
 ROBOT_IP="${ROBOT_IP:-192.168.234.1}"
 
-ALL=(ros tools submodules livox genisom rosdep realsense_udev ollama people_model build service network)
-DEFAULT_INSTALL=(tools submodules livox genisom rosdep realsense_udev ollama build)
+ALL=(ros tools submodules livox genisom legkilo rosdep realsense_udev ollama people_model build service
+     network)
+DEFAULT_INSTALL=(tools submodules livox genisom legkilo rosdep realsense_udev ollama build)
 
 SUDO=$([[ "$(id -u)" -eq 0 ]] && echo "" || echo "sudo")
 IN_DOCKER=$([[ -f /.dockerenv ]] && echo 1 || echo 0)
@@ -113,6 +114,26 @@ check_genisom() {
 install_genisom() {
     [[ -x "$GENISOM_SETUP" ]] || install_submodules
     "$GENISOM_SETUP" install
+}
+
+# Leg-KILO (src/xtras/slam/leg_kilo, odometry:=leg_kilo) builds Iridescence and needs these.
+LEGKILO_DIR="$ROOT/src/xtras/slam/leg_kilo"
+LEGKILO_APT=(libeigen3-dev libpcl-dev libgoogle-glog-dev libgflags-dev libyaml-cpp-dev
+    libboost-filesystem-dev libboost-system-dev libtbb-dev liblz4-dev libceres-dev libglm-dev
+    libglfw3-dev libpng-dev libjpeg-dev)
+check_legkilo() {
+    [[ -d "$LEGKILO_DIR/legkilo" ]] || { echo "skipped, no submodule at $LEGKILO_DIR"; return 0; }
+    local missing=()
+    for pkg in "${LEGKILO_APT[@]}"; do
+        dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+    done
+    [[ ${#missing[@]} -eq 0 ]] || { echo "missing: ${missing[*]}"; return 1; }
+    [[ -f "$LEGKILO_DIR/msg/livox_ros_driver2/COLCON_IGNORE" ]] \
+        || { echo "upstream checkout: use the pashupati branch of the fork"; return 1; }
+    echo "build deps installed"
+}
+install_legkilo() {
+    apt_install "${LEGKILO_APT[@]}"
 }
 
 check_rosdep() {

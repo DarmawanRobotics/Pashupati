@@ -90,9 +90,9 @@ ControlPanel::ControlPanel(QWidget * parent)
 void ControlPanel::setupRos()
 {
   localization_client_ = node_->create_client<std_srvs::srv::Trigger>("localization/start");
-  record_client_ = node_->create_client<std_srvs::srv::SetBool>("mapping/path_record");
+  record_client_ = node_->create_client<std_srvs::srv::SetBool>("route/record");
   mark_stop_point_client_ =
-    node_->create_client<robot_interfaces::srv::MarkStopPoint>("mapping/mark_stop_point");
+    node_->create_client<robot_interfaces::srv::MarkStopPoint>("route/mark_stop_point");
   load_path_client_ = node_->create_client<robot_interfaces::srv::LoadPath>("navigation/load_path");
   nav_client_ = node_->create_client<std_srvs::srv::SetBool>("navigation/start_nav");
   pause_client_ = node_->create_client<std_srvs::srv::SetBool>("navigation/pause");
@@ -128,7 +128,7 @@ void ControlPanel::onTriggerLocalization()
 void ControlPanel::onToggleRecording()
 {
   if (!record_client_->service_is_ready()) {
-    setStatus(recording_status_label_, "mapping/path_record not available", "#ffcc00");
+    setStatus(recording_status_label_, "route/record not available", "#ffcc00");
     return;
   }
   auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
@@ -148,7 +148,7 @@ void ControlPanel::onToggleRecording()
 void ControlPanel::onMarkStopPoint()
 {
   if (!mark_stop_point_client_->service_is_ready()) {
-    setStatus(recording_status_label_, "mapping/mark_stop_point not available", "#ffcc00");
+    setStatus(recording_status_label_, "route/mark_stop_point not available", "#ffcc00");
     return;
   }
   auto request = std::make_shared<robot_interfaces::srv::MarkStopPoint::Request>();

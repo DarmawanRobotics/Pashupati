@@ -14,12 +14,12 @@ from tf2_ros import Buffer, TransformListener
 import tf_transformations
 
 
-class PathRecorderNode(Node):
-    """Record the robot path from TF and save it as a waypoint CSV."""
+class RouteRecorderNode(Node):
+    """Teach: record the robot path from TF and save it as a route CSV with stop points."""
 
     def __init__(self):
         """Initialize parameters, TF listener, services, and recording timer."""
-        super().__init__('path_recorder_node')
+        super().__init__('route_recorder_node')
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('min_waypoint_spacing_m', 0.2)
@@ -39,10 +39,10 @@ class PathRecorderNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
-        self._saved_pub = self.create_publisher(String, 'mapping/route_saved', 10)
-        self.create_service(SetBool, 'mapping/path_record', self.recording_callback)
+        self._saved_pub = self.create_publisher(String, 'route/saved', 10)
+        self.create_service(SetBool, 'route/record', self.recording_callback)
         self.create_service(
-            MarkStopPoint, 'mapping/mark_stop_point', self.mark_stop_point_callback
+            MarkStopPoint, 'route/mark_stop_point', self.mark_stop_point_callback
         )
         self.create_timer(1.0 / record_rate, self.record_tick)
 
@@ -128,7 +128,7 @@ class PathRecorderNode(Node):
         """Append the current pose as an inspection stop point."""
         if not self._recording:
             response.success = False
-            response.message = 'not recording, call mapping/path_record(true) first'
+            response.message = 'not recording, call route/record(true) first'
             return response
 
         pose = self.lookup_current_pose()
@@ -165,9 +165,9 @@ class PathRecorderNode(Node):
 
 
 def main(args=None):
-    """Initialize ROS 2 and run the path recorder node."""
+    """Initialize ROS 2 and run the route recorder node."""
     rclpy.init(args=args)
-    node = PathRecorderNode()
+    node = RouteRecorderNode()
 
     try:
         rclpy.spin(node)

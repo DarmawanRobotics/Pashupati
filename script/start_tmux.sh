@@ -1,12 +1,14 @@
 #!/bin/bash
-# Usage: script/start_tmux.sh [mapping|patrol]   (development; production: pashupati.service)
-#   mapping: FAST-LIO saves the PCD map, record a route with the RViz panel
-#   patrol:  map saving off, route loaded, navigation ready (start it from the panel)
-# Env: WS, ROUTE, TAGS, ROBOT_NS, CC_URL + CC_TOKEN (command center), RVIZ=0 (headless),
-#      DETACH=1 (do not attach, e.g. systemd)
+# Usage: script/start_tmux.sh [teach|patrol]   (development; production: pashupati.service)
+#   teach:  odometry keeps the map, record a route with the RViz panel or the handheld
+#   patrol: map off, route loaded, navigation ready (start it from the panel)
+# Env: WS, ODOMETRY (fast_lio | leg_kilo), ROUTE, TAGS, ROBOT_NS, CC_URL + CC_TOKEN (command
+#      center), RVIZ=0 (headless), DETACH=1 (do not attach, e.g. systemd)
 set -euo pipefail
 
 MODE="${1:-patrol}"
+[[ "$MODE" == "mapping" ]] && MODE=teach   # old name
+ODOMETRY="${ODOMETRY:-fast_lio}"
 WS="${WS:-/home/robot/dev/Pashupati}"
 ROUTE="${ROUTE:-$WS/map/example/example_waypoint.csv}"
 TAGS="${TAGS:-$WS/map/example/tag_config.json}"
@@ -17,11 +19,11 @@ RVIZ="${RVIZ:-1}"
 DETACH="${DETACH:-0}"
 SESSION=pashupati
 
-if [[ "$MODE" != "mapping" && "$MODE" != "patrol" ]]; then
-    echo "usage: $0 [mapping|patrol]" >&2
+if [[ "$MODE" != "teach" && "$MODE" != "patrol" ]]; then
+    echo "usage: $0 [teach|patrol]" >&2
     exit 1
 fi
-SAVE_MAP=$([[ "$MODE" == "mapping" ]] && echo true || echo false)
+SAVE_MAP=$([[ "$MODE" == "teach" ]] && echo true || echo false)
 
 # Stop the vendor services that would fight for the robot
 if command -v robot-launch >/dev/null; then
@@ -42,7 +44,8 @@ tmux split-window -h -t "$SESSION:robot.0"
 tmux split-window -h -t "$SESSION:robot.2"
 run robot.0 "ros2 launch l1w_bringup bringup.launch.py namespace:=$ROBOT_NS"
 sleep 3
-run robot.1 "ros2 launch robot_mapping mapping.launch.py save_map:=$SAVE_MAP tags_config_file:=$TAGS"
+run robot.1 "ros2 launch robot_odometry odometry.launch.py method:=$ODOMETRY save_map:=$SAVE_MAP \
+localization:=true tags_config_file:=$TAGS leg_odom_topic:=/$ROBOT_NS/odom"
 run robot.2 "ros2 launch robot_perception perception.launch.py"
 if [[ "$RVIZ" == "1" ]]; then
     run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix robot_rviz)/share/robot_rviz/rviz/robot.rviz \
