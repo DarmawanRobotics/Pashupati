@@ -29,6 +29,9 @@ versions follow [SemVer](https://semver.org).
   wrong stop.
 - The anomaly photo sent to NETRA is now the frame the VLM analysed (`anomaly_detector/evidence`).
 - No traceback from the TF listener thread when nodes stop.
+- `map → odom` is a dynamic transform on `/tf` (REP-105), republished at `map_odom_hz` and after
+  every relocalization. As a static transform it only worked on Humble: from Jazzy on, the static
+  broadcaster keeps the first value, so relocalizing had no effect.
 
 ### Added
 - Teleop LAN discovery (`discover` → `beacon` with name, token required, who is driving,

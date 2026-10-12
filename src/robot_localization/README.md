@@ -6,9 +6,10 @@
 map → odom → camera_init → body → base_link
 ```
 
-`odom → camera_init` and `body → base_link` come from the URDF (`base_link → livox_imu_frame`);
-`map → odom` is a planar (x, y, yaw) correction set from an AprilTag, an RViz 2D Pose Estimate or,
-with `assume_start_origin`, the start pose.
+`odom → camera_init` and `body → base_link` come from the URDF (`base_link → livox_imu_frame`) and
+are static. `map → odom` is a planar (x, y, yaw) correction set from an AprilTag, an RViz 2D Pose
+Estimate or, with `assume_start_origin`, the start pose; it is published on `/tf` at `map_odom_hz`
+(REP-105), so every correction reaches the other nodes at once.
 
 | Interface | Type | |
 |---|---|---|
