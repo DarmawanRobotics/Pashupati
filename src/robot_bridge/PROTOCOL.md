@@ -8,9 +8,16 @@ with JSON datagrams (control) and chunked binary datagrams (streams). No ROS on 
 1. Client sends `hello` (and again every 1 s as a keep-alive when idle).
 2. Robot replies `welcome` and the loaded route, then streams `state` at `telemetry_hz`.
 3. Any datagram refreshes the session; after `client_timeout_sec` of silence the robot drops the
-   client and zeroes the remote velocity. A new `hello` from another address takes over.
+   client and zeroes the remote velocity.
+4. One driver at a time: a `hello` from another device (IP address) is answered with `busy` while
+   the current client is alive. The same device may reconnect from a new port (app restart).
 
-If the robot is configured with a `token`, every client message must include `"k": "<token>"`.
+If the robot is configured with a `token`, every client message must include `"k": "<token>"`
+(compared in constant time). Without a token anyone on the network can drive the robot; the robot
+logs a warning at start.
+
+Malformed datagrams are dropped. Joystick values that are not finite numbers (NaN, inf, strings,
+booleans) count as 0, so a broken client stops the robot instead of driving it at full speed.
 
 ## Discovery
 
@@ -38,9 +45,9 @@ the robot runs it once and resends the cached `ack`.
 | `nav_start`, `nav_stop` | | start / stop navigation |
 | `nav_pause`, `nav_resume` | | hold / continue without losing progress |
 | `record_start`, `record_stop` | | route recording |
-| `mark_stop` | `dwell` (s) | mark an inspection stop at the current pose |
+| `mark_stop` | `dwell` (s, 0–3600) | mark an inspection stop at the current pose |
 | `list_routes` | | `ack.data` = route CSV paths, newest first |
-| `load_route` | `file` | load a route CSV |
+| `load_route` | `file` | load a route CSV; only files under `routes_dir` |
 | `get_route` | | resend the loaded route stream |
 | `localize` | | localize from a visible AprilTag |
 | `record_tags` | | record AprilTag poses |
@@ -54,6 +61,7 @@ the robot runs it once and resends the cached `ack`.
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
 | `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
 | `pong` | `ts` |
+| `busy` | `msg`: another device is driving, retry later |
 | `bye` | robot shutting down |
 
 ## Binary streams

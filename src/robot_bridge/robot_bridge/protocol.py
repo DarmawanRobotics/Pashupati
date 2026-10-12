@@ -1,4 +1,5 @@
 import json
+import math
 import struct
 
 import numpy as np
@@ -24,6 +25,19 @@ def decode_json(data: bytes):
     except (UnicodeDecodeError, ValueError):
         return None
     return message if isinstance(message, dict) and 't' in message else None
+
+
+def clamp_axis(value, limit: float) -> float:
+    """Clamp one joystick axis to +-limit; NaN, inf and anything not a number become 0."""
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(v):
+        return 0.0
+    return max(-limit, min(limit, v))
 
 
 def chunk(stream: int, frame: int, payload: bytes, size: int = CHUNK_PAYLOAD) -> list[bytes]:

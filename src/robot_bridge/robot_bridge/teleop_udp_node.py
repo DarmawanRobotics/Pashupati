@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hmac
 import json
 import math
 import os
@@ -47,6 +48,14 @@ def yaw_of(q) -> float:
 def finite(value, digits: int = 2):
     """Round a float for JSON, or None when it is NaN/inf."""
     return round(float(value), digits) if math.isfinite(value) else None
+
+
+def dwell_seconds(value) -> float:
+    """Validate a stop-point dwell time from the client (0 < dwell <= 1 h)."""
+    dwell = float(value)
+    if not math.isfinite(dwell) or not 0.0 < dwell <= 3600.0:
+        raise ValueError(f'dwell must be between 0 and 3600 s, got {value!r}')
+    return dwell
 
 
 class TeleopUdpNode(Node):
@@ -120,8 +129,19 @@ class TeleopUdpNode(Node):
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind(('0.0.0.0', int(p('port'))))
+        try:
+            self._sock.bind(('0.0.0.0', int(p('port'))))
+        except OSError as error:
+            self.get_logger().fatal(
+                f'cannot bind UDP port {p("port")}: {error} (another teleop gateway running?)'
+            )
+            raise
         self._sock.setblocking(False)
+        if not self._token:
+            self.get_logger().warn(
+                'teleop token is empty: anyone on this network can drive the robot, '
+                'set teleop_udp_node.token'
+            )
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -166,12 +186,12 @@ class TeleopUdpNode(Node):
             'mark_stop': (
                 MarkStopPoint,
                 self.create_client(MarkStopPoint, 'mapping/mark_stop_point'),
-                lambda a: MarkStopPoint.Request(dwell_sec=float(a.get('dwell', 10.0))),
+                lambda a: MarkStopPoint.Request(dwell_sec=dwell_seconds(a.get('dwell', 10.0))),
             ),
             'load_route': (
                 LoadPath,
                 self.create_client(LoadPath, 'navigation/load_path'),
-                lambda a: LoadPath.Request(waypoints_file=str(a.get('file', ''))),
+                lambda a: LoadPath.Request(waypoints_file=self.route_path(a.get('file', ''))),
             ),
             'localize': trigger('localization/start'),
             'record_tags': trigger('localization/record_tags'),
@@ -202,18 +222,19 @@ class TeleopUdpNode(Node):
 
     # ------------------------------------------------------------------ socket
 
-    def send(self, data: bytes):
-        """Send one datagram to the client, dropping it when the socket is busy."""
-        if self._client is None:
+    def send(self, data: bytes, addr=None):
+        """Send one datagram to the client (or addr), dropping it when the socket is busy."""
+        addr = addr or self._client
+        if addr is None:
             return
         try:
-            self._sock.sendto(data, self._client)
+            self._sock.sendto(data, addr)
         except (BlockingIOError, OSError):
             pass
 
-    def send_json(self, message: dict):
-        """Send a JSON message to the client."""
-        self.send(protocol.encode_json(message))
+    def send_json(self, message: dict, addr=None):
+        """Send a JSON message to the client (or addr)."""
+        self.send(protocol.encode_json(message), addr)
 
     def send_stream(self, stream: int, payload: bytes):
         """Send a chunked binary payload to the client."""
@@ -222,33 +243,68 @@ class TeleopUdpNode(Node):
             self.send(datagram)
 
     def poll(self):
-        """Drain the socket and expire a silent client."""
-        while True:
+        """Drain the socket (bounded, so a flood cannot starve ROS) and expire a silent client."""
+        for _ in range(256):
             try:
                 data, addr = self._sock.recvfrom(65535)
-            except BlockingIOError:
+            except (BlockingIOError, InterruptedError):
+                break
+            except OSError as error:
+                self.get_logger().warn(f'teleop socket: {error}', throttle_duration_sec=5.0)
                 break
             message = protocol.decode_json(data)
             if message is not None and message.get('t') == 'discover':
-                self.reply_beacon(addr)
+                self.reply_beacon(addr)  # no token needed, nothing sensitive
                 continue
-            if message is None or (self._token and message.get('k') != self._token):
+            if message is None or not self.authorized(message):
                 continue
-            self.handle_message(message, addr)
+            try:
+                self.handle_message(message, addr)
+            except (AttributeError, KeyError, TypeError, ValueError) as error:
+                self.get_logger().warn(
+                    f'ignored malformed teleop message from {addr}: {error}',
+                    throttle_duration_sec=5.0,
+                )
         if self._client and time.monotonic() - self._client_seen > self._client_timeout:
             self.get_logger().warn(f'teleop client {self._client} timed out')
             self._client = None
             self._remote_pub.publish(Twist())
 
+    def authorized(self, message: dict) -> bool:
+        """Check the shared token (constant time) when one is configured."""
+        if not self._token:
+            return True
+        return hmac.compare_digest(str(message.get('k', '')), self._token)
+
+    def accept_client(self, addr, message: dict) -> bool:
+        """
+        Register addr as the client; another device cannot take over a live session.
+
+        The same device may come back from a new port (app restart). A different device gets
+        `busy` until the current client has been silent for client_timeout_sec.
+        """
+        current = self._client
+        if current is not None and addr != current and addr[0] != current[0]:
+            if time.monotonic() - self._client_seen <= self._client_timeout:
+                self.send_json({'t': 'busy', 'msg': f'robot is driven from {current[0]}'}, addr)
+                return False
+        if addr != current:
+            self.get_logger().info(f'teleop client {addr} ({message.get("name", "?")})')
+            if current is not None:
+                self._remote_pub.publish(Twist())
+        self._client = addr
+        return True
+
     def handle_message(self, message: dict, addr):
         """Dispatch one client message."""
         kind = message['t']
         if kind == 'hello':
-            if addr != self._client:
-                self.get_logger().info(f'teleop client {addr} ({message.get("name", "?")})')
-            self._client = addr
+            if not self.accept_client(addr, message):
+                return
             self._client_name = str(message.get('name', ''))[:32]
             streams = message.get('streams', {})
+            if not isinstance(streams, dict):
+                streams = {}
             self.set_camera_fps(streams.get('camera_fps'))
             self._streams = {k: bool(streams.get(k, False)) for k in self._streams}
             self.send_json(
@@ -276,17 +332,21 @@ class TeleopUdpNode(Node):
             self._remote_pub.publish(Twist())
 
     def on_joy(self, message: dict):
-        """Publish a clamped teleop velocity."""
+        """Publish a clamped teleop velocity; NaN, inf and non-numbers count as 0."""
         vx_max, vy_max, wz_max = self._limits
         twist = Twist()
-        twist.linear.x = max(-vx_max, min(vx_max, float(message.get('vx', 0.0))))
-        twist.linear.y = max(-vy_max, min(vy_max, float(message.get('vy', 0.0))))
-        twist.angular.z = max(-wz_max, min(wz_max, float(message.get('wz', 0.0))))
+        twist.linear.x = protocol.clamp_axis(message.get('vx'), vx_max)
+        twist.linear.y = protocol.clamp_axis(message.get('vy'), vy_max)
+        twist.angular.z = protocol.clamp_axis(message.get('wz'), wz_max)
         self._remote_pub.publish(twist)
 
     def on_command(self, message: dict):
         """Run a named command once per id and acknowledge it."""
         cid, name, args = message.get('id'), message.get('name', ''), message.get('args', {})
+        if not isinstance(cid, (int, str)) or isinstance(cid, bool):
+            return
+        if not isinstance(args, dict):
+            args = {}
         if cid in self._acks:
             self.send_json(self._acks[cid])
             return
@@ -304,13 +364,22 @@ class TeleopUdpNode(Node):
         if not client.service_is_ready():
             self.ack(cid, False, f'{client.srv_name} not available')
             return
-        future = client.call_async(make_request(args if isinstance(args, dict) else {}))
+        try:
+            request = make_request(args)
+        except (TypeError, ValueError) as error:
+            self.ack(cid, False, str(error))
+            return
+        future = client.call_async(request)
         future.add_done_callback(lambda f, c=cid, n=name: self.on_command_done(c, n, f))
         self._acks[cid] = {'t': 'ack', 'id': cid, 'ok': None, 'msg': 'pending'}
 
     def on_command_done(self, cid, name: str, future):
         """Acknowledge a finished service call."""
-        result = future.result()
+        try:
+            result = future.result()
+        except Exception as error:  # noqa: B902  the service raised, report it to the client
+            self.ack(cid, False, f'{name} failed: {error}')
+            return
         ok = bool(result and getattr(result, 'success', True))
         if ok and name in ('record_start', 'record_stop'):
             self._state['recording'] = name == 'record_start'
@@ -330,8 +399,22 @@ class TeleopUdpNode(Node):
         """Return recorded route files under routes_dir, newest first."""
         found = []
         for root, _, files in os.walk(self._routes_dir):
-            found += [os.path.join(root, f) for f in files if f.endswith('.csv')]
-        return sorted(found, key=os.path.getmtime, reverse=True)[:50]
+            for name in files:
+                if name.endswith('.csv'):
+                    path = os.path.join(root, name)
+                    try:
+                        found.append((os.path.getmtime(path), path))
+                    except OSError:  # deleted while listing
+                        continue
+        return [path for _, path in sorted(found, reverse=True)[:50]]
+
+    def route_path(self, file) -> str:
+        """Resolve a route file from the client; only files under routes_dir may be loaded."""
+        root = os.path.realpath(self._routes_dir)
+        path = os.path.realpath(os.path.join(root, str(file)))
+        if not str(file) or os.path.commonpath([root, path]) != root:
+            raise ValueError(f'route must be a file under {self._routes_dir}')
+        return path
 
     # ------------------------------------------------------------------ telemetry
 
