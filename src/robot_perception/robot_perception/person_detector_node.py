@@ -4,6 +4,7 @@ import time
 from geometry_msgs.msg import Pose, PoseArray
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -138,12 +139,14 @@ def main(args=None):
     node = PersonDetectorNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

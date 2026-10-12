@@ -13,5 +13,6 @@ fleet_uplink_node:
     crowd_cell_size: 1.0              # m, heatmap grid in the map frame
     crowd_window_sec: 60.0            # one crowd sample per window (peak people per cell)
     anomaly_topic: /anomaly_detector/result
-    anomaly_image_topic: /camera/camera/color/image_raw/compressed
+    anomaly_image_topic: /camera/camera/color/image_raw/compressed   # fallback frame
+    anomaly_evidence_topic: /anomaly_detector/evidence   # the frame each result was detected in
     anomaly_min_confidence: 0.5

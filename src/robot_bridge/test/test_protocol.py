@@ -37,6 +37,23 @@ def test_voxel_downsample_caps_points():
     assert protocol.voxel_downsample(xyz, 0.1, 1000).shape[0] == 1000
 
 
+def test_clamp_axis_rejects_garbage():
+    """NaN, inf, strings and bools never turn into a speed; numbers are clamped."""
+    assert protocol.clamp_axis(0.4, 1.0) == 0.4
+    assert protocol.clamp_axis(5.0, 1.0) == 1.0
+    assert protocol.clamp_axis(-5.0, 1.0) == -1.0
+    assert protocol.clamp_axis('0.3', 1.0) == 0.3
+    for bad in (float('nan'), float('inf'), float('-inf'), None, 'fast', [1], {}, True):
+        assert protocol.clamp_axis(bad, 1.0) == 0.0
+
+
+def test_decode_json_needs_an_object_with_a_type():
+    """Only JSON objects with a 't' field are messages."""
+    assert protocol.decode_json(b'{"t": "ping"}') == {'t': 'ping'}
+    for bad in (b'', b'\xff\xfe', b'[1, 2]', b'{"x": 1}', b'not json'):
+        assert protocol.decode_json(bad) is None
+
+
 def test_discovery_beacon_and_seq():
     """A discover probe gets a beacon without the token; states carry an increasing seq."""
     import socket

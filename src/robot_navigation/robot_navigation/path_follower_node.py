@@ -7,7 +7,7 @@ from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.duration import Duration
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from rclpy.time import Time
@@ -174,6 +174,8 @@ class PathFollowerNode(Node):
         self._dwell_start_time = None
         self._inspection_pending = 0
         self._inspection_results: list[str] = []
+        self._inspection_index = None
+        self._inspection_round = 0
         self._lap = 0
         self._last_status = 'NAV_INACTIVE'
 
@@ -250,6 +252,14 @@ class PathFollowerNode(Node):
         self.create_timer(
             1.0 / self._control_rate, self.control_loop, callback_group=self._loop_group
         )
+
+    def destroy_node(self):
+        """Stop the TF listener's spin thread while the context is still valid, then destroy."""
+        executor = getattr(self._tf_listener, 'executor', None)
+        if executor is not None:
+            executor.shutdown(timeout_sec=2.0)
+            self._tf_listener.dedicated_listener_thread.join(timeout=2.0)
+        super().destroy_node()
 
     def declare_params(self):
         """Declare the general parameters and every controller's namespaced parameters."""
@@ -506,13 +516,21 @@ class PathFollowerNode(Node):
         return response
 
     def battery_callback(self, msg: BatteryState):
-        """Flag low battery so the patrol ends at the end of the current lap."""
-        low = 0.0 <= msg.percentage < self._low_battery
-        if low and not self._battery_low:
-            self.get_logger().warn(
-                f'battery {msg.percentage * 100:.0f}%, finishing this lap and stopping'
-            )
-        self._battery_low = self._battery_low or low
+        """
+        Flag low battery so the patrol ends after this lap; clear it again once charged.
+
+        Unknown readings (NaN, outside 0..1) are ignored. The flag clears only 5 % above the
+        threshold so a sagging battery does not toggle it.
+        """
+        pct = msg.percentage
+        if not 0.0 <= pct <= 1.0:
+            return
+        if pct < self._low_battery and not self._battery_low:
+            self._battery_low = True
+            self.get_logger().warn(f'battery {pct * 100:.0f}%, finishing this lap and stopping')
+        elif self._battery_low and pct >= self._low_battery + 0.05:
+            self._battery_low = False
+            self.get_logger().info(f'battery {pct * 100:.0f}%, patrol may loop again')
 
     def publish_mission_status(self):
         """Publish a 1 Hz mission summary for dashboards."""
@@ -559,8 +577,11 @@ class PathFollowerNode(Node):
     def publish_status(self, stamp, status, message):
         """Publish NavigationStatus, logging once per state transition."""
         if status != self._last_status:
-            log = self.get_logger().warn if status in self._WARN_STATES else self.get_logger().info
-            log(f'[{status}] {message}')
+            # one call site per severity: rclpy raises if a call site changes its severity
+            if status in self._WARN_STATES:
+                self.get_logger().warn(f'[{status}] {message}')
+            else:
+                self.get_logger().info(f'[{status}] {message}')
         self._last_status = status
         msg = NavigationStatus()
         msg.header.stamp = stamp
@@ -730,20 +751,25 @@ class PathFollowerNode(Node):
                 )
         self._route_markers_pub.publish(markers)
 
-    def publish_stop_event(self, event: str, message: str = ''):
-        """Publish a StopPointEvent for the current stop point."""
-        x, y, yaw_deg, dwell = self._waypoints[self._next_stop_index]
+    def publish_stop_event(self, event: str, message: str = '', index=None):
+        """Publish a StopPointEvent for the current (or the given) stop point."""
+        index = self._next_stop_index if index is None else index
+        if index is None or index >= len(self._waypoints):
+            return
+        x, y, yaw_deg, dwell = self._waypoints[index]
         msg = StopPointEvent()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'map'
-        msg.index = self._next_stop_index
+        msg.index = index
         msg.x, msg.y, msg.yaw_deg, msg.dwell_sec = float(x), float(y), float(yaw_deg), float(dwell)
         msg.event = event
         msg.message = message
         self._stop_event_pub.publish(msg)
 
     def start_inspection(self):
-        """Fire every inspection Trigger service asynchronously."""
+        """Fire every inspection Trigger service asynchronously for the current stop."""
+        self._inspection_round += 1
+        self._inspection_index = self._next_stop_index
         self._inspection_results = []
         self._inspection_pending = 0
         for client in self._inspection_clients:
@@ -752,17 +778,31 @@ class PathFollowerNode(Node):
                 continue
             self._inspection_pending += 1
             future = client.call_async(Trigger.Request())
-            future.add_done_callback(lambda f, name=client.srv_name: self.inspection_done(name, f))
+            future.add_done_callback(
+                lambda f, name=client.srv_name, r=self._inspection_round: self.inspection_done(
+                    name, f, r
+                )
+            )
 
-    def inspection_done(self, name: str, future):
-        """Collect one inspection result."""
-        result = future.result()
+    def inspection_done(self, name: str, future, round_id: int):
+        """Collect one inspection result; answers for an earlier stop are dropped."""
+        if round_id != self._inspection_round:
+            self.get_logger().warn(f'{name} answered after the robot left the stop, ignored')
+            return
+        try:
+            result = future.result()
+        except Exception as error:  # noqa: B902  a failed service is a failed inspection
+            result, error_text = None, str(error)
+        else:
+            error_text = ''
         verdict = 'ok' if result and result.success else 'fail'
-        text = f'{name}: {verdict} {result.message if result else ""}'
-        self._inspection_results.append(text.strip())
+        detail = result.message if result else error_text
+        self._inspection_results.append(f'{name}: {verdict} {detail}'.strip())
         self._inspection_pending = max(0, self._inspection_pending - 1)
-        if self._inspection_pending == 0 and self._next_stop_index is not None:
-            self.publish_stop_event('inspected', ' | '.join(self._inspection_results))
+        if self._inspection_pending == 0:
+            self.publish_stop_event(
+                'inspected', ' | '.join(self._inspection_results), self._inspection_index
+            )
 
     def run_approaching(self, pose: Pose2D, stamp):
         """Converge onto the target x, y, yaw, then dwell (stop point) or hold (route end)."""
@@ -848,6 +888,7 @@ class PathFollowerNode(Node):
                 'inspected', 'timeout: ' + ' | '.join(self._inspection_results)
             )
             self._inspection_pending = 0
+            self._inspection_round += 1  # late answers belong to this stop, drop them
         self.publish_stop_event('departed')
         self._follower_state = 'FOLLOWING'
         self._next_stop_index = self.find_next_stop_index(self._next_stop_index + 1)
@@ -1042,12 +1083,14 @@ def main(args=None):
     executor.add_node(node)
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

@@ -12,12 +12,13 @@ import time
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseArray
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
 from robot_fleet.anomaly import parse_result
 from robot_fleet.crowd import CrowdAggregator
-from robot_fleet.routes import summarize_csv
+from robot_fleet.routes import safe_route_id, summarize_csv
 from robot_fleet.spool import Spool
 from robot_interfaces.msg import MissionStatus, NavigationStatus, StopPointEvent
 from robot_interfaces.srv import LoadPath
@@ -56,6 +57,7 @@ class FleetUplinkNode(Node):
             'crowd_window_sec': 60.0,
             'anomaly_topic': '/anomaly_detector/result',
             'anomaly_image_topic': '/camera/camera/color/image_raw/compressed',
+            'anomaly_evidence_topic': '/anomaly_detector/evidence',
             'anomaly_min_confidence': 0.5,
         }
         for name, value in defaults.items():
@@ -85,6 +87,8 @@ class FleetUplinkNode(Node):
         self._lap = 0
         self._stop_index = None
         self._last_image = (0.0, b'')
+        self._evidence: deque = deque(maxlen=10)  # (stamp key, jpeg) from the detector
+        self._pending_anomalies: list = []  # (deadline, result, evidence key)
 
         self._incoming: queue.Queue = queue.Queue()
         self._outbox: deque = deque(maxlen=500)
@@ -96,10 +100,13 @@ class FleetUplinkNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self.make_clients()
-        self.make_subscriptions(p('anomaly_topic'), p('anomaly_image_topic'))
+        self.make_subscriptions(
+            p('anomaly_topic'), p('anomaly_image_topic'), p('anomaly_evidence_topic')
+        )
         self.create_timer(1.0 / float(p('telemetry_hz')), self.send_telemetry)
         self.create_timer(0.1, self.drain_incoming)
         self.create_timer(5.0, self.flush_crowd)
+        self.create_timer(0.25, self.flush_anomalies)
 
         if self._base_url:
             threading.Thread(target=self.ws_loop, daemon=True).start()
@@ -119,7 +126,7 @@ class FleetUplinkNode(Node):
         self._pause = self.create_client(SetBool, 'navigation/pause')
         self._localize = self.create_client(Trigger, 'localization/start')
 
-    def make_subscriptions(self, anomaly_topic: str, image_topic: str):
+    def make_subscriptions(self, anomaly_topic: str, image_topic: str, evidence_topic: str):
         """Subscribe to state, events, people, routes and anomalies."""
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(NavigationStatus, 'navigation/status', self.on_nav_status, 10)
@@ -138,6 +145,8 @@ class FleetUplinkNode(Node):
             self.create_subscription(
                 CompressedImage, image_topic, self.on_image, qos_profile_sensor_data
             )
+        if evidence_topic:
+            self.create_subscription(CompressedImage, evidence_topic, self.on_evidence, 10)
 
     # ------------------------------------------------------------------ connection
 
@@ -228,40 +237,53 @@ class FleetUplinkNode(Node):
         urls = {'anomaly': '/api/v1/robot/anomalies', 'route': '/api/v1/robot/routes'}
         types = {'.jpg': 'image/jpeg', '.csv': 'text/csv'}
         while self._running:
-            for item in self._spool.items():
-                kind, meta, files = Spool.load(item)
-                multipart = {
-                    name: (
-                        name,
-                        data,
-                        types.get(os.path.splitext(name)[1], 'application/octet-stream'),
-                    )
-                    for name, data in files.items()
-                }
-                try:
-                    reply = requests.post(
-                        self._base_url + urls[kind],
-                        headers=self.headers(),
-                        data={'meta': json.dumps(meta)},
-                        files=multipart,
-                        timeout=20,
-                        verify=self._verify,
-                    )
-                except Exception as error:  # noqa: B902
-                    self.get_logger().warn(f'upload failed: {error}', throttle_duration_sec=30.0)
-                    break
-                if reply.status_code < 300 or reply.status_code == 409:
-                    Spool.remove(item)
-                elif reply.status_code in (400, 413, 422):
-                    self.get_logger().error(f'{kind} {meta.get("uid")} rejected: {reply.text}')
-                    Spool.remove(item)
-                else:
-                    break
+            try:
+                self.upload_pending(requests, urls, types)
+            except Exception as error:  # noqa: B902  keep the uploader alive whatever happens
+                self.get_logger().error(f'upload loop: {error!r}', throttle_duration_sec=30.0)
             time.sleep(period)
+
+    def upload_pending(self, requests, urls: dict, types: dict):
+        """Upload every spooled item once, oldest first; stop at the first transient failure."""
+        for item in self._spool.items():
+            try:
+                kind, meta, files = Spool.load(item)
+                url = self._base_url + urls[kind]
+            except (OSError, KeyError, ValueError) as error:
+                self.get_logger().error(f'unreadable spool item {item} ({error}), quarantined')
+                self._spool.quarantine(item)
+                continue
+            multipart = {
+                name: (
+                    name,
+                    data,
+                    types.get(os.path.splitext(name)[1], 'application/octet-stream'),
+                )
+                for name, data in files.items()
+            }
+            try:
+                reply = requests.post(
+                    url,
+                    headers=self.headers(),
+                    data={'meta': json.dumps(meta)},
+                    files=multipart,
+                    timeout=20,
+                    verify=self._verify,
+                )
+            except Exception as error:  # noqa: B902
+                self.get_logger().warn(f'upload failed: {error}', throttle_duration_sec=30.0)
+                return
+            if reply.status_code < 300 or reply.status_code == 409:
+                Spool.remove(item)
+            elif reply.status_code in (400, 413, 422):
+                self.get_logger().error(f'{kind} {meta.get("uid")} rejected: {reply.text}')
+                Spool.remove(item)
+            else:
+                return
 
     # ------------------------------------------------------------------ state
 
-    def context(self) -> dict:
+    def patrol_context(self) -> dict:
         """Return the patrol context attached to events."""
         return {
             'patrol_id': (self._patrol or {}).get('patrol_id'),
@@ -286,7 +308,7 @@ class FleetUplinkNode(Node):
                 'type': 'telemetry',
                 'pose': self.pose(),
                 'patrol': self._patrol,
-                **self.context(),
+                **self.patrol_context(),
                 **self._state,
             }
         )
@@ -304,7 +326,7 @@ class FleetUplinkNode(Node):
                     'state': msg.state,
                     'message': msg.message,
                     'pose': self.pose(),
-                    **self.context(),
+                    **self.patrol_context(),
                 },
                 durable=True,
             )
@@ -333,7 +355,7 @@ class FleetUplinkNode(Node):
                 'x': msg.x,
                 'y': msg.y,
                 'yaw_deg': msg.yaw_deg,
-                **self.context(),
+                **self.patrol_context(),
             },
             durable=True,
         )
@@ -380,42 +402,70 @@ class FleetUplinkNode(Node):
         """Send a finished crowd window."""
         snapshot = self._crowd.flush(time.time())
         if snapshot:
-            self.send({'type': 'crowd', **snapshot, **self.context()}, durable=True)
+            self.send({'type': 'crowd', **snapshot, **self.patrol_context()}, durable=True)
 
     def on_image(self, msg: CompressedImage):
         """Keep the latest camera frame for anomaly snapshots."""
         self._last_image = (time.time(), bytes(msg.data))
 
+    def on_evidence(self, msg: CompressedImage):
+        """Keep the frames the detector analysed, keyed by their camera stamp."""
+        key = f'{msg.header.stamp.sec}.{msg.header.stamp.nanosec:09d}'
+        self._evidence.append((key, bytes(msg.data)))
+        self.flush_anomalies()
+
     def on_anomaly(self, msg: String):
-        """Spool an anomaly with the latest frame and the robot pose."""
+        """Queue an anomaly until the frame it was detected in has arrived (or 1 s passed)."""
         result = parse_result(msg.data)
         if result is None or result['confidence'] < self._min_confidence:
             return
-        stamp, jpeg = self._last_image
-        if not jpeg or time.time() - stamp > 3.0:
-            self.get_logger().warn('anomaly without a recent camera frame, skipped')
-            return
+        try:
+            key = json.loads(msg.data).get('evidence_stamp')
+        except (ValueError, AttributeError):
+            key = None
         meta = {
             **result,
-            **self.context(),
+            **self.patrol_context(),
             'pose': self.pose(),
             'stop_index': self._stop_index,
             'detector': 'robot',
         }
-        uid = self._spool.put('anomaly', meta, {'image.jpg': jpeg})
-        self.get_logger().info(f'anomaly {result["category"]} spooled ({uid})')
+        self._pending_anomalies.append((time.monotonic() + 1.0, meta, key))
+        self.flush_anomalies()
+
+    def flush_anomalies(self):
+        """Spool queued anomalies with their evidence frame, or the latest frame as a fallback."""
+        evidence = dict(self._evidence)
+        waiting = []
+        for deadline, meta, key in self._pending_anomalies:
+            jpeg = evidence.get(key) if key else None
+            if jpeg is None and key and time.monotonic() < deadline:
+                waiting.append((deadline, meta, key))
+                continue
+            if jpeg is None:
+                stamp, jpeg = self._last_image
+                if not jpeg or time.time() - stamp > 3.0:
+                    self.get_logger().warn('anomaly without a recent camera frame, skipped')
+                    continue
+                meta['evidence'] = 'latest_frame'
+            else:
+                meta['evidence'] = 'analysed_frame'
+            uid = self._spool.put('anomaly', meta, {'image.jpg': jpeg})
+            self.get_logger().info(f'anomaly {meta["category"]} spooled ({uid})')
+        self._pending_anomalies = waiting
 
     def on_route_saved(self, msg: String):
         """Spool a freshly recorded route for the route database."""
         try:
             with open(msg.data, 'rb') as f:
                 data = f.read()
+            recorded_at = os.path.getmtime(msg.data)
         except OSError as error:
             self.get_logger().error(f'cannot read route {msg.data}: {error}')
             return
         meta = {
             'name': os.path.splitext(os.path.basename(msg.data))[0],
-            'recorded_at': os.path.getmtime(msg.data),
+            'recorded_at': recorded_at,
             'source_path': msg.data,
             **summarize_csv(data.decode(errors='ignore')),
         }
@@ -426,7 +476,8 @@ class FleetUplinkNode(Node):
     def patrol_event(self, event: str, **extra):
         """Report a patrol lifecycle event."""
         self.send(
-            {'type': 'patrol_event', 'event': event, **extra, **self.context()}, durable=True
+            {'type': 'patrol_event', 'event': event, **extra, **self.patrol_context()},
+            durable=True,
         )
 
     def ack(self, cid, ok: bool, msg: str):
@@ -461,7 +512,11 @@ class FleetUplinkNode(Node):
             return
 
         def done(future):
-            result = future.result()
+            try:
+                result = future.result()
+            except Exception as error:  # noqa: B902  report the failure instead of raising
+                self.ack(cid, False, f'{client.srv_name} failed: {error}')
+                return
             ok = bool(result and getattr(result, 'success', True))
             text = getattr(result, 'message', '') if result else 'no response'
             if ok and then:
@@ -476,6 +531,9 @@ class FleetUplinkNode(Node):
         import requests
 
         route_id = args.get('route_id')
+        if not safe_route_id(route_id):
+            self.ack(cid, False, f'invalid route_id {route_id!r}')
+            return
         path = os.path.join(self._routes_dir, 'command_center', f'{route_id}.csv')
         try:
             reply = requests.get(
@@ -521,13 +579,15 @@ def main(args=None):
     node = FleetUplinkNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.shutdown()
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

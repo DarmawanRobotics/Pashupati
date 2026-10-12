@@ -167,3 +167,33 @@ def velocity_profile(
         ds = math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1])
         v[i] = min(v[i], math.sqrt(v[i + 1] ** 2 + 2.0 * decel * ds))
     return v
+
+
+def parse_route_rows(rows) -> tuple[list[Waypoint], list[str]]:
+    """
+    Parse route CSV rows (x, y[, yaw_deg[, dwell_sec]]) into waypoints.
+
+    Comments and blank rows are skipped. A row that is not numeric, or holds NaN or infinity, is
+    dropped and reported: it would steer the robot nowhere. A negative dwell is reported and read
+    as 0 (no stop).
+    """
+    waypoints, problems = [], []
+    for line_no, row in enumerate(rows, start=1):
+        if not row or not row[0].strip() or row[0].strip().startswith('#'):
+            continue
+        try:
+            values = [float(v) for v in row[:4]]
+            x, y = values[0], values[1]
+        except (ValueError, IndexError):
+            problems.append(f'line {line_no}: not a waypoint: {row}')
+            continue
+        yaw_deg = values[2] if len(values) > 2 else 0.0
+        dwell_sec = values[3] if len(values) > 3 else 0.0
+        if not all(math.isfinite(v) for v in (x, y, yaw_deg, dwell_sec)):
+            problems.append(f'line {line_no}: not finite: {row}')
+            continue
+        if dwell_sec < 0.0:
+            problems.append(f'line {line_no}: negative dwell {dwell_sec:g} s, not a stop')
+            dwell_sec = 0.0
+        waypoints.append((x, y, yaw_deg, dwell_sec))
+    return waypoints, problems

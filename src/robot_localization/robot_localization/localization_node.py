@@ -8,6 +8,7 @@ from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 import numpy as np
 import rclpy
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
@@ -101,18 +102,38 @@ class LocalizationNode(Node):
         self.get_logger().info(f'localization_node ready with {len(self._tag_poses)} tag(s)')
 
     def load_tag_poses(self, filepath: str) -> dict:
-        """Load a {tag_frame: {x,y,z,qx,qy,qz,qw}} JSON file into tag_frame -> 4x4 matrix."""
+        """
+        Load a {tag_frame: {x,y,z,qx,qy,qz,qw}} JSON file into tag_frame -> 4x4 matrix.
+
+        A missing file is normal before the first teach (localization/record_tags creates it);
+        a broken file or entry is reported and skipped instead of crashing the node.
+        """
         if not filepath:
             self.get_logger().warn('tags_config_file not set, AprilTag localization disabled')
             return {}
-        with open(filepath, 'r') as f:
-            raw = json.load(f)
-        return {
-            frame: pose_values_to_matrix(
-                [v['x'], v['y'], v['z'], v['qx'], v['qy'], v['qz'], v['qw']]
+        try:
+            with open(filepath, 'r') as f:
+                raw = json.load(f)
+        except FileNotFoundError:
+            self.get_logger().warn(
+                f'{filepath} does not exist yet, record tags with localization/record_tags'
             )
-            for frame, v in raw.items()
-        }
+            return {}
+        except (OSError, ValueError) as error:
+            self.get_logger().error(f'cannot read tag poses from {filepath}: {error}')
+            return {}
+        if not isinstance(raw, dict):
+            self.get_logger().error(f'{filepath} must be a JSON object of tag poses')
+            return {}
+        poses = {}
+        for frame, v in raw.items():
+            try:
+                poses[frame] = pose_values_to_matrix(
+                    [float(v[k]) for k in ('x', 'y', 'z', 'qx', 'qy', 'qz', 'qw')]
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                self.get_logger().error(f'{filepath}: tag "{frame}" skipped ({error})')
+        return poses
 
     def try_start_bridge(self):
         """Wait for base_link->imu from the URDF, then publish the static frame bridge once."""
@@ -196,6 +217,14 @@ class LocalizationNode(Node):
             self._tag_poses[frame], transform_to_matrix(base_cam), transform_to_matrix(cam_tag)
         )
         return map_odom_from_map_base(m_map_base, transform_to_matrix(odom_base)), frame
+
+    def destroy_node(self):
+        """Stop the TF listener's spin thread while the context is still valid, then destroy."""
+        executor = getattr(self._tf_listener, 'executor', None)
+        if executor is not None:
+            executor.shutdown(timeout_sec=2.0)
+            self._tf_listener.dedicated_listener_thread.join(timeout=2.0)
+        super().destroy_node()
 
     def localization_callback(self, request, response):
         """Service: set map->odom from whichever configured tag is currently visible."""
@@ -355,12 +384,14 @@ def main(args=None):
     node = LocalizationNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

@@ -1,6 +1,14 @@
 import csv
 import io
 import math
+import re
+
+ROUTE_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')
+
+
+def safe_route_id(route_id) -> bool:
+    """Return True for ids that are safe as a file name (no paths, no dot files)."""
+    return isinstance(route_id, (str, int)) and bool(ROUTE_ID_RE.match(str(route_id)))
 
 
 def summarize_csv(text: str) -> dict:

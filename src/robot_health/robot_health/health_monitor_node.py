@@ -5,6 +5,7 @@ import time
 
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from robot_health.checks import (
@@ -127,12 +128,14 @@ def main(args=None):
     node = HealthMonitorNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

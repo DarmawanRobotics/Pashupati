@@ -6,11 +6,12 @@ import os
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from robot_interfaces.msg import Waypoint, WaypointPath
 from robot_interfaces.srv import LoadPath
-from robot_navigation.utils.path_processing import process_route
+from robot_navigation.utils.path_processing import parse_route_rows, process_route
 
 
 class PathLoaderNode(Node):
@@ -57,23 +58,18 @@ class PathLoaderNode(Node):
         self.create_service(LoadPath, 'navigation/load_path', self.load_path_callback)
 
     def read_csv(self, filepath: str) -> list:
-        """Read x,y,yaw_deg[,dwell_sec] rows, skipping comments, blanks and malformed lines."""
+        """Read x,y,yaw_deg[,dwell_sec] rows; bad rows are skipped and logged."""
         if not filepath or not os.path.isfile(filepath):
             self.get_logger().warn(f'waypoints_file not found: "{filepath}"')
             return []
-        waypoints = []
-        with open(filepath, 'r') as f:
-            for line_no, row in enumerate(csv.reader(f), start=1):
-                if not row or row[0].strip().startswith('#'):
-                    continue
-                try:
-                    x, y = float(row[0]), float(row[1])
-                    yaw_deg = float(row[2]) if len(row) > 2 else 0.0
-                    dwell_sec = float(row[3]) if len(row) > 3 else 0.0
-                except ValueError:
-                    self.get_logger().warn(f'{filepath}:{line_no} skipped malformed row {row}')
-                    continue
-                waypoints.append((x, y, yaw_deg, dwell_sec))
+        try:
+            with open(filepath, 'r', newline='') as f:
+                waypoints, problems = parse_route_rows(csv.reader(f))
+        except (OSError, UnicodeDecodeError, csv.Error) as error:
+            self.get_logger().error(f'cannot read {filepath}: {error}')
+            return []
+        for problem in problems:
+            self.get_logger().warn(f'{filepath}: {problem}')
         return waypoints
 
     def load(self, filepath: str) -> bool:
@@ -169,12 +165,14 @@ def main(args=None):
     node = PathLoaderNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
+        try:
             rclpy.shutdown()
+        except Exception:  # noqa: B902  already shut down by the SIGINT handler
+            pass
 
 
 if __name__ == '__main__':

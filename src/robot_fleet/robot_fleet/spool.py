@@ -46,3 +46,12 @@ class Spool:
     def remove(item: str) -> None:
         """Delete an item after a successful upload."""
         shutil.rmtree(item, ignore_errors=True)
+
+    def quarantine(self, item: str) -> None:
+        """Move an unreadable item to .failed/ so it stops blocking the queue (kept for review)."""
+        failed = os.path.join(self.root, '.failed')
+        os.makedirs(failed, exist_ok=True)
+        try:
+            os.rename(item, os.path.join(failed, os.path.basename(item)))
+        except OSError:
+            shutil.rmtree(item, ignore_errors=True)
