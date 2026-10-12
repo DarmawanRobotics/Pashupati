@@ -1,0 +1,30 @@
+# Per-robot site configuration: copy to /etc/pashupati/site.yaml (SITE_CONFIG in the env file).
+# A normal ROS 2 parameter file keyed by node name, applied on top of every package default, so
+# tuning for one mall or one robot never needs a change in the repository. Unknown node names are
+# reported at start; a broken file stops the launch.
+
+path_follower_node:
+  ros__parameters:
+    target_linear_velocity: 0.35      # m/s, cruise speed for this site
+    low_battery_percentage: 0.25
+
+obstacle_avoidance_node:
+  ros__parameters:
+    safe_distance: 1.5
+    emergency_distance: 0.75
+
+teleop_udp_node:
+  ros__parameters:
+    token: "change-me"                # shared secret with the handheld
+
+fleet_uplink_node:
+  ros__parameters:
+    robot_id: l1w-01                  # ROBOT_ID in the env file wins when set
+
+# lidar_sector_node:
+#   ros__parameters:
+#     obstacle_z_min: -0.25           # measure on this robot: -(height of base_link) + 0.10
+
+# fastlio_mapping_node:
+#   ros__parameters:
+#     point_filter_num: 3             # weaker computer: keep fewer points

@@ -83,7 +83,7 @@ flowchart LR
 | [`robot_inspection`](src/robot_inspection) | Moondream anomaly detection at stop points |
 | [`robot_health`](src/robot_health) | sensor-rate and computer health |
 | [`robot_rviz`](src/robot_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
-| [`pashupati_bringup`](src/pashupati_bringup) | production launch with respawning nodes |
+| [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, site configuration |
 
 ## Install on the robot
 
@@ -92,12 +92,13 @@ git clone --recursive https://github.com/DarmawanRobotics/Pashupati.git ~/dev/Pa
 cd ~/dev/Pashupati
 script/setup.sh                 # what is installed / missing
 script/setup.sh install         # tools, submodules, Livox-SDK2, zsibot SDK, rosdep, udev, Ollama + moondream, build
-script/setup.sh install service # systemd service, /etc/pashupati/pashupati.env
-sudoedit /etc/pashupati/pashupati.env   # route, tags, NETRA url + token
+script/setup.sh install service # systemd service, /etc/pashupati/pashupati.env + site.yaml
+sudoedit /etc/pashupati/pashupati.env   # robot id, route, tags, NETRA url + token
+sudoedit /etc/pashupati/site.yaml       # per-robot tuning (speeds, teleop token, ...)
 sudo systemctl start pashupati && journalctl -fu pashupati
 ```
 
-The service runs `pashupati_bringup/robot.launch.py` (`script/run_robot.sh`) with
+The service runs `ros2 launch pashupati robot.launch.py` (`script/run_robot.sh`) with
 `Restart=always`; every Pashupati node respawns on its own, the last loaded route is reloaded after a
 restart. Person detection needs Ultralytics and a TensorRT engine (`script/setup.sh install
 people_model` prints the Jetson steps) or `PEOPLE=false`.
@@ -257,7 +258,7 @@ Pashupati/
 ├── map/                          # recorded routes + example/
 ├── script/                       # setup.sh, run_robot.sh (service), start_tmux.sh (dev), dev.sh
 └── src/
-    ├── robot_* pashupati_bringup # first-party packages
+    ├── robot_* pashupati         # first-party packages
     └── xtras/                    # submodules: genisom_l1w_ros2, livox_ros_driver2, realsense-ros, FAST_LIO, Leg-KILO
 ```
 

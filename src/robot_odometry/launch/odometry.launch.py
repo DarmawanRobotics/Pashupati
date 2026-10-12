@@ -41,10 +41,12 @@ def launch_setup(context):
     save_map = truthy(arg('save_map'))
     respawn = truthy(arg('respawn'))
     params = arg('params_file')
+    site = [arg('site_config')] if os.path.isfile(arg('site_config')) else []
     lib = os.path.join(get_package_prefix('robot_odometry'), 'lib', 'robot_odometry')
     gate = os.path.join(lib, 'wait_still')
     # FAST-LIO and Leg-KILO both estimate gravity/biases at start: hold them until still.
-    prefix = f'{gate} --params-file {params} --' if truthy(arg('wait_still')) else None
+    gate_params = ''.join(f'--params-file {p} ' for p in (params, *site))
+    prefix = f'{gate} {gate_params}--' if truthy(arg('wait_still')) else None
     common = {'output': 'screen', 'respawn': respawn, 'respawn_delay': 3.0}
 
     if method == 'fast_lio':
@@ -52,7 +54,7 @@ def launch_setup(context):
             package='fast_lio',
             executable='fastlio_mapping',
             name='fastlio_mapping_node',
-            parameters=[arg('fast_lio_params_file'), {'pcd_save.pcd_save_en': save_map}],
+            parameters=[arg('fast_lio_params_file'), *site, {'pcd_save.pcd_save_en': save_map}],
             prefix=prefix,
             **common,
         )
@@ -73,7 +75,7 @@ def launch_setup(context):
             package='robot_odometry',
             executable='odometry_monitor_node',
             name='odometry_monitor_node',
-            parameters=[params, {'leg_odom_topic': arg('leg_odom_topic')}],
+            parameters=[params, *site, {'leg_odom_topic': arg('leg_odom_topic')}],
             **common,
         ),
     ]
@@ -83,7 +85,7 @@ def launch_setup(context):
                 package='robot_odometry',
                 executable='route_recorder_node',
                 name='route_recorder_node',
-                parameters=[params],
+                parameters=[params, *site],
                 **common,
             )
         )
@@ -132,6 +134,11 @@ def generate_launch_description():
                 description='Also start localization_node (map->odom, frame bridge).',
             ),
             DeclareLaunchArgument('tags_config_file', default_value=''),
+            DeclareLaunchArgument(
+                'site_config',
+                default_value='',
+                description='Extra parameter file applied on top of the defaults (if it exists).',
+            ),
             DeclareLaunchArgument(
                 'leg_odom_topic', default_value='/l1w/odom', description='"" disables the check'
             ),

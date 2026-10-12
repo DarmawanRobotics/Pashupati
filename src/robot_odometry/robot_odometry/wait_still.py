@@ -105,17 +105,18 @@ class StillGate(Node):
 
 
 def split_args(argv: list[str]) -> tuple[list[str], list[str]]:
-    """Split `[--params-file F] -- command...` into (rclpy args, command)."""
+    """Split `[--params-file F]... -- command...` into (rclpy args, command)."""
     if '--' not in argv:
-        raise SystemExit('usage: wait_still [--params-file FILE] -- COMMAND [ARGS...]')
+        raise SystemExit('usage: wait_still [--params-file FILE]... -- COMMAND [ARGS...]')
     i = argv.index('--')
     own, command = argv[:i], argv[i + 1:]
     if not command:
         raise SystemExit('wait_still: no command after --')
-    ros_args = []
-    if len(own) >= 2 and own[0] == '--params-file' and own[1]:
-        ros_args = ['--ros-args', '--params-file', own[1]]
-    return ros_args, command
+    files = [own[k + 1] for k in range(0, len(own) - 1, 2) if own[k] == '--params-file']
+    files = [f for f in files if f]
+    if not files:
+        return [], command
+    return ['--ros-args', *[a for f in files for a in ('--params-file', f)]], command
 
 
 def main(argv=None):
