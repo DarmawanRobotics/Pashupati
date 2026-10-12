@@ -18,7 +18,7 @@ from robot_bridge import protocol
 from robot_interfaces.msg import MissionStatus, NavigationStatus, WaypointPath
 from robot_interfaces.srv import LoadPath, MarkStopPoint, SetMode
 from sensor_msgs.msg import BatteryState, CompressedImage, Image, PointCloud2
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -120,6 +120,7 @@ class TeleopUdpNode(Node):
             'driver': None,
             'cmd': [0.0, 0.0, 0.0],
             'health': None,
+            'estop': False,
         }
         self._route: list = []
         self._extrinsics: dict = {}
@@ -168,6 +169,8 @@ class TeleopUdpNode(Node):
                 lambda a, v=value: SetBool.Request(data=v),
             )
 
+        estop = self.create_client(SetBool, 'bridge/estop')
+        self._estop_request_pub = self.create_publisher(String, 'bridge/estop_request', 10)
         start_nav = self.create_client(SetBool, 'navigation/start_nav')
         pause = self.create_client(SetBool, 'navigation/pause')
         record = self.create_client(SetBool, 'route/record')
@@ -177,6 +180,8 @@ class TeleopUdpNode(Node):
                 self.create_client(SetMode, 'bridge/set_mode'),
                 lambda a: SetMode.Request(mode=str(a.get('mode', 'auto'))),
             ),
+            'estop': (SetBool, estop, lambda a: SetBool.Request(data=True)),
+            'estop_release': (SetBool, estop, lambda a: SetBool.Request(data=False)),
             'nav_start': (SetBool, start_nav, lambda a: SetBool.Request(data=True)),
             'nav_stop': (SetBool, start_nav, lambda a: SetBool.Request(data=False)),
             'nav_pause': (SetBool, pause, lambda a: SetBool.Request(data=True)),
@@ -207,6 +212,7 @@ class TeleopUdpNode(Node):
         self.create_subscription(MissionStatus, 'navigation/mission_status', self.on_mission, 10)
         self.create_subscription(String, 'localization/status', self.on_localization, latched)
         self.create_subscription(String, 'bridge/mode', self.on_mode, latched)
+        self.create_subscription(Bool, 'bridge/estop_engaged', self.on_estop, latched)
         self.create_subscription(String, 'health/status', self.on_health, latched)
         self.create_subscription(WaypointPath, 'navigation/waypoints', self.on_route, latched)
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
@@ -350,6 +356,9 @@ class TeleopUdpNode(Node):
         if cid in self._acks:
             self.send_json(self._acks[cid])
             return
+        if name in ('estop', 'emergency_stop'):
+            # latch the software e-stop first, without waiting for any service
+            self._estop_request_pub.publish(String(data=f'handheld {name}'))
         if name == 'list_routes':
             self.ack(cid, True, '', self.list_routes())
             return
@@ -433,6 +442,10 @@ class TeleopUdpNode(Node):
     def on_mode(self, msg: String):
         """Cache the control mode."""
         self._state['mode'] = msg.data
+
+    def on_estop(self, msg: Bool):
+        """Cache the software e-stop state."""
+        self._state['estop'] = bool(msg.data)
 
     def on_health(self, msg: String):
         """Cache ok + issues of the health summary."""

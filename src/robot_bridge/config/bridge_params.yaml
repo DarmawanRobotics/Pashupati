@@ -2,7 +2,9 @@ control_mux_node:
   ros__parameters:
     mode: auto                        # auto (navigation drives) | remote (teleop drives)
     remote_timeout_sec: 0.3           # zero the robot when teleop goes silent
+    nav_timeout_sec: 0.5              # zero the robot when navigation goes silent in auto mode
     pause_nav_on_remote: true         # pause navigation while the remote drives
+    estop_hold_hz: 10.0               # zero commands per second while the e-stop is engaged
 
 teleop_udp_node:
   ros__parameters:

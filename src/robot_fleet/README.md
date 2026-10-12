@@ -11,8 +11,9 @@ an on-disk outbox for uploads, so a robot that loses Wi-Fi in the middle of a pa
 | Anomalies | anomaly detector JSON + the frame it was detected in (`anomaly_detector/evidence`, latest frame as fallback) + pose | HTTP upload, spooled |
 | Recorded routes | `route/saved` | HTTP upload, spooled |
 
-Commands from the server (`start_patrol`, `stop_patrol`, `pause`, `resume`, `localize`) run on the
-ROS thread and are acknowledged. The wire contract is [API.md](API.md).
+Commands from the server (`start_patrol`, `stop_patrol`, `pause`, `resume`, `localize`, `estop`,
+`estop_release`) run on the ROS thread and are acknowledged; an engaged e-stop is reported as an
+`ESTOP` alert. The wire contract is [API.md](API.md).
 
 ## Run
 

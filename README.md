@@ -145,7 +145,13 @@ ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: true}"
 
 ### Emergency stop
 
-Handheld **E-STOP** (screen or gamepad B), or `ros2 service call /l1w/emergency_stop std_srvs/srv/Trigger`.
+The software e-stop is latched in the control mux. Engage it from the handheld **E-STOP** (screen
+or gamepad B), from NETRA, or with
+`ros2 service call /bridge/estop std_srvs/srv/SetBool "{data: true}"`. While it is engaged, only
+zero velocity reaches the robot and navigation is paused. Release is explicit: `estop_release`
+from the handheld or NETRA, or `{data: false}`. After a release, navigation stays paused until an
+operator resumes it.
+The driver's own stop is `ros2 service call /l1w/emergency_stop std_srvs/srv/Trigger`.
 
 ## Patrol behaviour
 
@@ -159,7 +165,8 @@ Handheld **E-STOP** (screen or gamepad B), or `ros2 service call /l1w/emergency_
 | Inspection | VLM check at each stop, waits for the result, then dwells | `inspection_services`, `inspection_timeout_sec` |
 | Loop patrol | restarts closed routes, ends the lap on low battery | `loop_route`, `low_battery_percentage` |
 | Safety | stops on stale avoidance / odometry, e-stop hysteresis, `BLOCKED`, `OFF_PATH`, teleop watchdog | `*_timeout_sec`, `off_path_*` |
-| Control mux | AUTO (navigation) or REMOTE (handheld); remote pauses navigation | `bridge/set_mode` |
+| Control mux | AUTO (navigation) or REMOTE (handheld); remote pauses navigation; zero when the active source goes silent | `bridge/set_mode` |
+| Software e-stop | latched in the mux: only zero reaches the robot until an explicit release, navigation stays paused | `bridge/estop` |
 | Resilience | respawning nodes, supervised service, route remembered, uploads spooled offline | — |
 
 Every navigation and avoidance parameter applies live (**Tuning** panel or `ros2 param set`); save
@@ -187,6 +194,7 @@ the tuned values with **Save YAML**.
 | `/navigation/load_path` | `robot_interfaces/LoadPath` | path_loader_node |
 | `/navigation/start_nav`, `/navigation/pause` | `std_srvs/SetBool` | path_follower_node |
 | `/bridge/set_mode` | `robot_interfaces/SetMode` | control_mux_node |
+| `/bridge/estop` | `std_srvs/SetBool` (`true` engages, `false` releases) | control_mux_node |
 | `/anomaly_detector_node/check_now` | `std_srvs/Trigger` | anomaly_detector_node |
 | `/l1w/<command>` | `std_srvs/Trigger` | l1w_driver_node |
 
@@ -200,6 +208,8 @@ the tuned values with **Save YAML**.
 | `/l1w/cmd_vel` | `geometry_msgs/Twist` | control_mux_node |
 | `/bridge/nav_cmd_vel`, `/bridge/remote_cmd_vel` | `geometry_msgs/Twist` | path_follower_node, teleop_udp_node |
 | `/bridge/mode` | `std_msgs/String` (latched) | control_mux_node |
+| `/bridge/estop_engaged`, `/bridge/estop_reason` | `std_msgs/Bool`, `std_msgs/String` (latched) | control_mux_node |
+| `/bridge/estop_request` | `std_msgs/String` (reason) | any node: engages the e-stop |
 | `/odometry/status` | `std_msgs/String` (latched) | odometry_monitor_node |
 | `/odometry/restarted` | `std_msgs/Empty` | odometry_monitor_node |
 | `/localization/status` | `std_msgs/String` (latched) | localization_node |
