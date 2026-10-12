@@ -73,7 +73,8 @@ flowchart LR
 | Package | Role |
 |---|---|
 | [`robot_interfaces`](src/robot_interfaces) | messages and services |
-| [`robot_mapping`](src/robot_mapping) | FAST-LIO2 bringup, route recording |
+| [`robot_odometry`](src/robot_odometry) | FAST-LIO2 odometry: tuned config, stillness gate, odometry monitor |
+| [`robot_mapping`](src/robot_mapping) | route recording |
 | [`robot_localization`](src/robot_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
 | [`robot_perception`](src/robot_perception) | LiDAR sectors, AprilTag, person detection |
 | [`robot_navigation`](src/robot_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
@@ -196,6 +197,8 @@ the tuned values with **Save YAML**.
 | `/l1w/cmd_vel` | `geometry_msgs/Twist` | control_mux_node |
 | `/bridge/nav_cmd_vel`, `/bridge/remote_cmd_vel` | `geometry_msgs/Twist` | path_follower_node, teleop_udp_node |
 | `/bridge/mode` | `std_msgs/String` (latched) | control_mux_node |
+| `/odometry/status` | `std_msgs/String` (latched) | odometry_monitor_node |
+| `/odometry/restarted` | `std_msgs/Empty` | odometry_monitor_node |
 | `/localization/status` | `std_msgs/String` (latched) | localization_node |
 | `/navigation/waypoints` | `robot_interfaces/WaypointPath` (latched) | path_loader_node |
 | `/navigation/status`, `/navigation/mission_status`, `/navigation/stop_point_event` | robot_interfaces | path_follower_node |

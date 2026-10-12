@@ -8,7 +8,6 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 
 def config(package: str, name: str) -> str:
@@ -38,6 +37,9 @@ def generate_launch_description():
     nav = config('robot_navigation', 'navigation_params.yaml')
     perception = config('robot_perception', 'perception_params.yaml')
     mapping = config('robot_mapping', 'mapping_param.yaml')
+    odometry_launch = os.path.join(
+        get_package_share_directory('robot_odometry'), 'launch', 'odometry.launch.py'
+    )
     bridge = config('robot_bridge', 'bridge_params.yaml')
     on = lambda name: IfCondition(LaunchConfiguration(name))  # noqa: E731
 
@@ -78,19 +80,19 @@ def generate_launch_description():
         condition=on('sensors'),
     )
 
-    save_map = ParameterValue(
-        PythonExpression(["'", LaunchConfiguration('mode'), "' == 'mapping'"]), value_type=bool
+    odometry = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(odometry_launch),
+        launch_arguments={
+            'save_map': PythonExpression(
+                ["'", LaunchConfiguration('mode'), "' == 'mapping'"]
+            ),
+            'respawn': 'true',
+            'leg_odom_topic': topic('odom'),
+        }.items(),
     )
     image = '/camera/camera/color/image_raw'
 
     nodes = [
-        Node(
-            package='fast_lio',
-            executable='fastlio_mapping',
-            name='fastlio_mapping_node',
-            parameters=[mapping, {'pcd_save.pcd_save_en': save_map}],
-            **respawn,
-        ),
         node('robot_mapping', 'path_recorder_node', [mapping]),
         node(
             'robot_localization',
@@ -167,4 +169,4 @@ def generate_launch_description():
             on('health'),
         ),
     ]
-    return LaunchDescription([*args, sensors, *nodes])
+    return LaunchDescription([*args, sensors, odometry, *nodes])

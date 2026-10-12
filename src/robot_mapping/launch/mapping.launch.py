@@ -8,13 +8,15 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    """Launch FAST-LIO, the map->base_link frame bridge, and optional path recording."""
+    """Launch odometry (robot_odometry), the map->base_link frame bridge and path recording."""
     params_file = os.path.join(
         get_package_share_directory('robot_mapping'), 'config', 'mapping_param.yaml'
+    )
+    odometry_launch = os.path.join(
+        get_package_share_directory('robot_odometry'), 'launch', 'odometry.launch.py'
     )
     localization_launch = os.path.join(
         get_package_share_directory('robot_localization'), 'launch', 'localization.launch.py'
@@ -42,19 +44,17 @@ def generate_launch_description():
                 description='Accumulate and save the PCD map. Use false while patrolling: '
                 'FAST-LIO keeps every scan in RAM until shutdown.',
             ),
-            Node(
-                package='fast_lio',
-                executable='fastlio_mapping',
-                name='fastlio_mapping_node',
-                output='screen',
-                parameters=[
-                    LaunchConfiguration('params_file'),
-                    {
-                        'pcd_save.pcd_save_en': ParameterValue(
-                            LaunchConfiguration('save_map'), value_type=bool
-                        )
-                    },
-                ],
+            DeclareLaunchArgument(
+                'wait_still',
+                default_value='true',
+                description='Start FAST-LIO only once the robot stands still.',
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(odometry_launch),
+                launch_arguments={
+                    'save_map': LaunchConfiguration('save_map'),
+                    'wait_still': LaunchConfiguration('wait_still'),
+                }.items(),
             ),
             Node(
                 package='robot_mapping',

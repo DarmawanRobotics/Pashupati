@@ -504,6 +504,12 @@ class PathFollowerNode(Node):
         if msg.data != self._localization_source:
             self.get_logger().info(f'localization source: {msg.data}')
         self._localization_source = msg.data
+        lost = msg.data == 'none' and self._require_localization
+        if lost and self._nav_active and not self._paused:
+            # e.g. FAST-LIO restarted: the route is now in a different frame than the robot
+            self._paused = True
+            self.publish_stop(hard=True)
+            self.get_logger().error('localization lost, navigation paused until relocalized')
 
     def pause_callback(self, request, response):
         """Pause (hold position, keep progress) or resume navigation."""

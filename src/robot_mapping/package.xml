@@ -3,12 +3,11 @@
 <package format="3">
   <name>robot_mapping</name>
   <version>0.2.0</version>
-  <description>FAST-LIO2 mapping bringup and teach-and-repeat path recording, with inspection stop-point marking (mapping/mark_stop_point).</description>
+  <description>Teach-and-repeat path recording (odometry from robot_odometry), with inspection stop-point marking (mapping/mark_stop_point).</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
-  <exec_depend>livox_ros_driver2</exec_depend>
-  <exec_depend>fast_lio</exec_depend>
+  <exec_depend>robot_odometry</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>std_msgs</exec_depend>

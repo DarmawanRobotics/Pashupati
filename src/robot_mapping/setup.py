@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='FAST-LIO2 mapping and teach-and-repeat route recording with stop points',
+    description='Teach-and-repeat route recording with stop points',
     license='Apache-2.0',
     extras_require={
         'test': [

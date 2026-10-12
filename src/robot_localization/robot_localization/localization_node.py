@@ -22,7 +22,7 @@ from robot_localization.utils.pose_localization import (
     transform_to_matrix,
 )
 from robot_localization.utils.tag_recording import average_poses, describe_pose, merge_into_file
-from std_msgs.msg import String
+from std_msgs.msg import Empty, String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 import tf_transformations as tft
@@ -92,6 +92,8 @@ class LocalizationNode(Node):
         self.create_subscription(
             PoseWithCovarianceStamped, '/initialpose', self.pose_estimate_callback, 10
         )
+        self.create_subscription(Empty, 'odometry/restarted', self.odometry_restarted_callback, 10)
+        self._auto_timer = None
 
         self._bridge_timer = self.create_timer(0.5, self.try_start_bridge)
         self._auto_start = bool(p('auto_localize_on_start').value)
@@ -154,7 +156,25 @@ class LocalizationNode(Node):
             self._active_source = 'start position'
             self.publish_status()
         if self._auto_start and self._tag_poses:
-            self._auto_timer = self.create_timer(1.0, self.auto_start_tick)
+            self.start_auto_localize()
+
+    def start_auto_localize(self):
+        """(Re)start retrying tag localization every second."""
+        if self._auto_timer is not None:
+            self._auto_timer.cancel()
+        self._auto_timer = self.create_timer(1.0, self.auto_start_tick)
+
+    def odometry_restarted_callback(self, _msg: Empty):
+        """FAST-LIO restarted at a new origin: the old map->odom no longer holds."""
+        if not self._localized:
+            return
+        self._localized = False
+        self.publish_status()
+        self.get_logger().error(
+            'odometry restarted, map->odom invalid: show a tag or set a 2D Pose Estimate'
+        )
+        if self._tag_poses:
+            self.start_auto_localize()
 
     def publish_status(self):
         """Publish the active map->odom source ('none' until localized), latched."""
@@ -247,6 +267,7 @@ class LocalizationNode(Node):
             return
         self.set_map_odom(m, f'apriltag "{info}" (auto start)')
         self._auto_timer.cancel()
+        self._auto_timer = None
 
     def auto_correct(self):
         """Periodically correct drift from any visible tag, rejecting implausible jumps."""
