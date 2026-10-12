@@ -34,6 +34,8 @@ versions follow [SemVer](https://semver.org).
   broadcaster keeps the first value, so relocalizing had no effect.
 - A Ctrl-C that lands while a node builds its wait set no longer ends it with an `RCLError`
   traceback (exit 1); the teleop gateway frees its UDP port as soon as it stops.
+- A stop whose inspection services are all down now reports `inspected` with `not available`
+  right away; before, no inspection event was sent for it at all.
 
 ### Added
 - Teleop LAN discovery (`discover` → `beacon` with name, token required, who is driving,

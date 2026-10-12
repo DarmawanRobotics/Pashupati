@@ -790,6 +790,11 @@ class PathFollowerNode(Node):
                     name, f, r
                 )
             )
+        if self._inspection_results and not self._inspection_pending:
+            # every inspector is down: report that now, the stop is not silently uninspected
+            self.publish_stop_event(
+                'inspected', ' | '.join(self._inspection_results), self._inspection_index
+            )
 
     def inspection_done(self, name: str, future, round_id: int):
         """Collect one inspection result; answers for an earlier stop are dropped."""
