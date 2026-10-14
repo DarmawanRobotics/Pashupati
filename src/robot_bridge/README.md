@@ -51,6 +51,11 @@ UDP gateway for the Flutter teleop: joystick, commands (mode, navigation, route 
 points, routes, localization, robot commands), 10 Hz telemetry, JPEG camera, downsampled lidar and
 the loaded route. The wire format is in [PROTOCOL.md](PROTOCOL.md).
 
+Set the same `token` here (site file) and in the handheld; a wrong one is answered with `denied`.
+`robot_commands` are the driver's `std_srvs/Trigger` services shown in the handheld's action
+menu, in this order. The camera, the cloud and TF are only subscribed while a handheld is connected
+and has that stream on, so an idle gateway costs next to nothing.
+
 ## Run
 
 ```bash

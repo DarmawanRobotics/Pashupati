@@ -102,12 +102,13 @@ def test_hello_is_welcomed(rig):
     assert any(m['t'] == 'welcome' for m in rig.received(a))
 
 
-def test_wrong_token_is_ignored(rig):
-    """Without the token the robot neither answers nor moves."""
+def test_wrong_token_is_denied(rig):
+    """A hello without the right token gets `denied` (once a second); nothing else, no motion."""
     a = rig.client()
     rig.send(a, json.dumps({'t': 'hello'}).encode(), raw=True)
+    rig.send(a, json.dumps({'t': 'hello', 'k': 'wrong'}).encode(), raw=True)
     rig.send(a, json.dumps({'t': 'joy', 'vx': 0.5, 'k': 'wrong'}).encode(), raw=True)
-    assert rig.received(a) == []
+    assert [m['t'] for m in rig.received(a)] == ['denied']
     assert rig.twists == []
 
 
@@ -169,3 +170,34 @@ def test_handheld_estop_latches_without_waiting_for_services(rig):
     assert rig.estop_requests == ['handheld estop', 'handheld emergency_stop']
     acks = {m['id']: m for m in rig.received(a) if m['t'] == 'ack'}
     assert acks[1]['ok'] is False  # no mux in this test: the service is reported unavailable
+
+
+def test_command_ids_are_per_session(rig):
+    """A resent (id, name) runs once; after an app restart the same id runs again."""
+    a = rig.client()
+    rig.send(a, {'t': 'hello'})
+    rig.send(a, {'t': 'cmd', 'id': 1, 'name': 'estop'})
+    rig.send(a, {'t': 'cmd', 'id': 1, 'name': 'estop'})
+    assert rig.estop_requests == ['handheld estop']
+    a2 = rig.client('127.0.0.1')  # app restart: new port, ids start over
+    rig.send(a2, {'t': 'hello'})
+    rig.send(a2, {'t': 'cmd', 'id': 1, 'name': 'estop'})
+    rig.spin(0.2)
+    assert rig.estop_requests == ['handheld estop', 'handheld estop']
+
+
+def test_streams_are_subscribed_only_while_wanted(rig):
+    """The camera and TF are subscribed while a client wants them, and dropped when it leaves."""
+    camera = '/camera/camera/color/image_raw/compressed'
+
+    def topics():
+        return {s.topic_name for s in rig.node.subscriptions}
+
+    assert camera not in topics() and '/tf' not in topics()
+    a = rig.client()
+    rig.send(a, {'t': 'hello', 'streams': {'camera': True}})
+    assert camera in topics() and '/tf' in topics()
+    rig.send(a, {'t': 'streams', 'camera': False})
+    assert camera not in topics() and '/tf' in topics()
+    rig.send(a, {'t': 'bye'})
+    assert '/tf' not in topics()

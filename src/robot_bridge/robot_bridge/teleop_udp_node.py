@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+from collections import deque
 import hmac
 import json
 import math
 import os
+import select
 import socket
+import threading
 import time
 
 from diagnostic_msgs.msg import DiagnosticArray
@@ -100,7 +103,10 @@ class TeleopUdpNode(Node):
         self._map_frame, self._base_frame = p('map_frame'), p('base_frame')
         self._client = None
         self._client_seen = 0.0
+        self._session = 0
+        self._denied: dict = {}
         self._streams = {'camera': False, 'lidar': False}
+        self._stream_subs: dict = {}
         self._acks: dict = {}
         self._frame_ids = {
             protocol.STREAM_CAMERA: 0,
@@ -144,17 +150,24 @@ class TeleopUdpNode(Node):
             )
 
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self)
+        self._tf_listener = None  # only while a client is connected, see sync_subscriptions
         self._remote_pub = self.create_publisher(Twist, 'bridge/remote_cmd_vel', 10)
         self.make_clients(p('robot_command_prefix'), p('robot_commands'))
         self.make_subscriptions(p('camera_topic'), bool(p('camera_compressed')), p('lidar_topic'))
 
-        self.create_timer(0.01, self.poll)
-        self.create_timer(1.0 / float(p('telemetry_hz')), self.send_state)
+        # A reader thread wakes the executor per datagram: no polling timer while idle.
+        self._inbox = deque(maxlen=256)
+        self._wake = self.create_guard_condition(self.drain)
+        self._running = True
+        self._reader = threading.Thread(target=self.read_socket, daemon=True)
+        self._reader.start()
+        self.create_timer(1.0 / float(p('telemetry_hz')), self.tick)
         self.get_logger().info(f'teleop UDP on port {p("port")}')
 
     def destroy_node(self):
-        """Close the UDP socket with the node, so the port is free again at once."""
+        """Stop the reader and close the UDP socket, so the port is free again at once."""
+        self._running = False
+        self._reader.join(timeout=1.0)
         self._sock.close()
         super().destroy_node()
 
@@ -205,12 +218,12 @@ class TeleopUdpNode(Node):
             'localize': trigger('localization/start'),
             'record_tags': trigger('localization/record_tags'),
         }
-        for name in robot_commands:
-            if name:
-                self._commands[name] = trigger(prefix + name)
+        self._robot_commands = [name for name in robot_commands if name]
+        for name in self._robot_commands:
+            self._commands[name] = trigger(prefix + name)
 
     def make_subscriptions(self, camera_topic: str, compressed: bool, lidar_topic: str):
-        """Subscribe to everything the telemetry, camera and lidar streams need."""
+        """Subscribe to telemetry; camera and lidar wait for a client that wants them."""
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(NavigationStatus, 'navigation/status', self.on_nav_status, 10)
         self.create_subscription(MissionStatus, 'navigation/mission_status', self.on_mission, 10)
@@ -228,13 +241,34 @@ class TeleopUdpNode(Node):
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
         self.create_subscription(Twist, 'cmd_vel', self.on_cmd_vel, 10)
-        if camera_topic:
-            kind = CompressedImage if compressed else Image
-            self.create_subscription(kind, camera_topic, self.on_camera, qos_profile_sensor_data)
-        if lidar_topic:
-            self.create_subscription(
-                PointCloud2, lidar_topic, self.on_lidar, qos_profile_sensor_data
-            )
+        camera = (CompressedImage if compressed else Image, camera_topic, self.on_camera)
+        lidar = (PointCloud2, lidar_topic, self.on_lidar)
+        self._stream_sources = {
+            name: source for name, source in (('camera', camera), ('lidar', lidar)) if source[1]
+        }
+
+    def sync_subscriptions(self):
+        """
+        Hold the camera, lidar and TF subscriptions only while a client uses them.
+
+        Deserializing a 30 Hz camera, a 10 Hz cloud and every TF message cost ~1/3 of a Jetson
+        core while nobody was connected.
+        """
+        live = self._client is not None
+        if live and self._tf_listener is None:
+            self._tf_listener = TransformListener(self._tf_buffer, self)
+        elif not live and self._tf_listener is not None:
+            self._tf_listener.unregister()
+            self._tf_listener = None
+        for name, (kind, topic, callback) in self._stream_sources.items():
+            wanted = live and self._streams[name]
+            subscription = self._stream_subs.get(name)
+            if wanted and subscription is None:
+                self._stream_subs[name] = self.create_subscription(
+                    kind, topic, callback, qos_profile_sensor_data
+                )
+            elif not wanted and subscription is not None:
+                self.destroy_subscription(self._stream_subs.pop(name))
 
     # ------------------------------------------------------------------ socket
 
@@ -258,21 +292,42 @@ class TeleopUdpNode(Node):
         for datagram in protocol.chunk(stream, self._frame_ids[stream], payload):
             self.send(datagram)
 
-    def poll(self):
-        """Drain the socket (bounded, so a flood cannot starve ROS) and expire a silent client."""
-        for _ in range(256):
+    def read_socket(self):
+        """Receive datagrams on the reader thread and wake the executor to handle them."""
+        while self._running:
             try:
-                data, addr = self._sock.recvfrom(65535)
-            except (BlockingIOError, InterruptedError):
-                break
-            except OSError as error:
-                self.get_logger().warn(f'teleop socket: {error}', throttle_duration_sec=5.0)
-                break
+                ready, _, _ = select.select([self._sock], [], [], 0.5)
+            except (OSError, ValueError):  # socket closed under us
+                return
+            if not ready:
+                continue
+            for _ in range(64):
+                try:
+                    self._inbox.append(self._sock.recvfrom(65535))
+                except (BlockingIOError, InterruptedError):
+                    break
+                except OSError:
+                    if not self._running:
+                        return
+                    break
+            try:
+                self._wake.trigger()
+            except Exception:  # noqa: B902  rclpy is shutting down
+                return
+
+    def drain(self):
+        """Handle the received datagrams (bounded inbox, so a flood cannot starve ROS)."""
+        for _ in range(len(self._inbox)):
+            data, addr = self._inbox.popleft()
             message = protocol.decode_json(data)
-            if message is not None and message.get('t') == 'discover':
+            if message is None:
+                continue
+            if message.get('t') == 'discover':
                 self.reply_beacon(addr)  # no token needed, nothing sensitive
                 continue
-            if message is None or not self.authorized(message):
+            if not self.authorized(message):
+                if message.get('t') == 'hello':
+                    self.deny(addr)
                 continue
             try:
                 self.handle_message(message, addr)
@@ -281,16 +336,23 @@ class TeleopUdpNode(Node):
                     f'ignored malformed teleop message from {addr}: {error}',
                     throttle_duration_sec=5.0,
                 )
-        if self._client and time.monotonic() - self._client_seen > self._client_timeout:
-            self.get_logger().warn(f'teleop client {self._client} timed out')
-            self._client = None
-            self._remote_pub.publish(Twist())
 
     def authorized(self, message: dict) -> bool:
         """Check the shared token (constant time) when one is configured."""
         if not self._token:
             return True
         return hmac.compare_digest(str(message.get('k', '')), self._token)
+
+    def deny(self, addr):
+        """Tell a handheld its token is wrong, at most once per second per address."""
+        now = time.monotonic()
+        if now - self._denied.get(addr, -1.0) < 1.0:
+            return
+        if len(self._denied) > 64:
+            self._denied = {a: t for a, t in self._denied.items() if now - t < 1.0}
+        self._denied[addr] = now
+        self.get_logger().warn(f'teleop hello from {addr[0]} with a wrong token', once=True)
+        self.send_json({'t': 'denied', 'msg': 'wrong token'}, addr)
 
     def accept_client(self, addr, message: dict) -> bool:
         """
@@ -306,10 +368,17 @@ class TeleopUdpNode(Node):
                 return False
         if addr != current:
             self.get_logger().info(f'teleop client {addr} ({message.get("name", "?")})')
-            if current is not None:
-                self._remote_pub.publish(Twist())
-        self._client = addr
+            self.end_session()
+            self._client = addr
+            self._session += 1
         return True
+
+    def end_session(self):
+        """Forget the client and its acknowledgements, and stop the remote velocity."""
+        if self._client is not None:
+            self._remote_pub.publish(Twist())
+        self._client = None
+        self._acks.clear()
 
     def handle_message(self, message: dict, addr):
         """Dispatch one client message."""
@@ -326,7 +395,9 @@ class TeleopUdpNode(Node):
             self.send_json(
                 {
                     't': 'welcome',
-                    'commands': sorted(self._commands) + ['list_routes'],
+                    'name': self._robot_name,
+                    'commands': sorted(self._commands) + ['get_route', 'list_routes'],
+                    'robot_commands': self._robot_commands,
                     'limits': self._limits,
                 }
             )
@@ -344,8 +415,16 @@ class TeleopUdpNode(Node):
             self._streams.update({k: bool(v) for k, v in message.items() if k in self._streams})
             self.set_camera_fps(message.get('camera_fps'))
         elif kind == 'bye':
-            self._client = None
-            self._remote_pub.publish(Twist())
+            self.end_session()
+        self.sync_subscriptions()
+
+    def tick(self):
+        """Expire a silent client, then send the telemetry snapshot."""
+        if self._client and time.monotonic() - self._client_seen > self._client_timeout:
+            self.get_logger().warn(f'teleop client {self._client} timed out')
+            self.end_session()
+            self.sync_subscriptions()
+        self.send_state()
 
     def on_joy(self, message: dict):
         """Publish a clamped teleop velocity; NaN, inf and non-numbers count as 0."""
@@ -357,59 +436,64 @@ class TeleopUdpNode(Node):
         self._remote_pub.publish(twist)
 
     def on_command(self, message: dict):
-        """Run a named command once per id and acknowledge it."""
-        cid, name, args = message.get('id'), message.get('name', ''), message.get('args', {})
+        """Run a named command once per (id, name) in this session and acknowledge it."""
+        cid, name, args = message.get('id'), str(message.get('name', '')), message.get('args', {})
         if not isinstance(cid, (int, str)) or isinstance(cid, bool):
             return
         if not isinstance(args, dict):
             args = {}
-        if cid in self._acks:
-            self.send_json(self._acks[cid])
+        key = (cid, name)
+        if key in self._acks:
+            self.send_json(self._acks[key])
             return
         if name in ('estop', 'emergency_stop'):
             # latch the software e-stop first, without waiting for any service
             self._estop_request_pub.publish(String(data=f'handheld {name}'))
         if name == 'list_routes':
-            self.ack(cid, True, '', self.list_routes())
+            self.ack(key, True, '', self.list_routes())
             return
         if name == 'get_route':
             self.send_route()
-            self.ack(cid, True, f'{len(self._route)} points')
+            self.ack(key, True, f'{len(self._route)} points')
             return
         if name not in self._commands:
-            self.ack(cid, False, f'unknown command {name}')
+            self.ack(key, False, f'unknown command {name}')
             return
         _, client, make_request = self._commands[name]
         if not client.service_is_ready():
-            self.ack(cid, False, f'{client.srv_name} not available')
+            self.ack(key, False, f'{client.srv_name} not available')
             return
         try:
             request = make_request(args)
         except (TypeError, ValueError) as error:
-            self.ack(cid, False, str(error))
+            self.ack(key, False, str(error))
             return
         future = client.call_async(request)
-        future.add_done_callback(lambda f, c=cid, n=name: self.on_command_done(c, n, f))
-        self._acks[cid] = {'t': 'ack', 'id': cid, 'ok': None, 'msg': 'pending'}
+        session = self._session
+        future.add_done_callback(lambda f: self.on_command_done(key, session, f))
+        self._acks[key] = {'t': 'ack', 'id': cid, 'ok': None, 'msg': 'pending'}
 
-    def on_command_done(self, cid, name: str, future):
-        """Acknowledge a finished service call."""
+    def on_command_done(self, key: tuple, session: int, future):
+        """Acknowledge a finished service call, unless another session started meanwhile."""
+        name = key[1]
         try:
             result = future.result()
         except Exception as error:  # noqa: B902  the service raised, report it to the client
-            self.ack(cid, False, f'{name} failed: {error}')
-            return
-        ok = bool(result and getattr(result, 'success', True))
+            ok, msg = False, f'{name} failed: {error}'
+        else:
+            ok = bool(result and getattr(result, 'success', True))
+            msg = getattr(result, 'message', '') if result else 'no response'
         if ok and name in ('record_start', 'record_stop'):
             self._state['recording'] = name == 'record_start'
-        self.ack(cid, ok, getattr(result, 'message', '') if result else 'no response')
+        if session == self._session:
+            self.ack(key, ok, msg)
 
-    def ack(self, cid, ok: bool, msg: str, data=None):
+    def ack(self, key: tuple, ok: bool, msg: str, data=None):
         """Send and cache an acknowledgement."""
-        reply = {'t': 'ack', 'id': cid, 'ok': ok, 'msg': msg}
+        reply = {'t': 'ack', 'id': key[0], 'ok': ok, 'msg': msg}
         if data is not None:
             reply['data'] = data
-        self._acks[cid] = reply
+        self._acks[key] = reply
         if len(self._acks) > 200:
             self._acks.pop(next(iter(self._acks)))
         self.send_json(reply)

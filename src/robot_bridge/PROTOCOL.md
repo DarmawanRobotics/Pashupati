@@ -13,8 +13,9 @@ with JSON datagrams (control) and chunked binary datagrams (streams). No ROS on 
    the current client is alive. The same device may reconnect from a new port (app restart).
 
 If the robot is configured with a `token`, every client message must include `"k": "<token>"`
-(compared in constant time). Without a token anyone on the network can drive the robot; the robot
-logs a warning at start.
+(compared in constant time). A `hello` with a missing or wrong token is answered with `denied`
+(at most once per second per address); every other message without it is dropped silently.
+Without a token anyone on the network can drive the robot; the robot logs a warning at start.
 
 Malformed datagrams are dropped. Joystick values that are not finite numbers (NaN, inf, strings,
 booleans) count as 0, so a broken client stops the robot instead of driving it at full speed.
@@ -36,8 +37,10 @@ connected handheld or ""), "mode", "battery"}`; the handheld lists robots withou
 | `ping` | `ts` | latency probe, echoed as `pong` |
 | `bye` | | leave |
 
-Commands are idempotent per `id`: resend the same `cmd` until its `ack` arrives (e.g. every 200 ms);
-the robot runs it once and resends the cached `ack`.
+Commands are idempotent per `id` and `name` within a session: resend the same `cmd` until its
+`ack` arrives (e.g. every 200 ms); the robot runs it once and resends the cached `ack`. A new
+session (another port or device, `bye`, or a timeout) forgets the old acks, and acks of commands
+from an earlier session are not delivered. Start ids at a random value per app start anyway.
 
 | `name` | `args` | Effect |
 |---|---|---|
@@ -59,11 +62,12 @@ the robot runs it once and resends the cached `ack`.
 
 | `t` | Fields |
 |---|---|
-| `welcome` | `commands` (list), `limits` ([vx, vy, wz] maxima) |
+| `welcome` | `name` (robot), `commands` (every command name), `robot_commands` (the driver commands of this robot, in the order of the `robot_commands` parameter), `limits` ([vx, vy, wz] maxima) |
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
 | `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `field` (protective field: `clear`, `limited`, `stop`, `stale`, `off` or `null`), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
 | `pong` | `ts` |
 | `busy` | `msg`: another device is driving, retry later |
+| `denied` | `msg`: the `hello` had a missing or wrong token |
 | `bye` | robot shutting down |
 
 ## Binary streams
@@ -79,7 +83,8 @@ Every datagram starts with a 13-byte little-endian header:
 | 11 | u16 | chunk count |
 
 Payloads are split into chunks of at most 1400 bytes (no IP fragmentation). Reassemble per stream;
-when a chunk of a newer frame arrives, drop the incomplete older frame.
+when a chunk of a newer frame arrives, drop the incomplete older frame. The robot subscribes to the
+camera, the cloud and TF only while a client is connected and has the stream enabled.
 
 | Stream | Payload |
 |---|---|
