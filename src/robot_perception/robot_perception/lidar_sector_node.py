@@ -233,8 +233,7 @@ class LidarSectorNode(Node):
     def publish_marker_array(self, header, ranges: np.ndarray):
         """Build and publish ray and point markers for RViz visualization."""
         ray_marker = Marker()
-        ray_marker.header.stamp = header.stamp
-        ray_marker.header.frame_id = self._base_frame
+        ray_marker.header.frame_id = self._base_frame  # stamp 0: RViz draws on the latest TF
         ray_marker.ns = 'sector_rays'
         ray_marker.id = 0
         ray_marker.type = Marker.LINE_LIST

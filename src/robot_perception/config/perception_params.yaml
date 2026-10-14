@@ -34,7 +34,7 @@ lidar_sector_node:
 
     # RViz marker visualization
     publish_markers: true        # publish sector rays and detected obstacle points
-    marker_lifetime_sec: 0.3     # lifetime of each marker in seconds
+    marker_lifetime_sec: 0.5     # lifetime of each marker in seconds
 
     # Corridor boundary
     # Defines the rectangular area used to limit the sector rays
