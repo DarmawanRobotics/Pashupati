@@ -8,30 +8,61 @@
 #   script/setup.sh install all          # every component, including ros and service
 #
 # Components: ros tools submodules livox robot legkilo rosdep realsense ollama people_model
-#             build service network
+#             build config service network
+# Settings come from the environment, then from /etc/pashupati/pashupati.env (ROBOT_SETUP,
+# ROBOT_IP, PEOPLE, INSPECTION, ...): no need to source it first.
 # Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), ROBOT_SETUP (the robot package's own
 #      installer, `<script> check|install`, e.g. for a vendor SDK; see src/xtras/README.md),
 #      ROBOT_IP (robot SDK address for the network check), VLM_MODEL (moondream),
-#      PEOPLE_MODEL (models/yolo11n.engine), FORCE=1 (reinstall anyway)
+#      PEOPLE_MODEL (models/yolo11n.engine), BUILD_WORKERS / BUILD_JOBS (parallel packages /
+#      compile jobs, lower them when the build runs out of memory), REALSENSE_BLACKLIST_UVC
+#      (1 on Jetson), FORCE=1 (reinstall anyway)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${PASHUPATI_ENV:-/etc/pashupati/pashupati.env}"
+ENV_EXAMPLE="$ROOT/script/pashupati.env.example"
+SITE_EXAMPLE="$ROOT/src/pashupati/config/site.example.yaml"
+
+# Fill what the caller did not set from the robot's env file (read by bash, like the service).
+load_env_file() {
+    [[ -r "$ENV_FILE" ]] || return 0
+    local entry key
+    while IFS= read -r -d '' entry; do
+        key=${entry%%=*}
+        [[ -n "${!key+x}" ]] || export "${entry?}"
+    done < <(
+        _keys=$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE")
+        set +eu -a
+        # shellcheck disable=SC1090
+        source "$ENV_FILE" >/dev/null 2>&1
+        for _key in $_keys; do printf '%s=%s\0' "$_key" "${!_key-}"; done
+    )
+}
+load_env_file
+
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 LIVOX_SDK_REPO="${LIVOX_SDK_REPO:-https://github.com/Livox-SDK/Livox-SDK2.git}"
 LIVOX_SDK_REF="${LIVOX_SDK_REF:-master}"
 ROBOT_SETUP="${ROBOT_SETUP:-}"
 SERVICE_NAME=pashupati
-ENV_FILE=/etc/pashupati/pashupati.env
-SITE_FILE=/etc/pashupati/site.yaml
+SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
+SITE_FILE="${SITE_CONFIG:-/etc/pashupati/site.yaml}"
 VLM_MODEL="${VLM_MODEL:-moondream}"
 PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n.engine}"
 REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"
 ROBOT_IP="${ROBOT_IP:-}"
+OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
+BUILD_WORKERS="${BUILD_WORKERS:-}"
+BUILD_JOBS="${BUILD_JOBS:-}"
+BUILD_STAMP="$ROOT/install/.pashupati_build"
+UVC_BLACKLIST=/etc/modprobe.d/blacklist-uvcvideo-realsense.conf
+REALSENSE_BLACKLIST_UVC="${REALSENSE_BLACKLIST_UVC:-$([[ "$(uname -m)" == aarch64 ]] && echo 1 || echo 0)}"
 
-ALL=(ros tools submodules livox robot legkilo rosdep realsense ollama people_model build service
-     network)
-DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense ollama build)
+ALL=(ros tools submodules livox robot legkilo rosdep realsense ollama people_model build config
+     service network)
+DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense ollama build config)
 
 SUDO=$([[ "$(id -u)" -eq 0 ]] && echo "" || echo "sudo")
 IN_DOCKER=$([[ -f /.dockerenv ]] && echo 1 || echo 0)
@@ -42,6 +73,7 @@ else
 fi
 
 log() { echo "${BOLD}==>${RESET} $*"; }
+enabled() { [[ "${1,,}" =~ ^(1|true|yes|on)$ ]]; }
 apt_install() { $SUDO apt-get update -qq && $SUDO apt-get install -y --no-install-recommends "$@"; }
 source_ros() {
     set +u
@@ -170,50 +202,73 @@ check_realsense() {
     [[ "$IN_DOCKER" == "1" ]] && echo "$REALSENSE_PKG (udev skipped in docker)" && return 0
     local rules
     rules=$(realsense_rules) || { echo "RealSense udev rules missing (camera needs root)"; return 1; }
+    if [[ "$REALSENSE_BLACKLIST_UVC" == "1" && ! -f "$UVC_BLACKLIST" ]]; then
+        echo "uvcvideo not blacklisted: it fights librealsense (libusb) for the camera"; return 1
+    fi
     echo "$REALSENSE_PKG, $rules"
 }
 install_realsense() {
     dpkg -s "$REALSENSE_PKG" >/dev/null 2>&1 || apt_install "$REALSENSE_PKG"
     [[ "$IN_DOCKER" == "1" ]] && return 0
-    realsense_rules >/dev/null && return 0
-    local shipped
-    shipped=$(find "/opt/ros/$ROS_DISTRO" -name '*realsense*.rules' 2>/dev/null | head -n1 || true)
-    if [[ -n "$shipped" ]]; then
-        $SUDO cp "$shipped" "$REALSENSE_RULES"
-    else
-        curl -fsSL https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules \
-            | $SUDO tee "$REALSENSE_RULES" >/dev/null
+    if ! realsense_rules >/dev/null; then
+        local shipped
+        shipped=$(find "/opt/ros/$ROS_DISTRO" -name '*realsense*.rules' 2>/dev/null | head -n1 || true)
+        if [[ -n "$shipped" ]]; then
+            $SUDO cp "$shipped" "$REALSENSE_RULES"
+        else
+            curl -fsSL https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules \
+                | $SUDO tee "$REALSENSE_RULES" >/dev/null
+        fi
+        $SUDO udevadm control --reload-rules && $SUDO udevadm trigger
     fi
-    $SUDO udevadm control --reload-rules && $SUDO udevadm trigger
+    # The apt librealsense reads the camera over libusb; when the kernel uvcvideo driver binds it
+    # too, udev rebinds the camera every second (log storm, camera drops out).
+    if [[ "$REALSENSE_BLACKLIST_UVC" == "1" && ! -f "$UVC_BLACKLIST" ]]; then
+        echo "blacklist uvcvideo" | $SUDO tee "$UVC_BLACKLIST" >/dev/null
+        $SUDO modprobe -r uvcvideo 2>/dev/null || log "uvcvideo is in use: reboot once"
+    fi
 }
 
 check_build() {
     [[ -f "$ROOT/install/setup.bash" ]] || { echo "workspace not built"; return 1; }
-    local n
+    local n built head
     n=$(find "$ROOT/install" -mindepth 1 -maxdepth 1 -type d | wc -l)
-    echo "$n packages in install/"
+    head=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+    built=$(cat "$BUILD_STAMP" 2>/dev/null || echo unknown)
+    [[ "$built" == "$head" ]] || { echo "built from $built, source is $head: rebuild"; return 1; }
+    echo "$n packages in install/, built from $head"
 }
 install_build() {
     source_ros
-    (cd "$ROOT" && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release)
+    local args=(--symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release)
+    [[ -n "$BUILD_WORKERS" ]] && args=(--parallel-workers "$BUILD_WORKERS" "${args[@]}")
+    [[ -n "$BUILD_JOBS" ]] && export MAKEFLAGS="-j$BUILD_JOBS"
+    (cd "$ROOT" && colcon build "${args[@]}")
+    git -C "$ROOT" rev-parse --short HEAD > "$BUILD_STAMP" 2>/dev/null || echo unknown > "$BUILD_STAMP"
 }
 
+# The model must be in the store of the Ollama service (user ollama), not in ~/.ollama.
 check_ollama() {
     [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
+    enabled "${INSPECTION:-true}" || { echo "skipped, INSPECTION=false"; return 0; }
     command -v ollama >/dev/null || { echo "Ollama not installed"; return 1; }
-    ollama list 2>/dev/null | awk '{print $1}' | grep -q "^$VLM_MODEL" \
-        || { echo "model $VLM_MODEL not pulled"; return 1; }
-    echo "ollama with $VLM_MODEL"
+    local tags
+    tags=$(curl -fsS --max-time 3 "$OLLAMA_URL/api/tags" 2>/dev/null) \
+        || { echo "Ollama service not running: sudo systemctl enable --now ollama"; return 1; }
+    [[ "$tags" == *"\"name\":\"$VLM_MODEL\""* || "$tags" == *"\"name\":\"$VLM_MODEL:"* ]] \
+        || { echo "model $VLM_MODEL not in the Ollama service"; return 1; }
+    echo "ollama service with $VLM_MODEL"
 }
 install_ollama() {
     command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh
     $SUDO systemctl enable --now ollama 2>/dev/null || true
-    for _ in $(seq 20); do ollama list >/dev/null 2>&1 && break; sleep 1; done
-    ollama pull "$VLM_MODEL"
+    for _ in $(seq 20); do curl -fsS --max-time 2 "$OLLAMA_URL/api/tags" >/dev/null 2>&1 && break; sleep 1; done
+    ollama pull "$VLM_MODEL"  # pulled by the service, into its own store
 }
 
 check_people_model() {
     [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
+    enabled "${PEOPLE:-true}" || { echo "skipped, PEOPLE=false"; return 0; }
     python3 -c "import ultralytics" 2>/dev/null || { echo "python ultralytics missing"; return 1; }
     [[ -f "$PEOPLE_MODEL" ]] || { echo "no model at $PEOPLE_MODEL"; return 1; }
     echo "$PEOPLE_MODEL"
@@ -229,35 +284,56 @@ EOF
     return 1
 }
 
-check_service() {
-    [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
-    systemctl is-enabled "$SERVICE_NAME.service" >/dev/null 2>&1 \
-        && echo "$SERVICE_NAME.service enabled ($(systemctl is-active $SERVICE_NAME.service))" \
-        && return 0
-    echo "$SERVICE_NAME.service not installed"; return 1
+# /etc/pashupati: the env file (read by the service) and the site file (parameters).
+env_keys() { sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' "$1"; }
+has_key() { grep -qE "^[[:space:]]*(export[[:space:]]+)?$1=" "$ENV_FILE"; }
+check_config() {
+    [[ -f "$ENV_FILE" ]] || { echo "no $ENV_FILE"; return 1; }
+    [[ -r "$ENV_FILE" ]] || { echo "$ENV_FILE not readable by $(id -un)"; return 1; }
+    local key missing=() bad
+    for key in $(env_keys "$ENV_EXAMPLE"); do
+        has_key "$key" || missing+=("$key")
+    done
+    [[ ${#missing[@]} -eq 0 ]] || { echo "$ENV_FILE lacks ${missing[*]}"; return 1; }
+    # bash runs `KEY=a b` as the command b, and systemd keeps a trailing comment in the value
+    bad=$(grep -nE "^[A-Za-z_][A-Za-z0-9_]*=[^\"'].*[[:space:]#]" "$ENV_FILE" | cut -d: -f1 | xargs)
+    [[ -z "$bad" ]] || { echo "$ENV_FILE line $bad: quote values with spaces, no comments"; return 1; }
+    [[ -f "$SITE_FILE" ]] || { echo "no $SITE_FILE"; return 1; }
+    echo "$ENV_FILE, $SITE_FILE"
 }
-install_service() {
-    local user
-    user=$(id -un)
+install_config() {
+    local group key added=()
+    group=$(id -gn)
     if [[ ! -f "$ENV_FILE" ]]; then
-        $SUDO install -D -m 640 -o root -g "$(id -gn)" "$ROOT/script/pashupati.env.example" "$ENV_FILE"
-        log "edit $ENV_FILE (robot id, route, tags, NETRA url/token)"
+        $SUDO install -D -m 640 -o root -g "$group" "$ENV_EXAMPLE" "$ENV_FILE"
+        log "created $ENV_FILE: set ROBOT_ID, ROBOT_BRINGUP, ROBOT_NS, ROUTE, TAGS"
+    else
+        for key in $(env_keys "$ENV_EXAMPLE"); do
+            has_key "$key" && continue
+            grep -E "^$key=" "$ENV_EXAMPLE" | $SUDO tee -a "$ENV_FILE" >/dev/null
+            added+=("$key")
+        done
+        [[ ${#added[@]} -eq 0 ]] || log "added to $ENV_FILE with example values: ${added[*]}"
     fi
     if [[ ! -f "$SITE_FILE" ]]; then
-        $SUDO install -D -m 640 -o root -g "$(id -gn)" \
-            "$ROOT/src/pashupati/config/site.example.yaml" "$SITE_FILE"
-        log "edit $SITE_FILE (per-robot tuning, teleop token)"
+        $SUDO install -D -m 640 -o root -g "$group" "$SITE_EXAMPLE" "$SITE_FILE"
+        log "created $SITE_FILE: set the teleop token and this robot's values"
     fi
-    $SUDO tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null <<EOF
+}
+
+service_unit() {
+    local deps=network-online.target
+    enabled "${INSPECTION:-true}" && deps+=" ollama.service"
+    cat <<EOF
 [Unit]
 Description=Pashupati robot stack
-After=network-online.target ollama.service
-Wants=network-online.target ollama.service
+After=$deps
+Wants=$deps
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-User=$user
+User=$(id -un)
 WorkingDirectory=$ROOT
 EnvironmentFile=-$ENV_FILE
 Environment=WS=$ROOT
@@ -276,9 +352,22 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
+}
+check_service() {
+    [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
+    [[ -f "$SERVICE_FILE" ]] || { echo "$SERVICE_NAME.service not installed"; return 1; }
+    service_unit | cmp -s - "$SERVICE_FILE" \
+        || { echo "$SERVICE_FILE is outdated (other path, user or INSPECTION)"; return 1; }
+    systemctl is-enabled "$SERVICE_NAME.service" >/dev/null 2>&1 \
+        || { echo "$SERVICE_NAME.service installed but not enabled at boot"; return 1; }
+    echo "$SERVICE_NAME.service enabled ($(systemctl is-active $SERVICE_NAME.service))"
+}
+install_service() {
+    install_config
+    service_unit | $SUDO tee "$SERVICE_FILE" >/dev/null
     $SUDO systemctl daemon-reload
     $SUDO systemctl enable "$SERVICE_NAME.service"
-    log "start: sudo systemctl start $SERVICE_NAME   logs: journalctl -fu $SERVICE_NAME"
+    log "start: sudo systemctl restart $SERVICE_NAME   logs: journalctl -fu $SERVICE_NAME"
 }
 
 check_network() {
