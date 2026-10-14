@@ -1,8 +1,9 @@
 lidar_sector_node:
   ros__parameters:
-    # livox: Livox CustomMsg on livox/lidar (works without FAST-LIO).
-    # pointcloud2: any PointCloud2, e.g. FAST-LIO /cloud_registered_body. Parsed straight from
-    # the buffer, several times cheaper on the Jetson than CustomMsg, but needs FAST-LIO running.
+    # livox: Livox CustomMsg on livox/lidar, read straight from the serialized bytes (~1 ms per
+    # scan, works without FAST-LIO). Use this on a Livox robot.
+    # pointcloud2: any PointCloud2, e.g. FAST-LIO /cloud_registered_body. That cloud has FAST-LIO's
+    # `blind` radius cut out, so obstacles right next to the robot are missed.
     input_type: livox
     pointcloud_topic: /cloud_registered_body
     base_frame: base_link

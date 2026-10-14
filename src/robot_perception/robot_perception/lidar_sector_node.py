@@ -7,10 +7,12 @@ import rclpy
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.serialization import deserialize_message
 from robot_interfaces.msg import SectorScan
+from robot_perception.livox_cdr import parse_custom_msg
 from robot_perception.sectors import bin_ranges, obstacle_points
 from sensor_msgs.msg import PointCloud2
-from std_msgs.msg import ColorRGBA
+from std_msgs.msg import ColorRGBA, Header
 from tf2_ros import Buffer, TransformException, TransformListener
 import tf_transformations
 from visualization_msgs.msg import Marker, MarkerArray
@@ -91,7 +93,8 @@ class LidarSectorNode(Node):
         elif input_type == 'livox':
             from livox_ros_driver2.msg import CustomMsg  # only needed for raw Livox input
 
-            self.create_subscription(CustomMsg, 'livox/lidar', self.livox_callback, 10)
+            self._custom_msg = CustomMsg
+            self.create_subscription(CustomMsg, 'livox/lidar', self.livox_callback, 10, raw=True)
         else:
             raise ValueError(f"input_type must be 'livox' or 'pointcloud2', got {input_type!r}")
         self._sectorscan_pub = self.create_publisher(SectorScan, 'perception/sector_scan', 10)
@@ -152,15 +155,23 @@ class LidarSectorNode(Node):
 
         return max(0.0, length)
 
-    def livox_callback(self, msg):
-        """Convert a Livox CustomMsg to an Nx3 array and process it."""
-        n = msg.point_num
-        xyz = np.empty((n, 3), dtype=np.float32)
-        if n > 0:
-            xyz[:, 0] = np.fromiter((p.x for p in msg.points), dtype=np.float32, count=n)
-            xyz[:, 1] = np.fromiter((p.y for p in msg.points), dtype=np.float32, count=n)
-            xyz[:, 2] = np.fromiter((p.z for p in msg.points), dtype=np.float32, count=n)
-        self.process(msg.header, xyz)
+    def livox_callback(self, data: bytes):
+        """Read the points of a serialized Livox CustomMsg as numpy (no per-point objects)."""
+        parsed = parse_custom_msg(data)
+        if parsed is None:
+            self.livox_fallback(data)
+            return
+        sec, nanosec, frame_id, xyz = parsed
+        header = Header(frame_id=frame_id)
+        header.stamp.sec, header.stamp.nanosec = sec, nanosec
+        self.process(header, xyz)
+
+    def livox_fallback(self, data: bytes):
+        """Deserialize with rclpy when the bytes are not little-endian XCDR1 (slow path)."""
+        self.get_logger().warn('Livox scan is not plain CDR, using the slow path', once=True)
+        msg = deserialize_message(data, self._custom_msg)
+        xyz = np.array([(p.x, p.y, p.z) for p in msg.points], dtype=np.float32).reshape(-1, 3)
+        self.process(msg.header, xyz[np.isfinite(xyz).all(axis=1) & xyz.any(axis=1)])
 
     def pointcloud_callback(self, msg: PointCloud2):
         """Read x/y/z straight from the PointCloud2 buffer (no per-point Python objects)."""
