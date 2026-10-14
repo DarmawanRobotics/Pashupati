@@ -220,7 +220,7 @@ class PathFollowerNode(Node):
         self.load_tunables()
 
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
+        self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self._srv_group = ReentrantCallbackGroup()
         self._loop_group = MutuallyExclusiveCallbackGroup()
@@ -297,14 +297,6 @@ class PathFollowerNode(Node):
         self.create_timer(
             1.0 / self._control_rate, self.control_loop, callback_group=self._loop_group
         )
-
-    def destroy_node(self):
-        """Stop the TF listener's spin thread while the context is still valid, then destroy."""
-        executor = getattr(self._tf_listener, 'executor', None)
-        if executor is not None:
-            executor.shutdown(timeout_sec=2.0)
-            self._tf_listener.dedicated_listener_thread.join(timeout=2.0)
-        super().destroy_node()
 
     def declare_params(self):
         """Declare the general parameters and every controller's namespaced parameters."""

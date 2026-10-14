@@ -8,7 +8,7 @@ from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 import numpy as np
 import rclpy
 from rclpy.duration import Duration
-from rclpy.executors import ExternalShutdownException
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
@@ -77,7 +77,7 @@ class LocalizationNode(Node):
         self._static_broadcaster = StaticTransformBroadcaster(self)
         self._tf_broadcaster = TransformBroadcaster(self)
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
+        self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self._m_base_imu = None
         self._m_map_odom = np.eye(4)
@@ -262,14 +262,6 @@ class LocalizationNode(Node):
         )
         return map_odom_from_map_base(m_map_base, transform_to_matrix(odom_base)), frame
 
-    def destroy_node(self):
-        """Stop the TF listener's spin thread while the context is still valid, then destroy."""
-        executor = getattr(self._tf_listener, 'executor', None)
-        if executor is not None:
-            executor.shutdown(timeout_sec=2.0)
-            self._tf_listener.dedicated_listener_thread.join(timeout=2.0)
-        super().destroy_node()
-
     def localization_callback(self, request, response):
         """Service: set map->odom from whichever configured tag is currently visible."""
         m, info = self.map_odom_from_visible_tag()
@@ -424,11 +416,13 @@ class LocalizationNode(Node):
 
 
 def main(args=None):
-    """Spin the localization node."""
+    """Spin the localization node; a second thread keeps TF flowing during blocking lookups."""
     rclpy.init(args=args)
     node = LocalizationNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     except Exception:  # noqa: B902
