@@ -37,6 +37,12 @@ def yaw_of(q) -> float:
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
+def level_of(status) -> int:
+    """Return a DiagnosticStatus level as int (rclpy gives the byte field as bytes)."""
+    level = status.level
+    return level[0] if isinstance(level, bytes) else int(level)
+
+
 def finite(value, digits: int = 2):
     """Round a float for JSON, or None when it is NaN/inf."""
     return round(float(value), digits) if math.isfinite(value) else None
@@ -475,7 +481,7 @@ class TeleopUdpNode(Node):
         """Cache the driver status line."""
         if msg.status:
             status = msg.status[0]
-            self._state['driver'] = {'level': int(status.level), 'msg': status.message}
+            self._state['driver'] = {'level': level_of(status), 'msg': status.message}
 
     def on_cmd_vel(self, msg: Twist):
         """Cache the command actually sent to the robot."""

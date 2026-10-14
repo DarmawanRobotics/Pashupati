@@ -31,6 +31,12 @@ ALERT_STATES = {'BLOCKED', 'OFF_PATH', 'TF_UNAVAILABLE', 'AVOIDANCE_STALE'}
 LAP_RE = re.compile(r'lap (\d+)')
 
 
+def level_of(status) -> int:
+    """Return a DiagnosticStatus level as int (rclpy gives the byte field as bytes)."""
+    level = status.level
+    return level[0] if isinstance(level, bytes) else int(level)
+
+
 def finite(value, digits: int = 2):
     """Round a float for JSON, or None when it is NaN/inf."""
     return round(float(value), digits) if math.isfinite(value) else None
@@ -421,7 +427,7 @@ class FleetUplinkNode(Node):
         """Cache the driver status line."""
         if msg.status:
             self._state['driver'] = {
-                'level': int(msg.status[0].level),
+                'level': level_of(msg.status[0]),
                 'msg': msg.status[0].message,
             }
 
