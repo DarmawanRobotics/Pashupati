@@ -94,22 +94,68 @@ flowchart LR
 
 ## Install on the robot
 
+Ubuntu 22.04 with ROS 2 Humble (JetPack 6 on a Jetson), internet, and the robot's SSH key on
+GitHub.
+
 ```bash
-git clone --recursive https://github.com/DarmawanRobotics/Pashupati.git ~/dev/Pashupati
+git clone --recursive git@github.com:DarmawanRobotics/Pashupati.git ~/dev/Pashupati
 cd ~/dev/Pashupati
-script/setup.sh                 # what is installed / missing
-git submodule add <robot repo url> src/xtras/robots/<name>   # the robot package, src/xtras/README.md
-script/setup.sh install         # tools, submodules, Livox-SDK2, robot SDK, rosdep, RealSense (apt + udev), Ollama + moondream, build
-script/setup.sh install service # systemd service, /etc/pashupati/pashupati.env + site.yaml
-sudoedit /etc/pashupati/pashupati.env   # ROBOT_BRINGUP + ROBOT_NS, robot id, route, tags, NETRA url + token
-sudoedit /etc/pashupati/site.yaml       # per-robot tuning (speeds, teleop token, ...)
+git clone <robot package repo> src/xtras/robots/<name>   # driver + URDF + sensors, src/xtras/README.md
+script/setup.sh install config          # creates /etc/pashupati/pashupati.env and site.yaml
+sudoedit /etc/pashupati/pashupati.env   # ROBOT_BRINGUP, ROBOT_NS, ROBOT_SETUP, ROBOT_PRESTART, ROUTE, TAGS
+sudoedit /etc/pashupati/site.yaml       # this robot: footprint, speeds, teleop token, robot_commands
+script/setup.sh install                 # everything missing, then the build
+script/setup.sh install service         # systemd unit, enabled at boot
 sudo systemctl start pashupati && journalctl -fu pashupati
+script/setup.sh                         # every line ok?
 ```
 
+- **`pashupati.env`** holds the deployment (robot package, namespace, mode, route, NETRA). systemd
+  and bash both read it: quote a value with spaces (`ROBOT_PRESTART="robot-launch stop x"`) and
+  never put a comment after a value. `script/setup.sh` reads it too, so `ROBOT_SETUP` (the robot
+  package's installer) and `ROBOT_IP` work without exporting anything.
+- **`site.yaml`** holds the parameters of this robot and site, on top of every package default
+  ([example](src/pashupati/config/site.example.yaml)). Set the same teleop `token` in the handheld.
+- **Vendor stacks.** Pashupati runs on `rmw_fastrtps_cpp`, domain 0 (`RMW_IMPLEMENTATION`,
+  `ROS_DOMAIN_ID`). A vendor autostart that also drives the robot or its LiDAR is stopped by
+  `ROBOT_PRESTART` before every start.
+- **Heavy extras** are off: `PEOPLE=true` needs a TensorRT model (`script/setup.sh install
+  people_model` prints the Jetson steps), `INSPECTION=true` needs Ollama and the VLM
+  (`script/setup.sh install ollama`, then `install service` again).
+
 The service runs `ros2 launch pashupati robot.launch.py` (`script/run_robot.sh`) with
-`Restart=always`; every Pashupati node respawns on its own, the last loaded route is reloaded after a
-restart. Person detection needs Ultralytics and a TensorRT engine (`script/setup.sh install
-people_model` prints the Jetson steps) or `PEOPLE=false`.
+`Restart=always`; every Pashupati node respawns on its own, and the last loaded route is reloaded
+after a restart.
+
+**Update:** `git pull && git submodule update --init --recursive && script/setup.sh install build
+config service && sudo systemctl restart pashupati`. `install build` rebuilds whenever the checkout
+moved; `install config` adds env keys that are new in the example; `install service` rewrites an
+outdated unit.
+
+**A shell on the robot** needs the service's environment, or `ros2 topic list` shows nothing (or
+the vendor's topics):
+
+```bash
+echo "alias pashu='source ~/dev/Pashupati/script/env.sh'" >> ~/.bashrc   # once
+pashu
+ros2 topic hz /perception/safety_scan
+pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.launch.py runs it
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `-bash: stop: command not found` when loading the env | value with spaces not quoted | quote it; `script/setup.sh` shows the line |
+| `ros2 topic list` empty or only vendor topics | shell on another RMW or domain | `pashu` (`script/env.sh`) |
+| robot or LiDAR also driven by the vendor stack | vendor autostart | `ROBOT_PRESTART` |
+| camera drops out, udev and journal flooded every second | kernel `uvcvideo` and librealsense both bind the camera | `script/setup.sh install realsense` (blacklists `uvcvideo` on Jetson), reboot |
+| a Python node at 100-200 % CPU | numpy OpenBLAS threads busy-wait | `OPENBLAS_NUM_THREADS=1` (env file) |
+| handheld: "wrong token" | app token differs from `teleop_udp_node.token` | same token in both |
+| handheld connected, robot does not walk | mode AUTO, or the e-stop is latched | REMOTE on the handheld, release the e-stop |
+| `model ... is not installed in Ollama` | model pulled into `~/.ollama`, not into the service | `script/setup.sh install ollama` |
+| `malformed launch argument 'route:='` | empty launch argument | leave it out; `robot.launch.py` reads the env |
+| build killed (out of memory) | too many parallel compile jobs | `BUILD_WORKERS=1 BUILD_JOBS=2 script/setup.sh install build` |
 
 ## Develop (macOS / Linux)
 
@@ -120,7 +166,8 @@ script/dev.sh test
 script/dev.sh vnc     # TigerVNC localhost:5901 or http://localhost:6080/vnc.html
 ```
 
-On the robot during development: `script/start_tmux.sh teach|patrol` (one pane per part, RViz).
+On the robot during development: `script/start_tmux.sh teach|patrol` (one pane per part, RViz,
+package default parameters; settings from the env file).
 
 ## Simulation
 
@@ -144,9 +191,9 @@ on the robot.
 
 1. Start in teach mode (`MODE=teach` in the env file, or `start_tmux.sh teach`). Keep the robot
    standing still until odometry starts (`odometry/status` leaves `initializing`).
-2. Take the handheld, switch to **REMOTE**, hold the deadman and drive the route; **Rekam rute**
-   starts recording, **Titik stop** marks inspection stops with a dwell time (or the RViz Mission
-   panel, or `route/record` / `route/mark_stop_point`).
+2. Take the handheld, switch to **REMOTE** and drive the route; **Record** starts recording,
+   **Stop point** marks inspection stops with a dwell time (or the RViz Mission panel, or
+   `route/record` / `route/mark_stop_point`).
 3. Stand still in view of each AprilTag and **Record Tag Poses** (AprilTags panel or
    `localization/record_tags`) — tags recorded in the same session anchor the same map frame.
 4. Stop recording: the route is saved under `map/<date>/` and uploaded to NETRA. End near the start
@@ -156,7 +203,7 @@ on the robot.
 
 - **Localize** from a tag (teleop, panel or `localization/start`); navigation refuses to start
   until `localization/status` reports a source.
-- **Start** from NETRA (now or weekly schedule), the handheld (**Rute** → load, **Mulai nav**) or:
+- **Start** from NETRA (now or weekly schedule), the handheld (**Routes** → load, **Start**) or:
 
 ```bash
 ros2 service call /navigation/load_path robot_interfaces/srv/LoadPath "{waypoints_file: '/home/robot/dev/Pashupati/map/<date>/<time>_path.csv'}"
@@ -168,7 +215,7 @@ ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: true}"
 
 ### Emergency stop
 
-The software e-stop is latched in the control mux. Engage it from the handheld **E-STOP** (screen
+The software e-stop is latched in the control mux. Engage it from the handheld **STOP** (screen
 or gamepad B), from NETRA, or with
 `ros2 service call /bridge/estop std_srvs/srv/SetBool "{data: true}"`. While it is engaged, only
 zero velocity reaches the robot and navigation is paused. Release is explicit: `estop_release`
@@ -203,7 +250,7 @@ the tuned values with **Save YAML**.
 | Health | `ros2 topic echo /health/status` — `level` ok / warn / error; error for a missing node, lost odometry, a stale safety scan or an engaged e-stop; sensor rates, CPU temperature, memory, disk; also on the handheld and in NETRA |
 | Logs | `journalctl -fu pashupati`; ROS logs older than 7 days are pruned at start |
 | Debug view | RViz `robot_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
-| Update | `git pull && git submodule update --init --recursive && script/setup.sh install build && sudo systemctl restart pashupati` |
+| Update | `git pull && git submodule update --init --recursive && script/setup.sh install build config service && sudo systemctl restart pashupati` |
 
 ## Interfaces
 
@@ -302,7 +349,7 @@ Pashupati/
 ├── .github/workflows/ci.yml      # build + tests + lint on every PR
 ├── docker/ docker-compose.yaml   # dev container (VNC desktop, shared workspace)
 ├── map/                          # recorded routes + example/
-├── script/                       # setup.sh, run_robot.sh (service), start_tmux.sh (dev), dev.sh
+├── script/                       # setup.sh, run_robot.sh (service), env.sh (shell), start_tmux.sh (dev), dev.sh
 └── src/
     ├── robot_* pashupati         # first-party packages
     └── xtras/                    # submodules: livox_ros_driver2, FAST_LIO, Leg-KILO; robots/<your robot>

@@ -37,18 +37,28 @@ pure-logic tests also run with plain `pytest` on a laptop.
   calls` when the same line logs once as `info` and once as `warn`; write two calls instead of
   `log = logger.warn if bad else logger.info`.
 - **Stop cleanly:** `main()` catches `KeyboardInterrupt` and `ExternalShutdownException` and wraps
-  `rclpy.shutdown()` in `try/except`; a node with a spin-thread `TransformListener` stops that thread
-  in `destroy_node()`. A Ctrl-C can land while the executor builds its wait set, so any other
+  `rclpy.shutdown()` in `try/except`; a node that starts a thread stops it in `destroy_node()`.
+  A Ctrl-C can land while the executor builds its wait set, so any other
   exception from `spin()` is a normal stop when `rclpy.ok()` is already false; re-raise it only
   while `rclpy.ok()` is true. Copy the `main()` of an existing node.
+- **TF listeners run on the node's own executor:** `TransformListener(buffer, self)`, never
+  `spin_thread=True`, which adds the whole node to a second executor.
+- **One BLAS thread per process.** pip numpy's OpenBLAS threads busy-wait between the small matrix
+  operations nodes run at 10-50 Hz and burn whole cores; `run_robot.sh` and `script/env.sh` set
+  `OPENBLAS_NUM_THREADS=1`.
+- **No per-element Python objects at sensor rate.** rclpy builds one object per element of a
+  message array (a Livox CustomMsg has ~20k points): read big messages as numpy straight from the
+  buffer (`PointCloud2.data`, or `raw=True` and the CDR bytes, see `robot_perception/livox_cdr.py`).
+- **Subscribe to heavy topics only while someone uses them** (the teleop camera and cloud).
 - **Validate everything from the network** (teleop UDP, NETRA commands, spool files): clamp
   numbers, reject non-finite values, keep file paths inside their directory, never raise in a
   callback.
 - **Parameters** live in the package `config/*.yaml` with a comment, are listed in the package
   README, and are tuned per robot in `/etc/pashupati/site.yaml`, never by editing the repository on
   the robot.
-- **systemd env files** (`/etc/pashupati/pashupati.env`) take no comments after a value: systemd
-  makes the comment part of the value.
+- **The env file** (`/etc/pashupati/pashupati.env`) is read by both systemd and bash: no comment
+  after a value (systemd makes it part of the value) and quotes around a value with spaces (bash
+  runs the second word as a command). `script/setup.sh check` flags both.
 - **Signal only `ros2 launch`.** Stop the stack with one SIGINT to the launch process (systemd does
   this with `KillMode=mixed`), not to its process group: launch forwards it to every node, and a
   second SIGINT interrupts the nodes in the middle of their shutdown.

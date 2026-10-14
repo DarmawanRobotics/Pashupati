@@ -6,6 +6,25 @@ versions follow [SemVer](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- `lidar_sector_node` with `input_type: livox` ran at ~6 Hz on a full Jetson core, because rclpy
+  built a Python object for each of the ~20k points of a scan. It now reads the serialized
+  CustomMsg straight into numpy (~1 ms per scan) and drops points with no return.
+- Python nodes burned whole cores (`localization_node` 200 %): pip numpy's OpenBLAS threads
+  busy-wait. One BLAS thread per process (`OPENBLAS_NUM_THREADS=1` in `run_robot.sh`, the env file
+  and `script/env.sh`); TF listeners run on the node's own executor.
+- Teleop: a handheld with a wrong token got no answer at all, now `denied`. Acks are per session:
+  an app restarted with command ids from 1 got the previous session's ack and the command never
+  ran. Camera, cloud and TF are subscribed only while a client wants them, and a reader thread
+  replaces the 100 Hz polling timer (~1/3 of a core while nobody was connected).
+- Fleet uplink and teleop crashed on a driver `DiagnosticStatus` (rclpy gives `level` as bytes).
+- Obstacle markers in RViz blinked with "No transform": they are drawn on the latest TF.
+- `run_robot.sh` passed empty launch arguments (`route:=`), which `ros2 launch` rejects;
+  `robot.launch.py` reads them from the environment. `start_tmux.sh` passed empty `server_url:=` /
+  `token:=` and did not use the service's RMW and domain.
+- The service unit started Ollama even with `INSPECTION=false`; re-run
+  `script/setup.sh install service`.
+- Inspection retried silently when the model was missing; it now logs `ollama pull <model>`, or
+  that Ollama is unreachable.
 - The control mux forwarded NaN / infinite velocities (the protective field computed a NaN
   scale and let them through); they are now dropped as zero, and every command is capped at
   the robot's speed envelope (`max_vx`, `max_vy`, `max_wz`).
@@ -41,6 +60,14 @@ versions follow [SemVer](https://semver.org).
   `ros2 launch` (`KillMode=mixed`); re-run `script/setup.sh install service` to update the unit.
 
 ### Added
+- `script/env.sh`: the service's environment in a shell (same RMW, domain and robot settings), and
+  `pnode` to run one node with the package defaults and the site file.
+- `script/setup.sh` reads `/etc/pashupati/pashupati.env` itself and has a `config` component that
+  creates the env and site files, adds keys that are new in the example, and flags unquoted values
+  with spaces. `check` reports an outdated service unit and a build older than the checkout, skips
+  Ollama and the person model when they are disabled, and (Jetson) blacklists `uvcvideo` so the
+  RealSense is not bound twice. `BUILD_WORKERS` / `BUILD_JOBS` limit the build.
+- Teleop `welcome` carries the robot `name` and its `robot_commands` (the handheld's action menu).
 - Teleop LAN discovery (`discover` → `beacon` with name, token required, who is driving,
   mode, battery), a `seq` number on every `state` for packet-loss estimates, and a camera rate
   the handheld can lower (`camera_fps`, capped by the parameter).
@@ -64,6 +91,8 @@ versions follow [SemVer](https://semver.org).
   person, clean shutdown.
 
 ### Changed
+- Person detection and VLM inspection are off in the env example (`PEOPLE=false`,
+  `INSPECTION=false`), which also sets `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`.
 - The RealSense driver comes from apt (`ros-humble-realsense2-camera`) instead of the
   `realsense-ros` submodule, which is removed. `script/setup.sh install realsense` installs it and
   the udev rules (from the package when it ships them, so it also works offline); the component
