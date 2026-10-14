@@ -173,8 +173,23 @@ class AnomalyDetectorNode(Node):
                 with urllib.request.urlopen(request, timeout=120):
                     self.get_logger().info(f'{self._model} loaded')
                     return
-            except (urllib.error.URLError, OSError):
-                time.sleep(10.0)
+            except urllib.error.HTTPError as error:
+                if error.code == 404:
+                    self.get_logger().error(
+                        f'{self._model} is not installed in Ollama: ollama pull {self._model}',
+                        throttle_duration_sec=60.0,
+                    )
+                else:
+                    self.get_logger().warn(
+                        f'Ollama could not load {self._model}: HTTP {error.code}',
+                        throttle_duration_sec=60.0,
+                    )
+            except (urllib.error.URLError, OSError) as error:
+                self.get_logger().warn(
+                    f'Ollama not reachable at {self._url} ({error}), retrying',
+                    throttle_duration_sec=60.0,
+                )
+            time.sleep(10.0)
         self.get_logger().error(f'could not load {self._model} from {self._url}')
 
 
