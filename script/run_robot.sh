@@ -15,6 +15,10 @@ if [[ -n "${ROBOT_PRESTART:-}" ]]; then
     bash -c "$ROBOT_PRESTART" || echo "ROBOT_PRESTART failed, starting anyway" >&2
 fi
 
+# numpy's OpenBLAS threads busy-wait between the small matrix ops the nodes run at
+# 10-50 Hz and burn whole cores; one BLAS thread per process is plenty.
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}" OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+
 export ROS_LOG_DIR="${ROS_LOG_DIR:-$HOME/.ros/log}"
 # Keep ROS logs from filling the disk: delete runs older than a week.
 find "$ROS_LOG_DIR" -mindepth 1 -maxdepth 1 -mtime +7 -exec rm -rf {} + 2>/dev/null || true
