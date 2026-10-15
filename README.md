@@ -150,7 +150,7 @@ pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.lau
 | Symptom | Cause | Fix |
 |---|---|---|
 | `-bash: stop: command not found` when loading the env | value with spaces not quoted | quote it; `script/setup.sh` shows the line |
-| `ros2 topic list` empty or only vendor topics | shell on another RMW, domain or `ROS_LOCALHOST_ONLY` | `pashu` (`script/env.sh`), then `ros2 daemon stop` |
+| `ros2 topic list` empty or only vendor topics | shell on another RMW, domain or `ROS_LOCALHOST_ONLY` | `pashu` (`script/env.sh`, it also restarts the ros2 daemon) |
 | RViz on a laptop sees no topics | `ROS_LOCALHOST_ONLY=1` | set 0 in the env file while debugging, restart the service |
 | robot or LiDAR also driven by the vendor stack | vendor autostart | `ROBOT_PRESTART` |
 | camera drops out, udev and journal flooded every second | kernel `uvcvideo` and librealsense both bind the camera | `script/setup.sh install realsense` (blacklists `uvcvideo` on Jetson), reboot |

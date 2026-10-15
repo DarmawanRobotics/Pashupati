@@ -23,6 +23,10 @@ export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}" OMP_NUM_THREADS="${OMP_
 
 # shellcheck disable=SC1090
 source "/opt/ros/${ROS_DISTRO:-humble}/setup.bash"
+# A ros2 daemon started from a shell with another RMW, domain or ROS_LOCALHOST_ONLY keeps that
+# view (empty `ros2 topic list`): start it fresh in this environment.
+ros2 daemon stop >/dev/null 2>&1 || true
+
 if [[ -f "$PASHUPATI_WS/install/setup.bash" ]]; then
     # shellcheck disable=SC1091
     source "$PASHUPATI_WS/install/setup.bash"

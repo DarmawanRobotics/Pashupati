@@ -10,6 +10,8 @@ versions follow [SemVer](https://semver.org).
   robot; the software e-stop and the speed envelope still apply. The simulator keeps it on.
 
 ### Fixed
+- `ros2 topic list` stayed empty in a robot shell after `script/env.sh`: a ros2 daemon started
+  from another environment kept its view; `env.sh` restarts it.
 - Teleop camera stayed black: driver JPEGs (quality 95) were too big to arrive whole as one burst
   of datagrams. Frames above `camera_max_bytes` are re-encoded at `camera_jpeg_quality` and
   `camera_max_width`, the send buffer is larger, and a frame stops at its first dropped chunk.
