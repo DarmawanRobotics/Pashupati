@@ -19,9 +19,11 @@ def test_images_are_thinned_out_and_infos_are_not():
     node = ImageThrottleNode()
     helper = rclpy.create_node('throttle_test_helper')
     images, infos = [], []
-    sensor = qos_profile_sensor_data  # the throttle publishes best effort, like a camera
-    helper.create_subscription(sensor_msgs.Image, 'out/image', images.append, sensor)
-    helper.create_subscription(sensor_msgs.CameraInfo, 'out/camera_info', infos.append, sensor)
+    # as apriltag_ros reads them: images best effort, camera_info reliable
+    helper.create_subscription(
+        sensor_msgs.Image, 'out/image', images.append, qos_profile_sensor_data
+    )
+    helper.create_subscription(sensor_msgs.CameraInfo, 'out/camera_info', infos.append, 10)
     image_pub = helper.create_publisher(sensor_msgs.Image, 'in/image', 50)
     info_pub = helper.create_publisher(sensor_msgs.CameraInfo, 'in/camera_info', 50)
     executor = SingleThreadedExecutor()

@@ -14,6 +14,8 @@ versions follow [SemVer](https://semver.org).
   robot; the software e-stop and the speed envelope still apply. The simulator keeps it on.
 
 ### Fixed
+- The AprilTag detector got no camera_info from `apriltag_throttle` (best effort, the detector
+  reads it reliable), so no tag was ever detected: the throttle publishes reliable.
 - `ros2 topic list` stayed empty in a robot shell after `script/env.sh`: a ros2 daemon started
   from another environment kept its view; `env.sh` restarts it.
 - Teleop camera stayed black: driver JPEGs (quality 95) were too big to arrive whole as one burst
