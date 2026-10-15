@@ -83,7 +83,7 @@ class LidarSectorNode(Node):
         self._base_frame = self.get_parameter('base_frame').value
         self._fallback_frame = self.get_parameter('lidar_frame').value
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self)
+        self._tf_listener = None  # only until the LiDAR mount is known, see extrinsic()
         self._extrinsics: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
         input_type = self.get_parameter('input_type').value
@@ -110,8 +110,15 @@ class LidarSectorNode(Node):
         )
 
     def extrinsic(self, frame_id: str):
-        """Return the cached (rotation, translation) from frame_id to base_frame, or None."""
+        """
+        Return the cached (rotation, translation) from frame_id to base_frame, or None.
+
+        The mount is fixed, so TF is only listened to until it is known instead of deserializing
+        every /tf message for the whole run.
+        """
         if frame_id not in self._extrinsics:
+            if self._tf_listener is None:
+                self._tf_listener = TransformListener(self._tf_buffer, self)
             try:
                 tf = self._tf_buffer.lookup_transform(
                     self._base_frame, frame_id, rclpy.time.Time()
@@ -125,6 +132,8 @@ class LidarSectorNode(Node):
             q, t = tf.transform.rotation, tf.transform.translation
             rotation = tf_transformations.quaternion_matrix([q.x, q.y, q.z, q.w])[:3, :3]
             self._extrinsics[frame_id] = (rotation, np.array([t.x, t.y, t.z]))
+            self._tf_listener.unregister()
+            self._tf_listener = None
         return self._extrinsics[frame_id]
 
     def range_to_color(self, r: float) -> ColorRGBA:

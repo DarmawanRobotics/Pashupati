@@ -18,7 +18,7 @@ class RouteRecorderNode(Node):
     """Teach: record the robot path from TF and save it as a route CSV with stop points."""
 
     def __init__(self):
-        """Initialize parameters, TF listener, services, and recording timer."""
+        """Initialize parameters and services; TF and sampling start with a recording."""
         super().__init__('route_recorder_node')
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
@@ -29,7 +29,7 @@ class RouteRecorderNode(Node):
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
         self._min_spacing = float(self.get_parameter('min_waypoint_spacing_m').value)
-        record_rate = float(self.get_parameter('record_rate_hz').value)
+        self._record_period = 1.0 / float(self.get_parameter('record_rate_hz').value)
         self._output_path = self.get_parameter('output_path').value
 
         self._recording = False
@@ -37,14 +37,14 @@ class RouteRecorderNode(Node):
         self._recording_file = None
 
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self)
+        self._tf_listener = None  # only while recording, see start_sampling()
+        self._sample_timer = None
 
         self._saved_pub = self.create_publisher(String, 'route/saved', 10)
         self.create_service(SetBool, 'route/record', self.recording_callback)
         self.create_service(
             MarkStopPoint, 'route/mark_stop_point', self.mark_stop_point_callback
         )
-        self.create_timer(1.0 / record_rate, self.record_tick)
 
     def recording_callback(self, request, response):
         """Start or stop path recording."""
@@ -64,6 +64,7 @@ class RouteRecorderNode(Node):
 
             os.makedirs(record_dir, exist_ok=True)
             self._recording_file = os.path.join(record_dir, f'{time_name}_path.csv')
+            self.start_sampling()
 
             response.success = True
             response.message = 'recording started'
@@ -76,6 +77,7 @@ class RouteRecorderNode(Node):
             return response
 
         self._recording = False
+        self.stop_sampling()
         self.write_csv()
         self._saved_pub.publish(String(data=self._recording_file))
 
@@ -85,6 +87,22 @@ class RouteRecorderNode(Node):
         )
         self.get_logger().info(response.message)
         return response
+
+    def start_sampling(self):
+        """Listen to TF and sample the pose while a route is recorded."""
+        if self._tf_listener is None:
+            self._tf_listener = TransformListener(self._tf_buffer, self)
+        if self._sample_timer is None:
+            self._sample_timer = self.create_timer(self._record_period, self.record_tick)
+
+    def stop_sampling(self):
+        """Release TF and the sampling timer between recordings (nothing to do then)."""
+        if self._sample_timer is not None:
+            self.destroy_timer(self._sample_timer)
+            self._sample_timer = None
+        if self._tf_listener is not None:
+            self._tf_listener.unregister()
+            self._tf_listener = None
 
     def lookup_current_pose(self):
         """Look up the current map->base_link pose."""
