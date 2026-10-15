@@ -125,6 +125,10 @@ script/setup.sh                         # every line ok?
 - **Heavy extras** are off: `PEOPLE=true` needs a TensorRT model (`script/setup.sh install
   people_model` prints the Jetson steps), `INSPECTION=true` needs Ollama and the VLM
   (`script/setup.sh install ollama`, then `install service` again).
+- **Handheld video** goes over WebRTC (H.264 through MediaMTX, `script/setup.sh install webrtc`):
+  the launch starts MediaMTX, which encodes the camera only while the handheld watches. Open TCP
+  8890 and UDP 8190 on a robot firewall. Without MediaMTX (or `WEBRTC=false`) the handheld gets
+  JPEG frames over the teleop link, as before.
 
 The service runs `ros2 launch pashupati robot.launch.py` (`script/run_robot.sh`) with
 `Restart=always`; every Pashupati node respawns on its own, and the last loaded route is reloaded
@@ -157,6 +161,7 @@ pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.lau
 | a Python node at 100-200 % CPU | numpy OpenBLAS threads busy-wait | `OPENBLAS_NUM_THREADS=1` (env file) |
 | handheld: "wrong token" | app token differs from `teleop_udp_node.token` | same token in both |
 | handheld connected, robot does not walk | mode AUTO, or the e-stop is latched | REMOTE on the handheld, release the e-stop |
+| handheld video choppy, `WebRTC video off` in the journal | MediaMTX missing or older than v1.11 | `script/setup.sh install webrtc`, restart the service |
 | `model ... is not installed in Ollama` | model pulled into `~/.ollama`, not into the service | `script/setup.sh install ollama` |
 | `malformed launch argument 'route:='` | empty launch argument | leave it out; `robot.launch.py` reads the env |
 | build killed (out of memory) | too many parallel compile jobs | `BUILD_WORKERS=1 BUILD_JOBS=2 script/setup.sh install build` |

@@ -7,7 +7,7 @@
 #   script/setup.sh install livox build  # install only these
 #   script/setup.sh install all          # every component, including ros and service
 #
-# Components: ros tools submodules livox robot legkilo rosdep realsense ollama people_model
+# Components: ros tools submodules livox robot legkilo rosdep realsense webrtc ollama people_model
 #             build config service network
 # Settings come from the environment, then from /etc/pashupati/pashupati.env (ROBOT_SETUP,
 # ROBOT_IP, PEOPLE, INSPECTION, ...): no need to source it first.
@@ -16,7 +16,8 @@
 #      ROBOT_IP (robot SDK address for the network check), VLM_MODEL (moondream),
 #      PEOPLE_MODEL (models/yolo11n.engine), BUILD_WORKERS / BUILD_JOBS (parallel packages /
 #      compile jobs, lower them when the build runs out of memory), REALSENSE_BLACKLIST_UVC
-#      (1 on Jetson), FORCE=1 (reinstall anyway)
+#      (1 on Jetson), MEDIAMTX (a MediaMTX binary to use instead of installing one), FORCE=1
+#      (reinstall anyway)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -60,9 +61,9 @@ BUILD_STAMP="$ROOT/install/.pashupati_build"
 UVC_BLACKLIST=/etc/modprobe.d/blacklist-uvcvideo-realsense.conf
 REALSENSE_BLACKLIST_UVC="${REALSENSE_BLACKLIST_UVC:-$([[ "$(uname -m)" == aarch64 ]] && echo 1 || echo 0)}"
 
-ALL=(ros tools submodules livox robot legkilo rosdep realsense ollama people_model build config
-     service network)
-DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense ollama build config)
+ALL=(ros tools submodules livox robot legkilo rosdep realsense webrtc ollama people_model build
+     config service network)
+DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense webrtc ollama build config)
 
 SUDO=$([[ "$(id -u)" -eq 0 ]] && echo "" || echo "sudo")
 IN_DOCKER=$([[ -f /.dockerenv ]] && echo 1 || echo 0)
@@ -227,6 +228,67 @@ install_realsense() {
         echo "blacklist uvcvideo" | $SUDO tee "$UVC_BLACKLIST" >/dev/null
         $SUDO modprobe -r uvcvideo 2>/dev/null || log "uvcvideo is in use: reboot once"
     fi
+}
+
+# The handheld's WebRTC video: GStreamer (H.264 encoders, RTSP) and MediaMTX, a pinned release
+# checked against its sha256 (robot.launch.py writes the configuration and starts it).
+MEDIAMTX="${MEDIAMTX:-}"
+MEDIAMTX_VERSION=v1.20.1
+MEDIAMTX_DIR=/opt/pashupati/mediamtx
+declare -A MEDIAMTX_SHA256=(
+    [amd64]=81b143f55a5d23d4a8c028d52869c14ea4a59919900528698fcc97a747fd69c6
+    [arm64]=d1689f0bfefb1864e5ed3dcc8495eb2d7ec0a654f90bf3cd48980cb3bd08718a
+    [armv7]=ee4dde41e04de75a237c7bb2733cf4102ca212db05efefbcbbcd1ea60bd77e33
+)
+WEBRTC_APT=(gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-rtsp python3-gi
+    gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0)
+# Same search as robot.launch.py: MEDIAMTX, our install, PATH, the usual manual installs.
+mediamtx_bin() {
+    local candidates=("$MEDIAMTX") path
+    [[ -n "$MEDIAMTX" ]] || candidates=("$MEDIAMTX_DIR/mediamtx" "$(command -v mediamtx || true)"
+        /usr/local/bin/mediamtx "$HOME/mediamtx/mediamtx")
+    for path in "${candidates[@]}"; do
+        [[ -n "$path" && -f "$path" && -x "$path" ]] && echo "$path" && return 0
+    done
+    return 1
+}
+mediamtx_version() { "$1" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true; }
+check_webrtc() {
+    local missing=() pkg bin version
+    for pkg in "${WEBRTC_APT[@]}"; do
+        dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+    done
+    [[ ${#missing[@]} -eq 0 ]] || { echo "missing: ${missing[*]}"; return 1; }
+    bin=$(mediamtx_bin) || { echo "MediaMTX not installed (handheld video: JPEG only)"; return 1; }
+    version=$(mediamtx_version "$bin")
+    # the configuration robot.launch.py writes needs 1.11 (rtspTransports)
+    printf '1.11.0\n%s\n' "${version:-0}" | sort -V -C \
+        || { echo "$bin is v${version:-?}, needs v1.11 or newer"; return 1; }
+    echo "MediaMTX v$version ($bin), GStreamer"
+}
+install_webrtc() {
+    apt_install "${WEBRTC_APT[@]}"
+    if [[ "${FORCE:-0}" != "1" ]] && check_webrtc >/dev/null 2>&1; then
+        return 0  # a recent enough MediaMTX is already there
+    fi
+    local arch tmp tarball
+    case "$(uname -m)" in
+        aarch64|arm64) arch=arm64 ;;
+        x86_64|amd64) arch=amd64 ;;
+        armv7l) arch=armv7 ;;
+        *) echo "no MediaMTX release for $(uname -m)"; return 1 ;;
+    esac
+    tmp=$(mktemp -d)
+    tarball="mediamtx_${MEDIAMTX_VERSION}_linux_${arch}.tar.gz"
+    curl -fsSL -o "$tmp/$tarball" \
+        "https://github.com/bluenviron/mediamtx/releases/download/$MEDIAMTX_VERSION/$tarball"
+    echo "${MEDIAMTX_SHA256[$arch]}  $tmp/$tarball" | sha256sum -c --quiet \
+        || { rm -rf "$tmp"; echo "$tarball: checksum mismatch"; return 1; }
+    tar -xzf "$tmp/$tarball" -C "$tmp" mediamtx
+    $SUDO install -D -m 755 "$tmp/mediamtx" "$MEDIAMTX_DIR/mediamtx"
+    rm -rf "$tmp"
+    log "MediaMTX $MEDIAMTX_VERSION in $MEDIAMTX_DIR: robot.launch.py runs it (8890/tcp, 8190/udp)"
 }
 
 check_build() {

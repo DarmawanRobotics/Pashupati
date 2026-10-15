@@ -6,6 +6,11 @@ versions follow [SemVer](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- Handheld video over WebRTC: `robot.launch.py` starts MediaMTX (`script/setup.sh install
+  webrtc`), which runs the new `video_stream_node` while the handheld watches. H.264 from the
+  Jetson hardware encoder (x264 or OpenH264 where there is none), read with the teleop token. The
+  `welcome` offers it as `video: {port, path}` (WHEP); apps without WebRTC and robots without
+  MediaMTX keep the JPEG frames.
 - The handheld video shows the AprilTags the detector sees: `state.tags` carries their corners as
   fractions of the image (protocol v1, an extra field older apps ignore).
 
