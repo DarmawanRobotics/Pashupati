@@ -49,6 +49,9 @@ teleop_udp_node:
     camera_jpeg_quality: 60
     camera_max_width: 640
     camera_max_bytes: 60000           # bigger driver JPEGs are re-encoded (needs OpenCV)
+    # AprilTags drawn over the handheld video (while the camera stream is on); "" turns it off
+    tags_topic: /perception/apriltag/detections
+    tags_camera_info_topic: /perception/apriltag/camera_info
     lidar_topic: /cloud_registered_body   # FAST-LIO body-frame cloud
     lidar_hz: 2.0
     lidar_voxel: 0.1

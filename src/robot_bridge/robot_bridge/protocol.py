@@ -97,6 +97,24 @@ def voxel_downsample(xyz: np.ndarray, voxel: float, max_points: int) -> np.ndarr
     return out
 
 
+def tag_quads(tags, width: float, height: float) -> list:
+    """
+    Return AprilTags for the handheld overlay: [[id, x0, y0, x1, y1, x2, y2, x3, y3], ...].
+
+    tags is [(id, [(x, y) * 4 corner pixels]), ...]; the corners become fractions of the image
+    size, so they fit the video at any resolution.
+    """
+    if width <= 0 or height <= 0:
+        return []
+    out = []
+    for tag_id, corners in tags:
+        row = [int(tag_id)]
+        for x, y in corners:
+            row += [round(float(x) / width, 3), round(float(y) / height, 3)]
+        out.append(row)
+    return out
+
+
 def simplify_route(points: list, max_points: int) -> list:
     """Evenly subsample a route to at most max_points, keeping both ends."""
     if len(points) <= max_points:

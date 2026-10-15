@@ -20,7 +20,7 @@ from rclpy.time import Time
 from robot_bridge import protocol
 from robot_interfaces.msg import MissionStatus, NavigationStatus, WaypointPath
 from robot_interfaces.srv import LoadPath, MarkStopPoint, SetMode
-from sensor_msgs.msg import BatteryState, CompressedImage, Image, PointCloud2
+from sensor_msgs.msg import BatteryState, CameraInfo, CompressedImage, Image, PointCloud2
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -29,6 +29,10 @@ try:
     import cv2
 except ImportError:  # raw images need OpenCV, compressed ones do not
     cv2 = None
+try:
+    from apriltag_msgs.msg import AprilTagDetectionArray
+except ImportError:  # no AprilTag detector here: no tag overlay on the handheld video
+    AprilTagDetectionArray = None
 
 # std_srvs/Trigger services every quadruped driver should offer under its namespace; robot-specific
 # extras (gait or speed modes, ...) are added per robot with robot_commands in the site file.
@@ -85,6 +89,9 @@ class TeleopUdpNode(Node):
             'camera_jpeg_quality': 60,
             'camera_max_width': 640,
             'camera_max_bytes': 60000,
+            'tags_topic': '/perception/apriltag/detections',
+            'tags_camera_info_topic': '/perception/apriltag/camera_info',
+            'tags_max_age_sec': 0.6,
             'lidar_topic': '/cloud_registered_body',
             'lidar_hz': 2.0,
             'lidar_voxel': 0.1,
@@ -132,6 +139,10 @@ class TeleopUdpNode(Node):
         self._extrinsics: dict = {}
         self._last_camera = self._last_lidar = 0.0
         self._big_frame_warned = False
+        self._tags: list = []
+        self._tags_time = 0.0
+        self._tags_size = (0, 0)
+        self._tags_max_age = float(p('tags_max_age_sec'))
         self._camera_period = 1.0 / max(float(p('camera_fps')), 0.1)
         self._lidar_period = 1.0 / max(float(p('lidar_hz')), 0.1)
 
@@ -159,7 +170,12 @@ class TeleopUdpNode(Node):
         self._tf_listener = None  # only while a client is connected, see sync_subscriptions
         self._remote_pub = self.create_publisher(Twist, 'bridge/remote_cmd_vel', 10)
         self.make_clients(p('robot_command_prefix'), p('robot_commands'))
-        self.make_subscriptions(p('camera_topic'), bool(p('camera_compressed')), p('lidar_topic'))
+        self.make_subscriptions(
+            p('camera_topic'),
+            bool(p('camera_compressed')),
+            p('lidar_topic'),
+            (p('tags_topic'), p('tags_camera_info_topic')),
+        )
 
         # A reader thread wakes the executor per datagram: no polling timer while idle.
         self._inbox = deque(maxlen=256)
@@ -228,8 +244,10 @@ class TeleopUdpNode(Node):
         for name in self._robot_commands:
             self._commands[name] = trigger(prefix + name)
 
-    def make_subscriptions(self, camera_topic: str, compressed: bool, lidar_topic: str):
-        """Subscribe to telemetry; camera and lidar wait for a client that wants them."""
+    def make_subscriptions(
+        self, camera_topic: str, compressed: bool, lidar_topic: str, tag_topics: tuple
+    ):
+        """Subscribe to telemetry; camera (with its tags) and lidar wait for a client."""
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(NavigationStatus, 'navigation/status', self.on_nav_status, 10)
         self.create_subscription(MissionStatus, 'navigation/mission_status', self.on_mission, 10)
@@ -247,11 +265,20 @@ class TeleopUdpNode(Node):
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
         self.create_subscription(Twist, 'cmd_vel', self.on_cmd_vel, 10)
-        camera = (CompressedImage if compressed else Image, camera_topic, self.on_camera)
-        lidar = (PointCloud2, lidar_topic, self.on_lidar)
-        self._stream_sources = {
-            name: source for name, source in (('camera', camera), ('lidar', lidar)) if source[1]
+        # name: (stream that needs it, type, topic, callback)
+        sources = {
+            'camera': (
+                'camera',
+                CompressedImage if compressed else Image,
+                camera_topic,
+                self.on_camera,
+            ),
+            'lidar': ('lidar', PointCloud2, lidar_topic, self.on_lidar),
         }
+        if AprilTagDetectionArray is not None:
+            sources['tags'] = ('camera', AprilTagDetectionArray, tag_topics[0], self.on_tags)
+            sources['tags_info'] = ('camera', CameraInfo, tag_topics[1], self.on_tags_info)
+        self._stream_sources = {name: source for name, source in sources.items() if source[2]}
 
     def sync_subscriptions(self):
         """
@@ -266,8 +293,8 @@ class TeleopUdpNode(Node):
         elif not live and self._tf_listener is not None:
             self._tf_listener.unregister()
             self._tf_listener = None
-        for name, (kind, topic, callback) in self._stream_sources.items():
-            wanted = live and self._streams[name]
+        for name, (stream, kind, topic, callback) in self._stream_sources.items():
+            wanted = live and self._streams[stream]
             subscription = self._stream_subs.get(name)
             if wanted and subscription is None:
                 self._stream_subs[name] = self.create_subscription(
@@ -609,7 +636,30 @@ class TeleopUdpNode(Node):
         """Send the telemetry snapshot; seq lets the client measure packet loss."""
         if self._client is not None:
             self._seq += 1
-            self.send_json({'t': 'state', 'seq': self._seq, 'pose': self.pose(), **self._state})
+            self.send_json(
+                {
+                    't': 'state',
+                    'seq': self._seq,
+                    'pose': self.pose(),
+                    'tags': self.tags(),
+                    **self._state,
+                }
+            )
+
+    def tags(self) -> list:
+        """Tags in the camera image now, corners as image fractions, for the handheld overlay."""
+        if not self._tags or time.monotonic() - self._tags_time > self._tags_max_age:
+            return []
+        return protocol.tag_quads(self._tags, *self._tags_size)
+
+    def on_tags(self, msg):
+        """Keep the latest AprilTag detections (pixel corners of the detector's image)."""
+        self._tags = [(d.id, [(c.x, c.y) for c in d.corners]) for d in msg.detections]
+        self._tags_time = time.monotonic()
+
+    def on_tags_info(self, msg: CameraInfo):
+        """Size of the image the AprilTag detector sees."""
+        self._tags_size = (msg.width, msg.height)
 
     def reply_beacon(self, addr):
         """Answer a LAN discovery probe (no token needed, nothing sensitive)."""

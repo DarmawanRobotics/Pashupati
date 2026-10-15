@@ -64,7 +64,7 @@ from an earlier session are not delivered. Start ids at a random value per app s
 |---|---|
 | `welcome` | `name` (robot), `commands` (every command name), `robot_commands` (the driver commands of this robot, in the order of the `robot_commands` parameter), `limits` ([vx, vy, wz] maxima) |
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
-| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `field` (protective field: `clear`, `limited`, `stop`, `stale`, `off` or `null`), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`) |
+| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `field` (protective field: `clear`, `limited`, `stop`, `stale`, `off` or `null`), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`), `tags` (AprilTags in the camera image while the camera stream is on: [[id, x0, y0, x1, y1, x2, y2, x3, y3], ...], corners as fractions of the image width and height) |
 | `pong` | `ts` |
 | `busy` | `msg`: another device is driving, retry later |
 | `denied` | `msg`: the `hello` had a missing or wrong token |

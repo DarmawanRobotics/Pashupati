@@ -5,6 +5,10 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- The handheld video shows the AprilTags the detector sees: `state.tags` carries their corners as
+  fractions of the image (protocol v1, an extra field older apps ignore).
+
 ### Changed
 - REMOTE drives without the protective field (`field_in_remote: false`): the operator watches the
   robot; the software e-stop and the speed envelope still apply. The simulator keeps it on.

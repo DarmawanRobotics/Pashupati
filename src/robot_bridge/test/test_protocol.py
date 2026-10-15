@@ -6,6 +6,13 @@ import pytest
 from robot_bridge import protocol
 
 
+def test_tag_quads_are_image_fractions():
+    """Tag corners in pixels become fractions of the image; no image size, no tags."""
+    tags = [(7, [(0, 0), (320, 0), (320, 240), (0, 240)])]
+    assert protocol.tag_quads(tags, 640, 480) == [[7, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 0.5]]
+    assert protocol.tag_quads(tags, 0, 0) == []
+
+
 def test_chunks_reassemble_out_of_order():
     """Chunked payloads survive reordering."""
     payload = bytes(random.getrandbits(8) for _ in range(9000))
@@ -80,7 +87,7 @@ def test_discovery_beacon_and_seq():
     }
     assert {k: beacon[k] for k in expected} == expected and beacon['battery'] == 80
     sent = []
-    node._client, node.pose = ('127.0.0.1', 1), lambda: None
+    node._client, node.pose, node.tags = ('127.0.0.1', 1), lambda: None, lambda: []
     node.send_json = sent.append
     node.send_state()
     node.send_state()

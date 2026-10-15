@@ -186,6 +186,30 @@ def test_command_ids_are_per_session(rig):
     assert rig.estop_requests == ['handheld estop', 'handheld estop']
 
 
+def test_state_carries_apriltags_while_the_camera_is_on(rig):
+    """Tags the detector sees reach the handheld as image fractions, with the camera stream."""
+    tag_msgs = pytest.importorskip('apriltag_msgs.msg')
+    CameraInfo = pytest.importorskip('sensor_msgs.msg').CameraInfo
+    info_pub = rig.listener.create_publisher(CameraInfo, '/perception/apriltag/camera_info', 10)
+    tag_pub = rig.listener.create_publisher(
+        tag_msgs.AprilTagDetectionArray, '/perception/apriltag/detections', 10
+    )
+    a = rig.client()
+    rig.send(a, {'t': 'hello', 'streams': {'camera': True}})
+    tag = tag_msgs.AprilTagDetection(id=3)
+    tag.corners = [
+        tag_msgs.Point(x=float(x), y=float(y)) for x, y in ((0, 0), (320, 0), (320, 240), (0, 240))
+    ]
+    tags, end = [], time.monotonic() + 5.0
+    while not tags and time.monotonic() < end:
+        info_pub.publish(CameraInfo(width=640, height=480))
+        tag_pub.publish(tag_msgs.AprilTagDetectionArray(detections=[tag]))
+        rig.spin(0.2)
+        states = [m for m in rig.received(a) if m.get('t') == 'state']
+        tags = states[-1]['tags'] if states else []
+    assert tags == [[3, 0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 0.5]]
+
+
 def test_streams_are_subscribed_only_while_wanted(rig):
     """The camera and TF are subscribed while a client wants them, and dropped when it leaves."""
     camera = '/camera/camera/color/image_raw/compressed'
