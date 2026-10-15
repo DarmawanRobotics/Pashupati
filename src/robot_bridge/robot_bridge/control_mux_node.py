@@ -38,7 +38,7 @@ class ControlMuxNode(Node):
         self.declare_parameter('max_vy', 0.5)
         self.declare_parameter('max_wz', 1.5)
         self.declare_parameter('field_in_auto', True)
-        self.declare_parameter('field_in_remote', True)
+        self.declare_parameter('field_in_remote', False)
         self.declare_parameter('safety_scan_timeout_sec', 0.5)
         self.declare_parameter('stale_remote_speed', 0.15)
         defaults = protective_field.FieldConfig()

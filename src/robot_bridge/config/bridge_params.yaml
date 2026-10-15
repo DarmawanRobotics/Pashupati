@@ -14,7 +14,7 @@ control_mux_node:
     # Protective field: limit every command to a speed that still stops `margin` before the
     # nearest obstacle in the swept path (perception/safety_scan, 360 deg).
     field_in_auto: true
-    field_in_remote: true             # also protects the robot from the handheld driver
+    field_in_remote: false            # REMOTE: the operator watches the robot, nothing limits it
     safety_scan_timeout_sec: 0.5      # older scan: auto mode stops, remote mode creeps
     stale_remote_speed: 0.15          # m/s cap for the handheld while the scan is stale
     field.front: 0.40                 # m, base_link to the front edge

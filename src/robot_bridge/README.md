@@ -32,11 +32,13 @@ with a NaN or infinite value, from a controller bug or a bad route, is replaced 
 after `field.reaction_time` and braking at `field.max_decel`, `field.margin` short of the nearest
 obstacle in its swept path (box `field.front` / `field.rear` / `field.half_width`, from the 360°
 `perception/safety_scan`). It works in every direction, so sideways and backward motion during a
-holonomic stop-point approach and the handheld driver are protected as well as forward driving.
-Without a fresh scan (`safety_scan_timeout_sec`) navigation stops and the handheld creeps at
-`stale_remote_speed`; a blind LiDAR reports every sector blocked. Rotation is not limited. State on
-`bridge/protective_field` (`clear`, `limited`, `stop`, `stale`, `off`), also in the handheld and
-NETRA telemetry. Robots without the safety scan set `field_in_auto` / `field_in_remote` to false.
+holonomic stop-point approach are protected as well as forward driving. Without a fresh scan
+(`safety_scan_timeout_sec`) navigation stops; a blind LiDAR reports every sector blocked. Rotation
+is not limited. The handheld in REMOTE is not limited by default, the operator watches the robot
+(`field_in_remote: true` protects it too; without a fresh scan it then creeps at
+`stale_remote_speed`). State on `bridge/protective_field` (`clear`, `limited`, `stop`, `stale`,
+`off`), also in the handheld and NETRA telemetry. Robots without the safety scan set
+`field_in_auto` to false.
 
 **Software e-stop.** Engaged from the handheld (`estop`, and also its `emergency_stop` driver
 command), NETRA (`estop`), RViz / CLI (`ros2 service call /bridge/estop std_srvs/srv/SetBool

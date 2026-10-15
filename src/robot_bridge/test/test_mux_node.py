@@ -10,6 +10,7 @@ Twist = pytest.importorskip('geometry_msgs.msg').Twist
 std_msgs = pytest.importorskip('std_msgs.msg')
 SetBool = pytest.importorskip('std_srvs.srv').SetBool
 SectorScan = pytest.importorskip('robot_interfaces.msg').SectorScan
+SetMode = pytest.importorskip('robot_interfaces.srv').SetMode
 qos = pytest.importorskip('rclpy.qos')
 SingleThreadedExecutor = pytest.importorskip('rclpy.executors').SingleThreadedExecutor
 ControlMuxNode = pytest.importorskip('robot_bridge.control_mux_node').ControlMuxNode
@@ -30,6 +31,8 @@ class Rig:
         )
         self.helper.create_service(SetBool, 'navigation/pause', self.on_pause)
         self.nav = self.helper.create_publisher(Twist, 'bridge/nav_cmd_vel', 10)
+        self.remote = self.helper.create_publisher(Twist, 'bridge/remote_cmd_vel', 10)
+        self.set_mode = self.helper.create_client(SetMode, 'bridge/set_mode')
         self.request = self.helper.create_publisher(std_msgs.String, 'bridge/estop_request', 10)
         self.estop = self.helper.create_client(SetBool, 'bridge/estop')
         self.field_states = []
@@ -73,7 +76,14 @@ class Rig:
 
     def call(self, data: bool):
         """Call bridge/estop and wait for the answer."""
-        future = self.estop.call_async(SetBool.Request(data=data))
+        return self.wait(self.estop.call_async(SetBool.Request(data=data)))
+
+    def mode(self, mode: str):
+        """Call bridge/set_mode and wait for the answer."""
+        return self.wait(self.set_mode.call_async(SetMode.Request(mode=mode)))
+
+    def wait(self, future):
+        """Spin until a service answer arrives (3 s at most)."""
         end = time.monotonic() + 3.0
         while not future.done() and time.monotonic() < end:
             self.executor.spin_once(timeout_sec=0.01)
@@ -140,6 +150,21 @@ def test_field_stops_forward_motion_toward_an_obstacle(rig):
     rig.spin(0.3)
     rig.drive(0.4)
     assert abs(rig.out[-1].linear.x - 0.4) < 1e-6 and rig.field_states[-1] == 'clear'
+
+
+def test_remote_is_not_limited_by_the_field(rig):
+    """REMOTE: an obstacle ahead limits nothing, the operator watches the robot."""
+    rig.obstacles = {36: 0.5}
+    rig.spin(0.3)
+    assert rig.mode('remote').success
+    cmd = Twist()
+    cmd.linear.x, cmd.angular.z = 0.4, 0.8
+    rig.remote.publish(cmd)
+    rig.spin(0.15)  # within remote_timeout_sec, before the watchdog zeroes the robot
+    moving = [t for t in rig.out if t.linear.x > 0.0]
+    assert moving and abs(moving[-1].linear.x - 0.4) < 1e-6
+    assert abs(moving[-1].angular.z - 0.8) < 1e-6
+    assert rig.field_states[-1] == 'off'
 
 
 def test_field_stops_navigation_without_a_fresh_scan(rig):

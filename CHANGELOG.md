@@ -5,6 +5,10 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+- REMOTE drives without the protective field (`field_in_remote: false`): the operator watches the
+  robot; the software e-stop and the speed envelope still apply.
+
 ### Fixed
 - Teleop camera stayed black: driver JPEGs (quality 95) were too big to arrive whole as one burst
   of datagrams. Frames above `camera_max_bytes` are re-encoded at `camera_jpeg_quality` and
