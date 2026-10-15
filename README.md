@@ -29,8 +29,9 @@ instead of a global planner:
     with no gap, the robot stops short.
   - At every stop the robot converges to 5 cm / 3° and inspects. A 360° protective field caps every
   command at a speed the robot can still stop at before the nearest obstacle in its path.
-- **Inspect** — Moondream (local VLM via Ollama) checks each stop for trash, spills, floor damage
-  or a fallen person; findings go to NETRA for final detection, validation and Telegram alerts.
+- **Inspect** — a local VLM via Ollama (any vision model, qwen3-vl by default) watches the floor for
+  trash and spills while driving and at every stop; findings go to NETRA for final detection,
+  validation and Telegram alerts.
 - **Sense crowds** — people seen by the camera are placed on the floor plan and aggregated into
   per-minute crowd heatmaps.
 - **Operate** — schedules and live control from NETRA, manual control from a Retroid handheld
@@ -47,7 +48,7 @@ flowchart LR
         LOC --> NAV[path follower + avoidance]
         PER --> NAV
         NAV --> MUX[control mux] --> DRV
-        INS[VLM inspection<br/>Moondream] --> UP[fleet uplink]
+        INS[VLM inspection<br/>Ollama] --> UP[fleet uplink]
         NAV --> UP
         PER --> UP
         HL[health] --> UP
@@ -86,7 +87,7 @@ flowchart LR
 | [`robot_navigation`](src/robot_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
 | [`robot_bridge`](src/robot_bridge) | auto/remote control mux, UDP teleop gateway ([protocol](src/robot_bridge/PROTOCOL.md)) |
 | [`robot_fleet`](src/robot_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/robot_fleet/API.md)) |
-| [`robot_inspection`](src/robot_inspection) | Moondream anomaly detection at stop points |
+| [`robot_inspection`](src/robot_inspection) | VLM anomaly detection (Ollama), continuous and at stop points |
 | [`robot_health`](src/robot_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, computer health |
 | [`robot_rviz`](src/robot_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
 | [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, site configuration |

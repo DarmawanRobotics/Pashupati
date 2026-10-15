@@ -13,7 +13,7 @@
 # ROBOT_IP, PEOPLE, INSPECTION, ...): no need to source it first.
 # Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), ROBOT_SETUP (the robot package's own
 #      installer, `<script> check|install`, e.g. for a vendor SDK; see src/xtras/README.md),
-#      ROBOT_IP (robot SDK address for the network check), VLM_MODEL (moondream),
+#      ROBOT_IP (robot SDK address for the network check), VLM_MODEL (qwen3-vl:2b-instruct),
 #      PEOPLE_MODEL (models/yolo11n.engine), BUILD_WORKERS / BUILD_JOBS (parallel packages /
 #      compile jobs, lower them when the build runs out of memory), REALSENSE_BLACKLIST_UVC
 #      (1 on Jetson), MEDIAMTX (a MediaMTX binary to use instead of installing one), FORCE=1
@@ -49,7 +49,7 @@ ROBOT_SETUP="${ROBOT_SETUP:-}"
 SERVICE_NAME=pashupati
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 SITE_FILE="${SITE_CONFIG:-/etc/pashupati/site.yaml}"
-VLM_MODEL="${VLM_MODEL:-moondream}"
+VLM_MODEL="${VLM_MODEL:-qwen3-vl:2b-instruct}"
 PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n.engine}"
 REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"

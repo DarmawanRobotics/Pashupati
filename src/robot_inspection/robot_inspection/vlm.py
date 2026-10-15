@@ -44,7 +44,8 @@ def build_prompt(categories: list[str], describe: bool, use_schema: bool) -> str
 
 
 def build_schema(categories: list[str], describe: bool) -> dict:
-    """Return the JSON schema for Ollama structured output.
+    """
+    Return the JSON schema for Ollama structured output.
 
     `description` comes before `type` so the model looks first and decides after.
     """
@@ -86,7 +87,8 @@ def build_request(
 
 
 def parse_response(text: str, categories: list[str], use_schema: bool) -> dict:
-    """Normalise a model answer to {category, description, valid}.
+    """
+    Normalise a model answer to {category, description, valid}.
 
     `valid` is False when no known category could be read; category is then 'none'.
     """
