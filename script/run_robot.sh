@@ -16,6 +16,20 @@ if [[ -n "${LD_LIBRARY_PATH_FIRST:-}" ]]; then
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH_FIRST:${LD_LIBRARY_PATH:-}"
 fi
 
+# Without a battery-backed clock the computer boots with a wrong time and NTP steps it minutes
+# later; odometry and TF stamps break on that jump. Wait for the first sync (TIME_SYNC_WAIT s,
+# 0: don't wait), then start anyway: a robot without network keeps its own consistent time.
+synced() { [[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" == yes ]]; }
+if [[ "${TIME_SYNC_WAIT:-60}" -gt 0 ]] && command -v timedatectl >/dev/null && ! synced; then
+    echo "waiting up to ${TIME_SYNC_WAIT:-60} s for the clock to synchronize (NTP)" >&2
+    for ((i = 0; i < ${TIME_SYNC_WAIT:-60}; i++)); do
+        synced && break
+        sleep 1
+    done
+    synced && echo "clock synchronized: $(date)" >&2 \
+        || echo "clock not synchronized, starting anyway: check timedatectl" >&2
+fi
+
 # Robot-specific preparation, e.g. stopping a vendor autostart that would fight for the robot.
 if [[ -n "${ROBOT_PRESTART:-}" ]]; then
     bash -c "$ROBOT_PRESTART" || echo "ROBOT_PRESTART failed, starting anyway" >&2
