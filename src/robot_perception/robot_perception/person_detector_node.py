@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
+import json
+import math
+import os
 import time
 
 from geometry_msgs.msg import Pose, PoseArray
 import numpy as np
+from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.parameter import Parameter
+from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
 from robot_perception.person_projection import feet_pixel, ground_point, pixel_ray
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
+from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 import tf_transformations as tft
 
@@ -18,21 +24,32 @@ try:
 except ImportError:
     cv2 = None
 
+# Changed while running (handheld, `ros2 param set`); the rest is read at start.
+LIVE_PARAMS = ('enabled', 'rate_hz', 'confidence')
+
+STATUS_PERIOD_SEC = 2.0  # perception/people_status also when nothing changes
+RELOAD_AFTER_SEC = 30.0  # retry a model that failed to load
+NO_CAMERA_SEC = 3.0  # without frames for this long the status says so
+
 
 class PersonDetectorNode(Node):
     """Detects people in the camera and places them on the floor in the map frame."""
 
     def __init__(self):
-        """Declare params, load the model and wire topics."""
+        """Declare params and wire topics; the model loads at the first frame while enabled."""
         super().__init__('person_detector_node')
         defaults = {
-            'image_topic': '/camera/camera/color/image_raw/compressed',
-            'compressed': True,
+            'enabled': True,
+            'state_file': '~/.pashupati/people.json',
+            'image_topic': '/camera/camera/color/image_raw',
+            'compressed': False,
             'camera_info_topic': '/camera/camera/color/camera_info',
-            'model_path': 'yolo11n.engine',
+            'model_path': 'yolo11n-416.onnx',
+            'backend': 'auto',
+            'threads': 2,
             'confidence': 0.4,
-            'image_size': 640,
-            'rate_hz': 3.0,
+            'image_size': 416,
+            'rate_hz': 2.0,
             'floor_z': -0.35,
             'max_range': 12.0,
             'map_frame': 'map',
@@ -41,29 +58,164 @@ class PersonDetectorNode(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         p = lambda name: self.get_parameter(name).value  # noqa: E731
+        state_file = str(p('state_file')).strip()
+        self._state_file = os.path.expanduser(state_file) if state_file else ''
+        self.restore_choice()
+        self._enabled = bool(p('enabled'))
+        self._period = 1.0 / max(float(p('rate_hz')), 0.1)
+        self._confidence = float(p('confidence'))
+        self._model_path = str(p('model_path'))
+        self._backend = str(p('backend'))
+        self._threads = max(int(p('threads')), 1)
+        self._image_size = int(p('image_size'))
+        self._image_topic = str(p('image_topic'))
         self._floor_z, self._max_range = float(p('floor_z')), float(p('max_range'))
         self._map_frame, self._base_frame = p('map_frame'), p('base_frame')
-        self._period = 1.0 / max(float(p('rate_hz')), 0.1)
         self._last = 0.0
         self._k = None
         self._t_base_cam = {}
 
         self._detector = None
-        try:
-            from robot_perception.detector import PersonDetector
-
-            self._detector = PersonDetector(
-                p('model_path'), float(p('confidence')), int(p('image_size'))
-            )
-        except Exception as error:  # noqa: B902
-            self.get_logger().error(f'person detector disabled: {error}')
+        self._load_error = ''
+        self._load_tried = -math.inf
+        self._frame_time = -math.inf  # last camera frame
+        self._result = None  # count, latency, time of the last detection
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
+        latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self._people_pub = self.create_publisher(PoseArray, 'perception/people', 10)
+        self._status_pub = self.create_publisher(String, 'perception/people_status', latched)
         self.create_subscription(CameraInfo, p('camera_info_topic'), self.on_info, 10)
         kind = CompressedImage if p('compressed') else Image
-        self.create_subscription(kind, p('image_topic'), self.on_image, qos_profile_sensor_data)
+        self.create_subscription(kind, self._image_topic, self.on_image, qos_profile_sensor_data)
+        self.add_on_set_parameters_callback(self.on_parameters)
+        self.create_timer(STATUS_PERIOD_SEC, self.publish_status)
+        self.publish_status()
+
+    # ---------------------------------------------------------------- live parameters
+    def on_parameters(self, params):
+        """Accept enabled / rate_hz / confidence while running; the rest needs a restart."""
+        updates = {}
+        for param in params:
+            if param.name not in LIVE_PARAMS:
+                return SetParametersResult(
+                    successful=False, reason=f'{param.name} is read at start, restart the node'
+                )
+            if param.name == 'enabled':
+                updates['enabled'] = bool(param.value)
+                continue
+            value = float(param.value)
+            if param.name == 'rate_hz' and not (math.isfinite(value) and 0.1 <= value <= 30.0):
+                return SetParametersResult(successful=False, reason='rate_hz: 0.1 to 30')
+            if param.name == 'confidence' and not 0.05 <= value <= 0.95:
+                return SetParametersResult(successful=False, reason='confidence: 0.05 to 0.95')
+            updates[param.name] = value
+        if 'enabled' in updates:
+            self._enabled = updates['enabled']
+        if 'rate_hz' in updates:
+            self._period = 1.0 / updates['rate_hz']
+        if 'confidence' in updates:
+            self._confidence = updates['confidence']
+            if self._detector is not None:
+                self._detector.confidence = self._confidence
+        self.get_logger().info(f'person detection {"on" if self._enabled else "off"}')
+        self.save_choice()
+        self.publish_status()
+        return SetParametersResult(successful=True)
+
+    def restore_choice(self):
+        """Apply the on / off chosen live before a restart (state_file)."""
+        if not self._state_file:
+            return
+        try:
+            with open(self._state_file) as f:
+                saved = json.load(f)
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as error:
+            self.get_logger().warn(f'ignoring {self._state_file}: {error}')
+            return
+        if isinstance(saved, dict) and isinstance(saved.get('enabled'), bool):
+            self.set_parameters([Parameter('enabled', value=saved['enabled'])])
+            self.get_logger().info(
+                f'person detection {"on" if saved["enabled"] else "off"} '
+                f'(restored from {self._state_file})'
+            )
+
+    def save_choice(self):
+        """Keep the live on / off for the next start (state_file)."""
+        if not self._state_file:
+            return
+        try:
+            os.makedirs(os.path.dirname(self._state_file) or '.', exist_ok=True)
+            partial = self._state_file + '.tmp'
+            with open(partial, 'w') as f:
+                json.dump({'enabled': self._enabled}, f)
+            os.replace(partial, self._state_file)
+        except OSError as error:
+            self.get_logger().warn(f'cannot keep the person detection choice: {error}')
+
+    # ---------------------------------------------------------------- status
+    def status(self) -> dict:
+        """Return what perception/people_status carries (the handheld shows it)."""
+        now = time.monotonic()
+        error = ''
+        if not self._enabled:
+            state = 'off'
+        elif self._load_error:
+            state, error = 'error', self._load_error
+        elif self._frame_time == -math.inf:
+            state = 'loading'  # the camera has not sent a frame yet
+        elif now - self._frame_time > NO_CAMERA_SEC:
+            state, error = 'error', f'no camera images on {self._image_topic}'
+        elif self._detector is None:
+            state = 'loading'
+        else:
+            state = 'running'
+        result = self._result or {}
+        return {
+            'enabled': self._enabled,
+            'state': state,
+            'error': error,
+            'backend': getattr(self._detector, 'backend', ''),
+            'model': os.path.basename(self._model_path),
+            'count': result.get('count'),
+            'placed': result.get('placed'),
+            'latency_ms': result.get('latency_ms'),
+            'at': result.get('at'),
+            'rate_hz': round(1.0 / self._period, 2),
+        }
+
+    def publish_status(self):
+        """Publish the status (latched): after every detection and every STATUS_PERIOD_SEC."""
+        self._status_pub.publish(String(data=json.dumps(self.status())))
+
+    # ---------------------------------------------------------------- detection
+    def ensure_detector(self) -> bool:
+        """Load the model once enabled (and again RELOAD_AFTER_SEC after a failure)."""
+        if self._detector is not None:
+            return True
+        now = time.monotonic()
+        if now - self._load_tried < RELOAD_AFTER_SEC:
+            return False
+        self._load_tried = now
+        try:
+            from robot_perception.detector import create_detector
+
+            self._detector = create_detector(
+                self._model_path, self._confidence, self._image_size, self._threads, self._backend
+            )
+        except Exception as error:  # noqa: B902  missing model or runtime: report, retry later
+            self._load_error = str(error)
+            self.get_logger().error(f'person detector not loaded: {error}')
+            self.publish_status()
+            return False
+        self._load_error = ''
+        self.get_logger().info(
+            f'person detector {os.path.basename(self._model_path)} on {self._detector.backend}'
+        )
+        return True
 
     def on_info(self, msg: CameraInfo):
         """Keep the camera intrinsics."""
@@ -92,26 +244,34 @@ class PersonDetectorNode(Node):
         return self._t_base_cam[frame_id]
 
     def on_image(self, msg):
-        """Detect people at rate_hz and publish their floor positions in the map frame."""
+        """Detect people at rate_hz; count them, and place them on the map when localized."""
         now = time.monotonic()
-        if self._detector is None or self._k is None or now - self._last < self._period:
+        self._frame_time = now
+        if not self._enabled or now - self._last < self._period:
             return
         self._last = now
-        t_base_cam = self.camera_extrinsic(msg.header.frame_id)
+        if not self.ensure_detector():
+            return
         image = self.decode(msg)
-        if t_base_cam is None or image is None:
+        if image is None:
             return
-        try:
-            t_map_base = to_matrix(
-                self._tf_buffer.lookup_transform(self._map_frame, self._base_frame, Time())
-            )
-        except TransformException:
-            return
+        start = time.monotonic()
+        boxes = self._detector.detect(image)
+        latency = time.monotonic() - start
 
         people = PoseArray()
         people.header.stamp = msg.header.stamp
         people.header.frame_id = self._map_frame
-        for box in self._detector.detect(image):
+        t_base_cam = self.camera_extrinsic(msg.header.frame_id)
+        t_map_base = None
+        if t_base_cam is not None and self._k is not None:
+            try:
+                t_map_base = to_matrix(
+                    self._tf_buffer.lookup_transform(self._map_frame, self._base_frame, Time())
+                )
+            except TransformException:
+                pass  # not localized: count the people, place none
+        for box in boxes if t_map_base is not None else []:
             point = ground_point(
                 pixel_ray(*feet_pixel(box), self._k), t_base_cam, self._floor_z, self._max_range
             )
@@ -122,7 +282,15 @@ class PersonDetectorNode(Node):
             pose.position.x, pose.position.y = float(x), float(y)
             pose.orientation.w = box[4]  # detection score, poses carry no heading
             people.poses.append(pose)
-        self._people_pub.publish(people)
+        if t_map_base is not None:
+            self._people_pub.publish(people)
+        self._result = {
+            'count': len(boxes),
+            'placed': len(people.poses),
+            'latency_ms': int(latency * 1000),
+            'at': time.time(),
+        }
+        self.publish_status()
 
 
 def to_matrix(t) -> np.ndarray:

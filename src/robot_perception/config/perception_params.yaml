@@ -46,13 +46,20 @@ lidar_sector_node:
 
 person_detector_node:
   ros__parameters:
-    image_topic: /camera/camera/color/image_raw/compressed
-    compressed: true
+    enabled: true                 # live (handheld, ros2 param set); PEOPLE=false: not started at all
+    state_file: ~/.pashupati/people.json   # live on/off kept across restarts; "": off
+    image_topic: /camera/camera/color/image_raw   # raw: no JPEG encoding in the camera driver
+    compressed: false
     camera_info_topic: /camera/camera/color/camera_info
-    model_path: /home/robot/dev/Pashupati/models/yolo11n.engine   # .pt / .onnx / TensorRT .engine
-    confidence: 0.4
-    image_size: 640
-    rate_hz: 3.0
+    # YOLO11n (the smallest YOLO) exported to ONNX at 416 px: script/setup.sh install people_model.
+    # .onnx runs without PyTorch (ONNX Runtime, CUDA when that build is installed, else OpenCV);
+    # .pt / .engine go through Ultralytics.
+    model_path: /home/robot/dev/Pashupati/models/yolo11n-416.onnx
+    backend: auto                 # auto | onnxruntime | opencv | ultralytics
+    threads: 2                    # CPU threads for one inference
+    confidence: 0.4               # live
+    image_size: 416               # OpenCV / Ultralytics input size (ONNX Runtime reads the model's)
+    rate_hz: 2.0                  # live: detections per second
     floor_z: -0.35                # floor height in base_link (measure: -height of base_link)
     max_range: 12.0               # m, ignore people further away (feet projection gets noisy)
     map_frame: map

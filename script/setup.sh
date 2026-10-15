@@ -15,7 +15,7 @@
 #      installer, `<script> check|install`, e.g. for a vendor SDK; see src/xtras/README.md),
 #      ROBOT_IP (robot SDK address for the network check), VLM_MODEL (qwen3-vl:2b-instruct),
 #      VLM_EXTRA_MODELS (other models the handheld can switch to, pulled best effort),
-#      PEOPLE_MODEL (models/yolo11n.engine), BUILD_WORKERS / BUILD_JOBS (parallel packages /
+#      PEOPLE_MODEL (models/yolo11n-416.onnx; .pt/.engine need Ultralytics), BUILD_WORKERS / BUILD_JOBS (parallel packages /
 #      compile jobs, lower them when the build runs out of memory), REALSENSE_BLACKLIST_UVC
 #      (1 on Jetson), MEDIAMTX (a MediaMTX binary to use instead of installing one), FORCE=1
 #      (reinstall anyway)
@@ -52,7 +52,8 @@ SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 SITE_FILE="${SITE_CONFIG:-/etc/pashupati/site.yaml}"
 VLM_MODEL="${VLM_MODEL:-qwen3-vl:2b-instruct}"
 VLM_EXTRA_MODELS="${VLM_EXTRA_MODELS:-moondream:latest ahmadwaqar/smolvlm2-2.2b-instruct:latest}"
-PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n.engine}"
+PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n-416.onnx}"
+PEOPLE_MODEL_URL="${PEOPLE_MODEL_URL:-https://github.com/DarmawanRobotics/Pashupati/releases/download/people-model/yolo11n-416.onnx}"
 REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"
 ROBOT_IP="${ROBOT_IP:-}"
@@ -354,19 +355,51 @@ install_ollama() {
 check_people_model() {
     [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
     enabled "${PEOPLE:-true}" || { echo "skipped, PEOPLE=false"; return 0; }
-    python3 -c "import ultralytics" 2>/dev/null || { echo "python ultralytics missing"; return 1; }
     [[ -f "$PEOPLE_MODEL" ]] || { echo "no model at $PEOPLE_MODEL"; return 1; }
-    echo "$PEOPLE_MODEL"
+    if [[ "$PEOPLE_MODEL" != *.onnx ]]; then
+        python3 -c "import ultralytics" 2>/dev/null || { echo "python ultralytics missing"; return 1; }
+        echo "$PEOPLE_MODEL (Ultralytics)"
+        return 0
+    fi
+    if python3 -c "import onnxruntime" 2>/dev/null; then
+        echo "$PEOPLE_MODEL (ONNX Runtime)"
+    elif python3 -c "import cv2, sys; cv2.dnn.readNetFromONNX(sys.argv[1])" "$PEOPLE_MODEL" 2>/dev/null; then
+        echo "$PEOPLE_MODEL (OpenCV DNN, no onnxruntime)"
+    else
+        echo "neither onnxruntime nor OpenCV can run $PEOPLE_MODEL"
+        return 1
+    fi
 }
+# The ONNX model runs without PyTorch: ONNX Runtime from PyPI (numpy stays 1.21.x: newer numpy
+# breaks transforms3d of ROS Humble), else OpenCV DNN. .pt / .engine models need Ultralytics.
 install_people_model() {
-    cat <<EOF
-Person detection needs Ultralytics and a model (manual on Jetson, PyTorch must be NVIDIA's build):
+    if [[ "$PEOPLE_MODEL" != *.onnx ]]; then
+        cat <<EOF
+Ultralytics models (.pt / .engine) need PyTorch (manual on Jetson, NVIDIA's build):
   1. install the JetPack PyTorch wheel, then: pip3 install ultralytics
-  2. mkdir -p $(dirname "$PEOPLE_MODEL") && cd $(dirname "$PEOPLE_MODEL")
-  3. yolo export model=yolo11n.pt format=engine half=True imgsz=640
-Or run without it: PEOPLE=false in $ENV_FILE.
+  2. cd $(dirname "$PEOPLE_MODEL") && yolo export model=yolo11n.pt format=engine half=True imgsz=640
+Or leave PEOPLE_MODEL unset for the ONNX model, which needs neither.
 EOF
-    return 1
+        return 1
+    fi
+    mkdir -p "$(dirname "$PEOPLE_MODEL")"
+    if [[ ! -f "$PEOPLE_MODEL" || "${FORCE:-0}" == "1" ]]; then
+        log "downloading $PEOPLE_MODEL_URL"
+        curl -fL --retry 3 -o "$PEOPLE_MODEL.part" "$PEOPLE_MODEL_URL"
+        mv "$PEOPLE_MODEL.part" "$PEOPLE_MODEL"
+    fi
+    if ! python3 -c "import onnxruntime" 2>/dev/null; then
+        # its dependencies only where missing: a newer packaging or numpy can break ROS tools
+        local dep missing=()
+        for dep in coloredlogs flatbuffers packaging protobuf sympy; do
+            python3 -c "import ${dep/protobuf/google.protobuf}" 2>/dev/null || missing+=("$dep")
+        done
+        pip3 install --user --no-deps onnxruntime==1.18.1 \
+            && { [[ ${#missing[@]} -eq 0 ]] || pip3 install --user "${missing[@]}"; } \
+            || log "${YELLOW}onnxruntime not installed${RESET}: OpenCV DNN runs the model instead"
+        python3 -c 'import numpy, sys; sys.exit(tuple(map(int, numpy.__version__.split(".")[:3])) < (1, 21, 6))' \
+            || pip3 install --user numpy==1.21.6
+    fi
 }
 
 # /etc/pashupati: the env file (read by the service) and the site file (parameters).

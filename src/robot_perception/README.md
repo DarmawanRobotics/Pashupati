@@ -12,8 +12,24 @@ numpy (`livox_cdr.py`, ~1 ms per scan); `pointcloud2` takes any PointCloud2, e.g
 LiDAR. FAST-LIO's `/cloud_registered_body` misses everything within its `blind` radius, so it is
 not a good input for obstacles next to the robot.
 
-The person detector needs `pip install ultralytics` and a model (`.pt`, `.onnx` or a TensorRT
-`.engine` exported on the Jetson) at `model_path`; set `floor_z` to minus the height of `base_link`.
+## Person detection
+
+`person_detector_node` runs YOLO11n, the smallest YOLO, exported to ONNX at 416 px
+(`script/setup.sh install people_model` downloads it from the `people-model` release, which CI
+exports and checks). It needs no PyTorch: ONNX Runtime runs it (its CUDA provider when a Jetson
+GPU build is installed, else 2 CPU threads), or OpenCV DNN without ONNX Runtime. At the default
+2 Hz that is a small share of one Orin NX core. `.pt` and TensorRT `.engine` models still work
+through Ultralytics. Set `floor_z` to minus the height of `base_link`.
+
+People are counted in every inspected frame and placed on the map (`perception/people`, for the
+crowd heatmap) while the robot is localized. `enabled`, `rate_hz` and `confidence` change live
+(handheld, `ros2 param set /person_detector_node enabled false`); the on/off choice is kept in
+`~/.pashupati/people.json`. `PEOPLE=false` in the env file does not start the node at all.
+
+| Topic | Type | |
+|---|---|---|
+| `perception/people` | `geometry_msgs/PoseArray` | people on the floor, `map` frame; `orientation.w` is the score |
+| `perception/people_status` | `std_msgs/String` (JSON, latched, every 2 s and per detection) | `{enabled, state (loading, running, off, error), error, backend, model, count, placed, latency_ms, at, rate_hz}` |
 
 ```bash
 ros2 launch robot_perception perception.launch.py people:=true draw_tags:=false
