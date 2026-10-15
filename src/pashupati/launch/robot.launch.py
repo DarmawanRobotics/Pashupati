@@ -140,14 +140,27 @@ def launch_setup(context):
             {'tags_config_file': arg('tags')},
         ),
         node('robot_perception', 'lidar_sector_node', [perception]),
+        # the tag detector sees the camera at rate_hz only: localization needs a few poses/s
+        node(
+            'robot_perception',
+            'image_throttle_node',
+            [perception],
+            name='apriltag_throttle',
+            remappings=[
+                ('in/image', f'{CAMERA}/image_raw'),
+                ('in/camera_info', f'{CAMERA}/camera_info'),
+                ('out/image', '/perception/apriltag/image_rect'),
+                ('out/camera_info', '/perception/apriltag/camera_info'),
+            ],
+        ),
         Node(
             package='apriltag_ros',
             executable='apriltag_node',
             name='apriltag',
             parameters=[perception, *site],
             remappings=[
-                ('image_rect', f'{CAMERA}/image_raw'),
-                ('camera_info', f'{CAMERA}/camera_info'),
+                ('image_rect', '/perception/apriltag/image_rect'),
+                ('camera_info', '/perception/apriltag/camera_info'),
                 ('detections', '/perception/apriltag/detections'),
             ],
             respawn=True,
@@ -179,18 +192,26 @@ def launch_setup(context):
                 ('diagnostics', topic('diagnostics')),
             ],
         ),
-        node(
-            'robot_fleet',
-            'fleet_uplink_node',
-            [share('robot_fleet', 'config', 'fleet_params.yaml')],
-            {
-                'server_url': arg('cc_url'),
-                'token': arg('cc_token'),
-                'robot_id': arg('robot_id'),
-            },
-            remappings=[('battery', topic('battery')), ('diagnostics', topic('diagnostics'))],
-        ),
     ]
+    if arg('cc_url').strip():
+        actions.append(
+            node(
+                'robot_fleet',
+                'fleet_uplink_node',
+                [share('robot_fleet', 'config', 'fleet_params.yaml')],
+                {
+                    'server_url': arg('cc_url'),
+                    'token': arg('cc_token'),
+                    'robot_id': arg('robot_id'),
+                },
+                remappings=[
+                    ('battery', topic('battery')),
+                    ('diagnostics', topic('diagnostics')),
+                ],
+            )
+        )
+    else:
+        actions.append(LogInfo(msg='NETRA uplink off: no cc_url (CC_URL)'))
     if truthy(arg('people')):
         actions.append(node('robot_perception', 'person_detector_node', [perception]))
     if truthy(arg('inspection')):
@@ -245,7 +266,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'tags', default_value=env('TAGS'), description='AprilTag map poses (JSON)'
             ),
-            DeclareLaunchArgument('cc_url', default_value=env('CC_URL')),
+            DeclareLaunchArgument(
+                'cc_url', default_value=env('CC_URL'), description='NETRA url; empty: no uplink'
+            ),
             DeclareLaunchArgument('cc_token', default_value=env('CC_TOKEN')),
             DeclareLaunchArgument(
                 'site_config',

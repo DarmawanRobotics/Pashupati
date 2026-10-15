@@ -128,13 +128,19 @@ def test_launch_starts_every_node_once():
     def text(value):  # a str (Jazzy) or a list of substitutions (Humble)
         return value if isinstance(value, str) else perform_substitutions(context, value)
 
-    executables = sorted(text(a.node_executable) for a in actions if isinstance(a, Node))
-    assert executables == sorted([
-        'localization_node', 'lidar_sector_node', 'apriltag_node', 'path_loader_node',
-        'obstacle_avoidance_node', 'path_follower_node', 'control_mux_node', 'teleop_udp_node',
-        'fleet_uplink_node', 'person_detector_node', 'anomaly_detector_node',
-        'health_monitor_node',
+    def executables(actions):
+        return sorted(text(a.node_executable) for a in actions if isinstance(a, Node))
+
+    local = sorted([
+        'localization_node', 'lidar_sector_node', 'image_throttle_node', 'apriltag_node',
+        'path_loader_node', 'obstacle_avoidance_node', 'path_follower_node', 'control_mux_node',
+        'teleop_udp_node', 'person_detector_node', 'anomaly_detector_node', 'health_monitor_node',
     ])
+    assert executables(actions) == local  # no NETRA url: no uplink
+    context = launch_context(
+        module, robot_bringup='', mode='teach', site_config='', cc_url='http://netra:8080'
+    )
+    assert executables(module.launch_setup(context)) == sorted([*local, 'fleet_uplink_node'])
 
 
 def test_launch_rejects_bad_arguments():
