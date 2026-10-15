@@ -1,5 +1,6 @@
-import os
 from glob import glob
+import os
+
 from setuptools import find_packages, setup
 
 package_name = 'robot_perception'
@@ -18,13 +19,14 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Lidar sector perception (32-sector SectorScan) from Livox CustomMsg, with RViz markers, for robot',
-    license='MIT',
+    description='Lidar obstacle sectors, AprilTag detection and person detection for crowd maps',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'lidar_sector_node = robot_perception.lidar_sector_node:main',
-            'anomaly_detector_node = robot_perception.anomaly_detector_node:main',
+            'image_throttle_node = robot_perception.image_throttle_node:main',
+            'person_detector_node = robot_perception.person_detector_node:main',
         ],
     },
 )

@@ -1,5 +1,6 @@
-import os
 from glob import glob
+import os
+
 from setuptools import find_packages, setup
 
 package_name = 'robot_navigation'
@@ -15,11 +16,12 @@ setup(
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Selectable path controllers, obstacle avoidance algorithms, and inspection stop points',
-    license='MIT',
+    description='Patrol route following, obstacle avoidance and inspection stop points',
+    license='Apache-2.0',
     entry_points={
         'console_scripts': [
             'path_follower_node = robot_navigation.path_follower_node:main',

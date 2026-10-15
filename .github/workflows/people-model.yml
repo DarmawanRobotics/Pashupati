@@ -1,0 +1,84 @@
+name: people-model
+
+# The person detector's model: YOLO11n (the smallest YOLO) exported to ONNX at 416 px, checked
+# with the detector's own pre- and post-processing on ONNX Runtime and on the OpenCV versions a
+# robot may have, then published as a release asset that `script/setup.sh install people_model`
+# downloads (no PyTorch on the robot).
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - src/robot_perception/robot_perception/detector.py
+      - .github/scripts/check_people_model.py
+      - .github/workflows/people-model.yml
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Export YOLO11n to ONNX (416 px)
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install ultralytics onnx onnxslim
+          yolo export model=yolo11n.pt format=onnx imgsz=416 opset=12 simplify=True
+          mkdir -p out
+          mv yolo11n.onnx out/yolo11n-416.onnx
+          cp "$(python -c 'from ultralytics.utils import ASSETS; print(ASSETS)')/bus.jpg" out/
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: people-model
+          path: out/
+
+  check:
+    needs: export
+    runs-on: ubuntu-22.04
+    # the OpenCV DNN fallback on JetPack's OpenCV is informative only; ONNX Runtime must work
+    continue-on-error: ${{ matrix.optional }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - opencv: '4.5.4.60'   # Ubuntu 22.04 apt (ROS Humble)
+            optional: false
+          - opencv: '4.8.0.76'   # JetPack 6
+            optional: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - uses: actions/download-artifact@v4
+        with:
+          name: people-model
+          path: out
+      - name: Same versions as the robot gets
+        run: pip install numpy==1.21.6 onnxruntime==1.18.1 "opencv-python-headless==${{ matrix.opencv }}"
+      - name: Find the people in the test image
+        run: python .github/scripts/check_people_model.py out/yolo11n-416.onnx out/bus.jpg onnxruntime,opencv
+
+  publish:
+    needs: check
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: people-model
+          path: out
+      - name: Release asset people-model/yolo11n-416.onnx
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view people-model >/dev/null 2>&1 || gh release create people-model \
+            --target "$GITHUB_SHA" --title 'People detection model' \
+            --notes 'YOLO11n exported to ONNX at 416 px for person_detector_node (script/setup.sh install people_model).'
+          gh release upload people-model out/yolo11n-416.onnx --clobber

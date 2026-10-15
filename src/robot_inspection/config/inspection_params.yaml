@@ -1,0 +1,33 @@
+anomaly_detector_node:
+  ros__parameters:
+    enabled: true                     # live: false stops inspecting (stop points answer "inspection off")
+    state_file: ~/.pashupati/inspection.json   # live changes (handheld) kept across restarts; "": off
+    image_topic: /camera/camera/color/image_raw   # sensor_msgs/Image (rgb8, bgr8, rgba8, bgra8, mono8)
+    ollama_url: http://127.0.0.1:11434
+    model: qwen3-vl:2b-instruct       # live: any Ollama vision model, see models
+    models:                           # offered on the handheld (plus every other vision model in Ollama)
+      - qwen3-vl:2b-instruct
+      - moondream:latest
+      - ahmadwaqar/smolvlm2-2.2b-instruct:latest
+    # live (handheld: Inspection page, finding types), kept in state_file once changed there
+    categories: [trash, spill, stain] # what the model chooses from (plus "none"), a-z 0-9 _
+    alarm_categories: [trash, spill]  # only these are reported; stain is logged but not reported
+    category_descriptions: [""]       # own text per type, "name: what to look for" (English
+                                      # works best); trash, spill, stain, floor_damage and
+                                      # fallen_person have built-in texts
+    use_schema: true                  # false: free-text answer (FLOOR:/TYPE:) parsed manually
+    describe: false                   # true: model also writes one sentence about the floor
+    debug: false                      # true: log every inspection and the raw model answer
+    keep_alive: "-1"                  # keep the model in memory: "-1" forever, or e.g. "30m" (quoted)
+    num_ctx: 2048
+    timeout_sec: 30.0
+    max_image_age_sec: 2.0
+    max_image_width: 640              # downscale before inference
+    interval_sec: 0.0                 # live: 0 back to back, > 0 every N s, < 0 only at stop points
+    cooldown_sec: 60.0                # periodic mode: do not report a category again within this time
+    # interval mode: a frame every interval_sec goes into a queue the model works through, first in
+    # first out, whenever it is free (also while the robot stands at a stop)
+    queue_dir: ~/.pashupati/inspection_queue   # kept across restarts; "": in memory only
+    queue_max: 50                     # full: the oldest frame is dropped for the new one
+    queue_min_change: 12.0            # grey levels part of the picture must change to queue it
+                                      # again (standing still adds nothing); 0: every frame
