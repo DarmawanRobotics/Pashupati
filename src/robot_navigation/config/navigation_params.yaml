@@ -33,6 +33,8 @@ path_follower_node:
     avoidance_lateral_enabled: true   # holonomic only: apply the avoidance sideways push to linear.y
     approach_radius: 0.5              # m, distance to a stop point that switches to the final approach
     approach_timeout_sec: 20.0        # s, give up converging and dwell where the robot is
+    join_max_distance: 3.0            # m, a robot started off the route walks onto it from here (0: off)
+    join_timeout_sec: 60.0            # s, give up walking onto the route and follow from where it is
     approach.kp_xy: 1.2               # P gain on position error
     approach.kp_yaw: 1.5              # P gain on yaw error
     approach.max_speed: 0.2           # m/s

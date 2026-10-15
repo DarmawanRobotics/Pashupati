@@ -7,6 +7,7 @@ from visualization_msgs.msg import Marker
 STATE_COLORS = {
     'FOLLOWING': (0.2, 0.9, 0.3),
     'APPROACHING': (1.0, 0.85, 0.1),
+    'JOINING': (1.0, 0.85, 0.1),
     'DWELLING': (0.2, 0.6, 1.0),
     'GOAL_REACHED': (0.4, 0.6, 1.0),
     'PAUSED': (0.7, 0.7, 0.7),

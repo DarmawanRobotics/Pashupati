@@ -66,6 +66,8 @@ DEFAULT_PARAMS = {
     'avoidance_lateral_enabled': True,
     'approach_radius': 0.5,
     'approach_timeout_sec': 20.0,
+    'join_max_distance': 3.0,
+    'join_timeout_sec': 60.0,
     'approach.kp_xy': 1.2,
     'approach.kp_yaw': 1.5,
     'approach.max_speed': 0.2,
@@ -209,6 +211,9 @@ class PathFollowerNode(Node):
         self._approach_start_time = None
         self._approach_index = 0
         self._approach_is_goal = False
+        self._join_index = 0
+        self._join_start_time = None
+        self._waypoints_stamp = None
         self._dwell_duration = 0.0
         self._dwell_start_time = None
         self._inspection_pending = 0
@@ -500,39 +505,58 @@ class PathFollowerNode(Node):
         self._follower_state = 'FOLLOWING'
         self._next_stop_index = self.find_next_stop_index(0)
 
-    def find_robot_on_route(self) -> bool:
+    def find_robot_on_route(self) -> tuple[bool, str]:
         """
         On start: keep the progress if the robot is still near it, else search the whole route.
 
         Progress survives a stop so a paused patrol resumes where it was; after the route end or
         once the robot was moved elsewhere the old progress would report the route as finished or
-        the robot as far off it, so the robot is located on the route again.
+        the robot as far off it, so the robot is located on the route again. A robot up to
+        join_max_distance away first walks onto the route (JOINING); further away the start is
+        refused. Returns (start allowed, note).
         """
         if not self._waypoints:
-            return False
+            return True, ''
         pose = self.current_pose()
         if pose is None:
-            return False
+            return True, ''
         held = self._follower_state == 'GOAL_HOLD'
         near = float(self.get_parameter('off_path_slow_distance').value)
         if not held and self.cross_track_error(pose) <= near:
-            return False
+            return True, ''
         path = [(x, y) for x, y, _, _ in self._waypoints]
         locator = PathProgress()
         locator.set_path(path)
         index = locator.update(pose)
+        distance = math.hypot(path[index][0] - pose.x, path[index][1] - pose.y)
+        join_max = float(self.get_parameter('join_max_distance').value)
+        stop = float(self.get_parameter('off_path_stop_distance').value)
+        if distance > max(join_max, stop):
+            return False, (
+                f'robot is {distance:.1f} m from the route (join_max_distance '
+                f'{join_max:.1f} m): drive it closer or load the route it is on'
+            )
         self.restart_route()
         self._controller.set_path(path, index)
         self._next_stop_index = self.find_next_stop_index(index)
-        self.get_logger().info(f'robot located on the route at point {index}')
-        return True
+        self.get_logger().info(f'robot on the route at point {index}, {distance:.2f} m away')
+        if distance > near and join_max > 0.0:
+            self.start_join(index)
+            return True, f'joining the route at point {index}, {distance:.1f} m away'
+        return True, f'progress found again on the route at point {index}'
 
     def waypoints_callback(self, msg: WaypointPath):
-        """Load a new route; identical republished routes are ignored so progress is kept."""
+        """
+        Load a new route; a redelivered one (same stamp) is ignored so progress is kept.
+
+        Loading the same file again publishes it with a new stamp and starts it over.
+        """
         waypoints = [(w.x, w.y, w.yaw, w.dwell_sec) for w in msg.waypoints]
-        if waypoints == self._waypoints:
+        stamp = (msg.header.stamp.sec, msg.header.stamp.nanosec)
+        if waypoints == self._waypoints and stamp == self._waypoints_stamp:
             return
         self._waypoints = waypoints
+        self._waypoints_stamp = stamp
         self.compute_speed_profile()
         self._lap = 0
         self.restart_route()
@@ -636,6 +660,12 @@ class PathFollowerNode(Node):
                 )
                 self.get_logger().error(response.message)
                 return response
+            located, note = self.find_robot_on_route()
+            if not located:
+                response.success = False
+                response.message = note
+                self.get_logger().error(note)
+                return response
             ok, message = self.call_trigger(self._auto_on_client)
             if not ok:
                 response.success = False
@@ -646,9 +676,7 @@ class PathFollowerNode(Node):
             self._paused = False
             self._nav_active = True
             response.success = True
-            response.message = 'navigation started'
-            if self.find_robot_on_route():
-                response.message += ' (progress found again on the route)'
+            response.message = 'navigation started' + (f' ({note})' if note else '')
             self.get_logger().info(response.message)
             return response
 
@@ -1004,26 +1032,11 @@ class PathFollowerNode(Node):
             )
             return
 
-        _, _, _, emergency, stale = self.avoidance_signal()
-        if emergency or stale:
-            self.publish_stop(hard=True)
-            state, reason = (
-                ('AVOIDANCE_STALE', 'no fresh navigation/avoidance during final approach')
-                if stale
-                else ('EMERGENCY_STOP', 'obstacle during final approach')
-            )
-            self.publish_markers(stamp, state, reason, pose.x, pose.y)
+        if self.stopped_for_obstacle(pose, stamp, 'final approach'):
             return
 
         target = 'goal' if self._approach_is_goal else f'stop {self._approach_index}'
-        out = Twist()
-        out.linear.x = cmd.vx
-        out.linear.y = cmd.vy
-        out.angular.z = cmd.wz
-        self._linear_limiter.reset(cmd.vx)
-        self._lateral_limiter.reset(cmd.vy)
-        self._angular_limiter.reset(cmd.wz)
-        self._cmd_vel_pub.publish(out)
+        self.publish_approach(cmd)
         self.publish_markers(
             stamp,
             'APPROACHING',
@@ -1032,6 +1045,67 @@ class PathFollowerNode(Node):
             pose.x,
             pose.y,
             {'approach': (x, y, math.radians(yaw_deg), self._approach_tolerance, 0.0)},
+        )
+
+    def stopped_for_obstacle(self, pose: Pose2D, stamp, during: str) -> bool:
+        """Stop on an emergency or a stale avoidance signal; True when stopped."""
+        _, _, _, emergency, stale = self.avoidance_signal()
+        if not (emergency or stale):
+            return False
+        self.publish_stop(hard=True)
+        state, reason = (
+            ('AVOIDANCE_STALE', f'no fresh navigation/avoidance during {during}')
+            if stale
+            else ('EMERGENCY_STOP', f'obstacle during {during}')
+        )
+        self.publish_markers(stamp, state, reason, pose.x, pose.y)
+        return True
+
+    def publish_approach(self, cmd):
+        """Publish an approach command; the limiters start from it when following resumes."""
+        out = Twist()
+        out.linear.x = cmd.vx
+        out.linear.y = cmd.vy
+        out.angular.z = cmd.wz
+        self._linear_limiter.reset(cmd.vx)
+        self._lateral_limiter.reset(cmd.vy)
+        self._angular_limiter.reset(cmd.wz)
+        self._cmd_vel_pub.publish(out)
+
+    def start_join(self, index: int):
+        """Walk onto the route at waypoint index before following it."""
+        self._follower_state = 'JOINING'
+        self._join_index = index
+        self._approach.reset()
+        self._join_start_time = self.get_clock().now()
+
+    def run_joining(self, pose: Pose2D, stamp):
+        """Walk onto the route at the located point (slowly, facing along it), then follow."""
+        x, y, yaw_deg, _ = self._waypoints[self._join_index]
+        yaw = math.radians(yaw_deg)
+        cmd = self._approach.update(pose, x, y, yaw)
+        on_route = cmd.position_error < 0.15 and abs(cmd.yaw_error) < math.radians(20.0)
+        elapsed = (self.get_clock().now() - self._join_start_time).nanoseconds / 1e9
+        if cmd.done or on_route or elapsed > float(self.get_parameter('join_timeout_sec').value):
+            if not (cmd.done or on_route):
+                self.get_logger().warn(
+                    f'join timeout, {cmd.position_error:.2f} m from the route: following anyway'
+                )
+            self.publish_stop(hard=True)
+            self._follower_state = 'FOLLOWING'
+            self.get_logger().info(f'on the route at point {self._join_index}')
+            return
+        if self.stopped_for_obstacle(pose, stamp, 'joining the route'):
+            return
+        self.publish_approach(cmd)
+        self.publish_markers(
+            stamp,
+            'JOINING',
+            f'route point {self._join_index}: {cmd.position_error * 100:.0f} cm, '
+            f'{math.degrees(cmd.yaw_error):.0f} deg',
+            pose.x,
+            pose.y,
+            {'approach': (x, y, yaw, self._approach_tolerance, 0.0)},
         )
 
     def run_dwelling(self, pose: Pose2D, stamp):
@@ -1192,6 +1266,9 @@ class PathFollowerNode(Node):
             self.publish_markers(
                 stamp, 'GOAL_REACHED', 'holding position at the route end', pose.x, pose.y
             )
+            return
+        if self._follower_state == 'JOINING':
+            self.run_joining(pose, stamp)
             return
         if self._follower_state == 'APPROACHING':
             self.run_approaching(pose, stamp)
