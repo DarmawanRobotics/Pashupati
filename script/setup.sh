@@ -75,12 +75,23 @@ fi
 
 log() { echo "${BOLD}==>${RESET} $*"; }
 enabled() { [[ "${1,,}" =~ ^(1|true|yes|on)$ ]]; }
-# A broken mirror in the apt sources fails `apt-get update` but rarely the packages we need: warn,
-# then try the install (it says which package it could not get).
+# apt may be busy (packagekit or unattended-upgrades refreshing): wait for it. A broken mirror in
+# the apt sources fails `apt-get update` but rarely the packages we need: warn, then try the
+# install (it says which package it could not get).
 apt_install() {
-    $SUDO apt-get update -qq \
-        || log "${YELLOW}apt-get update had errors: check the mirrors in /etc/apt/sources.list*${RESET}"
-    $SUDO apt-get install -y --no-install-recommends "$@"
+    local try out
+    for try in $(seq 18); do
+        out=$($SUDO apt-get update -qq 2>&1) && break
+        if [[ "$out" == *"Could not get lock"* && $try -lt 18 ]]; then
+            [[ $try -eq 1 ]] && log "apt is busy (another update, e.g. packagekit), waiting up to 3 min"
+            sleep 10
+            continue
+        fi
+        echo "$out" >&2
+        log "${YELLOW}apt-get update had errors: check the mirrors in /etc/apt/sources.list*${RESET}"
+        break
+    done
+    $SUDO apt-get -o DPkg::Lock::Timeout=180 install -y --no-install-recommends "$@"
 }
 source_ros() {
     set +u
