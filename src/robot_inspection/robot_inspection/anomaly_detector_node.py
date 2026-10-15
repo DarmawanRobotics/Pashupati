@@ -102,6 +102,7 @@ class AnomalyDetectorNode(Node):
         # what the handheld and NETRA show (anomaly_detector/status)
         self._status_lock = threading.Lock()
         self._loaded = None  # the model Ollama holds for us
+        self._loading = None  # the model being loaded (freed too when the node stops meanwhile)
         self._state = 'loading'
         self._error = ''
         self._installed = None  # {model: takes images (None: unknown)}; None until Ollama answered
@@ -362,17 +363,33 @@ class AnomalyDetectorNode(Node):
         result.update({'model': model, 'latency_ms': int((time.monotonic() - start) * 1000)})
         return result
 
+    def unload(self, model: str):
+        """Free a model's memory in Ollama (on a Jetson the RAM is shared with the GPU)."""
+        try:
+            self.post({'model': model, 'keep_alive': 0}, 10.0)
+        except (urllib.error.URLError, OSError, ValueError) as error:
+            self.get_logger().warn(f'could not unload {model}: {error}')
+            return
+        self.get_logger().info(f'{model} unloaded')
+
     def load_model(self, model: str) -> bool:
         """Load the chosen model into Ollama (unloading the one before it); True when loaded."""
         previous, self._loaded = self._loaded, None
         if previous and full_name(previous) != full_name(model):
-            try:  # free the memory of the model before it: Jetson RAM is shared with the GPU
-                self.post({'model': previous, 'keep_alive': 0}, 10.0)
-            except (urllib.error.URLError, OSError, ValueError):
-                pass
+            self.unload(previous)
         self.set_state('loading')
+        self._loading = model
         try:
-            self.post({'model': model, 'prompt': '', 'keep_alive': self._keep_alive}, 180.0)
+            # with the options of the inspections: Ollama reloads a model whose num_ctx changes
+            self.post(
+                {
+                    'model': model,
+                    'prompt': '',
+                    'keep_alive': self._keep_alive,
+                    'options': {'num_ctx': self._num_ctx},
+                },
+                180.0,
+            )
         except urllib.error.HTTPError as error:
             hint = f': ollama pull {model}' if error.code == 404 else ''
             self.set_state('error', f'Ollama could not load {model} (HTTP {error.code}){hint}')
@@ -382,6 +399,8 @@ class AnomalyDetectorNode(Node):
             self.set_state('error', f'Ollama not reachable at {self._base_url} ({error})')
             self.get_logger().warn(self._error, throttle_duration_sec=60.0)
             return False
+        finally:
+            self._loading = None
         self._loaded = model  # also when it changed meanwhile: the next load unloads this one
         if model != self._model:
             return False
@@ -462,6 +481,9 @@ class AnomalyDetectorNode(Node):
         """Keep the chosen model loaded and inspect every interval_sec (0 = back to back)."""
         while not self._stop.is_set():
             if not self._enabled:
+                model, self._loaded = self._loaded, None
+                if model:  # off frees the model's memory; on loads it again
+                    self.unload(model)
                 self.set_state('off')
                 self.pause(5.0)
                 continue
@@ -481,10 +503,15 @@ class AnomalyDetectorNode(Node):
             self.pause(max(self._interval, 0.05))
 
     def destroy_node(self):
-        """Stop the inspection loop before tearing the node down."""
+        """Stop the inspection loop and free the model before tearing the node down."""
         self._stop.set()
         self._wake.set()
         self._worker.join(timeout=1.0)
+        # kept forever (keep_alive -1) while this node runs, not after: a stopped stack must not
+        # hold gigabytes of the robot's memory
+        model = self._loaded or self._loading
+        if model:
+            self.unload(model)
         return super().destroy_node()
 
 

@@ -214,3 +214,28 @@ def test_live_choice_survives_a_restart(detector, state_file):
         assert again.get_parameter('model').value == 'moondream:latest'
     finally:
         again.destroy_node()
+
+
+def test_off_frees_the_model_and_on_loads_it_again(detector, ollama):
+    """Switched off the model leaves Ollama (Jetson RAM is the GPU's); on brings it back."""
+    assert wait_for(lambda: detector.status()['state'] == 'running')
+    first = next(body for path, body in ollama.requests if path == '/api/generate')
+    assert first['options'] == {'num_ctx': 2048}  # as inspected: Ollama does not load it twice
+
+    detector.set_parameters([Parameter('enabled', value=False)])
+    assert wait_for(lambda: ('qwen3-vl:2b-instruct', 0) in ollama.loads())
+    assert wait_for(lambda: detector.status()['state'] == 'off')
+
+    detector.set_parameters([Parameter('enabled', value=True)])
+    assert wait_for(lambda: ollama.loads().count(('qwen3-vl:2b-instruct', -1)) == 2)
+    assert wait_for(lambda: detector.status()['state'] == 'running')
+
+
+def test_a_stopped_node_frees_its_model(detector, ollama):
+    """keep_alive -1 holds the model while the node runs, not after it stopped."""
+    assert wait_for(lambda: detector.status()['state'] == 'running')
+    assert ('qwen3-vl:2b-instruct', 0) not in ollama.loads()
+    other = AnomalyDetectorNode()
+    assert wait_for(lambda: other.status()['state'] == 'running')
+    other.destroy_node()
+    assert ('qwen3-vl:2b-instruct', 0) in ollama.loads()

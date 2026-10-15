@@ -30,6 +30,9 @@ LIVE_PARAMS = ('enabled', 'rate_hz', 'confidence')
 STATUS_PERIOD_SEC = 2.0  # perception/people_status also when nothing changes
 RELOAD_AFTER_SEC = 30.0  # retry a model that failed to load
 NO_CAMERA_SEC = 3.0  # without frames for this long the status says so
+# rate_hz 0: detections per second by where the model runs (smooth boxes on the GPU, light on CPU)
+AUTO_RATE_GPU_HZ = 5.0
+AUTO_RATE_CPU_HZ = 2.0
 MAX_BOXES = 20  # person boxes in the status (fractions of the image, for the handheld)
 
 
@@ -50,7 +53,7 @@ class PersonDetectorNode(Node):
             'threads': 2,
             'confidence': 0.4,
             'image_size': 416,
-            'rate_hz': 2.0,
+            'rate_hz': 0.0,
             'floor_z': -0.35,
             'max_range': 12.0,
             'map_frame': 'map',
@@ -63,7 +66,7 @@ class PersonDetectorNode(Node):
         self._state_file = os.path.expanduser(state_file) if state_file else ''
         self.restore_choice()
         self._enabled = bool(p('enabled'))
-        self._period = 1.0 / max(float(p('rate_hz')), 0.1)
+        self._rate = max(float(p('rate_hz')), 0.0)  # 0: auto
         self._confidence = float(p('confidence'))
         self._model_path = str(p('model_path'))
         self._backend = str(p('backend'))
@@ -107,15 +110,17 @@ class PersonDetectorNode(Node):
                 updates['enabled'] = bool(param.value)
                 continue
             value = float(param.value)
-            if param.name == 'rate_hz' and not (math.isfinite(value) and 0.1 <= value <= 30.0):
-                return SetParametersResult(successful=False, reason='rate_hz: 0.1 to 30')
+            if param.name == 'rate_hz' and not (
+                math.isfinite(value) and (value == 0.0 or 0.1 <= value <= 30.0)
+            ):
+                return SetParametersResult(successful=False, reason='rate_hz: 0 (auto), 0.1 to 30')
             if param.name == 'confidence' and not 0.05 <= value <= 0.95:
                 return SetParametersResult(successful=False, reason='confidence: 0.05 to 0.95')
             updates[param.name] = value
         if 'enabled' in updates:
             self._enabled = updates['enabled']
         if 'rate_hz' in updates:
-            self._period = 1.0 / updates['rate_hz']
+            self._rate = updates['rate_hz']
         if 'confidence' in updates:
             self._confidence = updates['confidence']
             if self._detector is not None:
@@ -186,8 +191,16 @@ class PersonDetectorNode(Node):
             'placed': result.get('placed'),
             'latency_ms': result.get('latency_ms'),
             'at': result.get('at'),
-            'rate_hz': round(1.0 / self._period, 2),
+            'rate_hz': round(self.detection_rate(), 2),
         }
+
+    def detection_rate(self) -> float:
+        """Return detections per second: rate_hz, or with 0 by where the model runs."""
+        if self._rate > 0.0:
+            return self._rate
+        backend = getattr(self._detector, 'backend', '')
+        on_gpu = backend.endswith('cuda') or backend == 'ultralytics'
+        return AUTO_RATE_GPU_HZ if on_gpu else AUTO_RATE_CPU_HZ
 
     def publish_status(self):
         """Publish the status (latched): after every detection and every STATUS_PERIOD_SEC."""
@@ -249,7 +262,7 @@ class PersonDetectorNode(Node):
         """Detect people at rate_hz; count them, and place them on the map when localized."""
         now = time.monotonic()
         self._frame_time = now
-        if not self._enabled or now - self._last < self._period:
+        if not self._enabled or now - self._last < 1.0 / self.detection_rate():
             return
         self._last = now
         if not self.ensure_detector():

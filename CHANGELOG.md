@@ -13,12 +13,19 @@ versions follow [SemVer](https://semver.org).
   MediaMTX keep the JPEG frames.
 - The handheld video shows the AprilTags the detector sees: `state.tags` carries their corners as
   fractions of the image (protocol v1, an extra field older apps ignore).
+- Person boxes on the handheld video: `perception/people_status` and `state.people.boxes` carry
+  them as fractions of the image. `rate_hz: 0` (new default) detects 5 times a second on the GPU,
+  2 on the CPU.
 
 ### Changed
 - REMOTE drives without the protective field (`field_in_remote: false`): the operator watches the
   robot; the software e-stop and the speed envelope still apply. The simulator keeps it on.
 
 ### Fixed
+- The robot ran out of RAM with inspection on (15.1 of 15.3 GB used, swapping): Ollama's
+  llama-server kept up to 8 GiB of earlier prompts in RAM, useless when every prompt has a new
+  image. `script/setup.sh install ollama` turns that cache off for the Ollama service. The
+  detector also unloads its model when switched off or stopped instead of keeping it forever.
 - The AprilTag detector got no camera_info from `apriltag_throttle` (best effort, the detector
   reads it reliable), so no tag was ever detected: the throttle publishes reliable.
 - `ros2 topic list` stayed empty in a robot shell after `script/env.sh`: a ros2 daemon started

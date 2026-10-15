@@ -20,10 +20,17 @@ category at most once per `cooldown_sec`; `check_now` (source `stop_point`) alwa
 
 `enabled`, `model` and `interval_sec` change while the node runs: from the handheld (Inspection
 page) or with `ros2 param set /anomaly_detector_node model moondream:latest`. A new model is
-loaded into Ollama and the one before it unloaded (the Jetson shares its memory with the GPU);
-while off, the loaded model stays in memory so turning it on again is instant. The live choice is
-kept in `state_file` (`~/.pashupati/inspection.json`) and wins over the parameter files at the next
-start; delete that file to go back to them.
+loaded into Ollama and the one before it unloaded (the Jetson shares its memory with the GPU).
+Off, or a stopped node, unloads the model too (`keep_alive` holds it only while inspecting), so
+turning it on again takes a few seconds of loading. The live choice is kept in `state_file`
+(`~/.pashupati/inspection.json`) and wins over the parameter files at the next start; delete that
+file to go back to them.
+
+**Memory.** Ollama's runner (llama-server) keeps earlier prompts in RAM, up to 8 GiB per loaded
+model, which an inspection never reuses: every prompt has a new image. `script/setup.sh install
+ollama` turns that cache off for the Ollama service (`/etc/systemd/system/ollama.service.d/
+pashupati.conf`); without it `llama-server` grows to about 9 GB. `ollama ps` shows the model,
+`ps -o rss= -C llama-server` the runner's RAM.
 
 The handheld offers the `models` parameter (known to work on the robot: `qwen3-vl:2b-instruct`,
 `moondream:latest`, `ahmadwaqar/smolvlm2-2.2b-instruct:latest`) plus every other vision model

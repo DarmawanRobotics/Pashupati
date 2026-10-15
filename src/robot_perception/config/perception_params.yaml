@@ -59,7 +59,7 @@ person_detector_node:
     threads: 2                    # CPU threads for one inference
     confidence: 0.4               # live
     image_size: 416               # OpenCV / Ultralytics input size (ONNX Runtime reads the model's)
-    rate_hz: 2.0                  # live: detections per second
+    rate_hz: 0.0                  # live: detections per second; 0 = 5 on the GPU, 2 on the CPU
     floor_z: -0.35                # floor height in base_link (measure: -height of base_link)
     max_range: 12.0               # m, ignore people further away (feet projection gets noisy)
     map_frame: map

@@ -329,6 +329,19 @@ install_build() {
     git -C "$ROOT" rev-parse --short HEAD > "$BUILD_STAMP" 2>/dev/null || echo unknown > "$BUILD_STAMP"
 }
 
+# llama-server, Ollama's runner, keeps old prompts in RAM: up to 8 GiB per loaded model by
+# default, which on a Jetson is the memory the GPU shares. Every inspection prompt carries a new
+# image, so that cache only fills the RAM: off for the Ollama service (OLLAMA_CACHE_RAM for an
+# Ollama that passes --cache-ram itself, LLAMA_ARG_CACHE_RAM for one that does not).
+OLLAMA_DROPIN=/etc/systemd/system/ollama.service.d/pashupati.conf
+ollama_dropin() {
+    printf '%s\n' \
+        '# Pashupati (script/setup.sh install ollama): no prompt cache in RAM (up to 8 GiB per model)' \
+        '[Service]' \
+        'Environment="OLLAMA_CACHE_RAM=0"' \
+        'Environment="LLAMA_ARG_CACHE_RAM=0"'
+}
+
 # The model must be in the store of the Ollama service (user ollama), not in ~/.ollama.
 check_ollama() {
     [[ "$IN_DOCKER" == "1" ]] && echo "skipped in docker" && return 0
@@ -339,10 +352,18 @@ check_ollama() {
         || { echo "Ollama service not running: sudo systemctl enable --now ollama"; return 1; }
     [[ "$tags" == *"\"name\":\"$VLM_MODEL\""* || "$tags" == *"\"name\":\"$VLM_MODEL:"* ]] \
         || { echo "model $VLM_MODEL not in the Ollama service"; return 1; }
-    echo "ollama service with $VLM_MODEL"
+    [[ "$(cat "$OLLAMA_DROPIN" 2>/dev/null)" == "$(ollama_dropin)" ]] \
+        || { echo "prompt cache can take 8 GiB of RAM ($OLLAMA_DROPIN missing)"; return 1; }
+    echo "ollama service with $VLM_MODEL, no prompt cache in RAM"
 }
 install_ollama() {
     command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh
+    if [[ "$(cat "$OLLAMA_DROPIN" 2>/dev/null)" != "$(ollama_dropin)" ]]; then
+        $SUDO mkdir -p "$(dirname "$OLLAMA_DROPIN")"
+        ollama_dropin | $SUDO tee "$OLLAMA_DROPIN" >/dev/null
+        $SUDO systemctl daemon-reload
+        $SUDO systemctl restart ollama 2>/dev/null || true  # also frees a full prompt cache
+    fi
     $SUDO systemctl enable --now ollama 2>/dev/null || true
     for _ in $(seq 20); do curl -fsS --max-time 2 "$OLLAMA_URL/api/tags" >/dev/null 2>&1 && break; sleep 1; done
     ollama pull "$VLM_MODEL"  # pulled by the service, into its own store
