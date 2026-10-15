@@ -5,7 +5,7 @@ health_monitor_node:
       - /livox/lidar:5.0
       - /Odometry:8.0
       - /perception/sector_scan:5.0
-      - /camera/camera/color/image_raw/compressed:5.0
+      - /camera/camera/color/camera_info:5.0   # not the JPEG topic: that would make the driver encode every frame
       - /{robot_ns}/odom:10.0
     max_cpu_temp_c: 85.0
     max_memory_percent: 92.0

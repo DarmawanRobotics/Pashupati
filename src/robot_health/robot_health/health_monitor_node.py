@@ -32,7 +32,7 @@ class HealthMonitorNode(Node):
             'topics': [
                 '/livox/lidar:5.0',
                 '/perception/sector_scan:5.0',
-                '/camera/camera/color/image_raw/compressed:5.0',
+                '/camera/camera/color/camera_info:5.0',
                 '/{robot_ns}/odom:10.0',
             ],
             'robot_ns': 'robot',
