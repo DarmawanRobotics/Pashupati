@@ -28,6 +28,8 @@ provide.
 | `cc_url`, `cc_token` | `$CC_URL`, `$CC_TOKEN` | NETRA command center |
 | `site_config` | `$SITE_CONFIG` or `/etc/pashupati/site.yaml` | per-robot parameter overrides, see below |
 | `people`, `inspection`, `health` | `true` (`$PEOPLE`, `$INSPECTION`) | optional parts |
+| `webrtc` | `$WEBRTC` or `true` | handheld video over WebRTC through MediaMTX; off (or no MediaMTX): JPEG frames |
+| `mediamtx` | `$MEDIAMTX` | MediaMTX binary; empty: `/opt/pashupati/mediamtx/mediamtx` (`script/setup.sh install webrtc`), then `PATH` |
 
 Invalid values (`mode:=auto`, `odometry:=gmapping`, `robot_ns:=dog-2`, a robot package that is
 not built) stop the launch with a clear error instead of starting a half-configured robot. The first log line states the version, git
@@ -55,5 +57,16 @@ arguments (`ROUTE`, `TAGS`, `CC_URL`, ...) win over the site file. Start from
 
 Started nodes: the robot package (`robot_bringup`), odometry (held until the robot is
 still) + odometry monitor + route recorder, localization, lidar sectors, AprilTag, person detector,
-path loader / follower / avoidance, control mux, teleop UDP gateway, NETRA uplink, VLM anomaly
-detector, health monitor. `script/start_tmux.sh` remains for development (one pane per part, RViz).
+path loader / follower / avoidance, control mux, teleop UDP gateway, MediaMTX (it runs
+`video_stream_node` while the handheld watches), NETRA uplink, VLM anomaly detector, health
+monitor. `script/start_tmux.sh` remains for development (one pane per part, RViz).
+
+## WebRTC video
+
+MediaMTX v1.11 or newer serves the handheld's video: WHEP on TCP 8890, media on UDP 8190, and the
+encoder publishes to it over RTSP on `127.0.0.1:8654`. The launch writes its configuration to
+`~/.pashupati/mediamtx.yml` (mode 600) at every start: reading needs the `teleop_udp_node` token
+from the site file (user `teleop`), publishing is allowed from the robot itself only. The ports
+differ from the MediaMTX defaults, so a MediaMTX the robot already runs for something else can
+stay. Encoder settings (`fps`, `max_width`, `bitrate_kbps`, `encoder`) are `video_stream_node`
+parameters in the site file.

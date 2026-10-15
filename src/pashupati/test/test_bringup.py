@@ -1,6 +1,7 @@
 """Tests of the bringup helpers and of the launch description of robot.launch.py."""
 
 import os
+import shlex
 
 from pashupati.bringup import (
     BringupError,
@@ -13,7 +14,9 @@ from pashupati.bringup import (
     resolve_odometry,
     resolve_robot_bringup,
 )
+from pashupati.video import password_hash
 import pytest
+import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PACKAGE = os.path.dirname(HERE)
@@ -111,6 +114,7 @@ def launch_context(module, **overrides):
             context.launch_configurations[entity.name] = perform_substitutions(
                 context, entity.default_value
             )
+    context.launch_configurations['webrtc'] = 'false'  # a MediaMTX here keeps its configuration
     context.launch_configurations.update(overrides)
     return context
 
@@ -189,3 +193,35 @@ def test_health_watches_every_started_node():
     external = expected_nodes([], 'external')  # the simulator brings its own odometry
     assert 'odometry_monitor_node' in external
     assert not {'fastlio_mapping_node', 'legkilo'} & set(external)
+
+
+def test_launch_runs_mediamtx_for_the_webrtc_video(tmp_path, monkeypatch):
+    """With MediaMTX the launch starts it, reading the token from the site file; else JPEG."""
+    pytest.importorskip('launch_ros')
+    from launch.actions import ExecuteProcess
+
+    monkeypatch.setenv('HOME', str(tmp_path))  # the configuration goes to ~/.pashupati
+    monkeypatch.setattr('pashupati.video.gstreamer_missing', lambda: None)
+    binary = tmp_path / 'mediamtx'
+    binary.write_text('#!/bin/sh\necho v1.20.1\n')
+    binary.chmod(0o755)
+    site = tmp_path / 'site.yaml'
+    site.write_text('teleop_udp_node:\n  ros__parameters:\n    token: "s3cret"\n')
+    module = load_launch_module()
+
+    def servers(webrtc):
+        context = launch_context(
+            module, robot_bringup='', site_config=str(site), mediamtx=str(binary), webrtc=webrtc
+        )
+        return [a for a in module.launch_setup(context) if type(a) is ExecuteProcess]
+
+    assert len(servers('true')) == 1
+    with open(tmp_path / '.pashupati' / 'mediamtx.yml') as f:
+        config = yaml.safe_load(f)
+    assert config['authInternalUsers'][1]['pass'] == password_hash('s3cret')
+    command = shlex.split(config['paths']['camera']['runOnDemand'])
+    assert command[0].endswith(os.path.join('robot_bridge', 'video_stream_node'))
+    assert str(site) in command  # the encoder gets the same site parameters
+    assert servers('false') == []
+    binary.write_text('#!/bin/sh\necho v1.9.0\n')
+    assert servers('true') == []  # too old for the configuration

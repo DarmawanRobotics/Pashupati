@@ -10,15 +10,21 @@ The whole Pashupati robot in one launch (production: pashupati.service).
 Works with any quadruped: its driver, URDF and sensors come from a robot package started with
 robot_bringup (contract in src/xtras/README.md). Every Pashupati node respawns 3 s after it dies.
 A site configuration file (by default /etc/pashupati/site.yaml) is applied on top of the package
-defaults of every node.
+defaults of every node. With MediaMTX installed (script/setup.sh install webrtc) the handheld gets
+its video over WebRTC; without it, as JPEG over the teleop link.
 """
 
 import os
 
-from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
+from ament_index_python.packages import (
+    get_package_prefix,
+    get_package_share_directory,
+    PackageNotFoundError,
+)
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    ExecuteProcess,
     IncludeLaunchDescription,
     LogInfo,
     OpaqueFunction,
@@ -29,10 +35,12 @@ from launch.launch_description_sources import (
 )
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
+from pashupati import video
 from pashupati.bringup import (
     BringupError,
     expected_nodes,
     load_site_config,
+    node_parameter,
     non_empty,
     package_version,
     resolve_mode,
@@ -43,6 +51,7 @@ from pashupati.bringup import (
 )
 
 CAMERA = '/camera/camera/color'
+MEDIAMTX_CONFIG = '~/.pashupati/mediamtx.yml'
 
 
 def share(package: str, *path: str) -> str:
@@ -67,6 +76,53 @@ def robot_bringup_action(value: str, ns: str):
         raise BringupError(f'robot_bringup: {path} does not exist')
     return IncludeLaunchDescription(
         AnyLaunchDescriptionSource(path), launch_arguments={'namespace': ns}.items()
+    )
+
+
+def video_server(webrtc: str, binary: str, params_files: list):
+    """
+    Return (MediaMTX process or None, log line) for the handheld's WebRTC video.
+
+    MediaMTX reads the teleop token from the same parameter files as teleop_udp_node, and starts
+    video_stream_node with those files while the handheld watches.
+    """
+    if not truthy(webrtc):
+        return None, 'WebRTC video off (WEBRTC=false): the handheld gets JPEG frames'
+    found = video.find_mediamtx(binary)
+    if found is None:
+        return None, (
+            'WebRTC video off: MediaMTX not found (script/setup.sh install webrtc, or MEDIAMTX); '
+            'the handheld gets JPEG frames'
+        )
+    version = video.mediamtx_version(found)
+    if version is None or version < video.MIN_VERSION:
+        return None, (
+            f'WebRTC video off: {found} is {video.version_text(version)}, it needs v1.11 or '
+            'newer (script/setup.sh install webrtc)'
+        )
+    try:
+        executable = os.path.join(
+            get_package_prefix('robot_bridge'), 'lib', 'robot_bridge', 'video_stream_node'
+        )
+    except PackageNotFoundError:
+        executable = ''
+    if not os.path.isfile(executable):
+        return None, 'WebRTC video off: video_stream_node is not built (setup.sh install build)'
+    missing = video.gstreamer_missing()
+    if missing:
+        return None, f'WebRTC video off: {missing} (script/setup.sh install webrtc)'
+    token = str(node_parameter(params_files, 'teleop_udp_node', 'token', '') or '')
+    command = video.node_command(executable, params_files, video.rtsp_url())
+    try:
+        path = video.write_config(video.mediamtx_config(command, token, version), MEDIAMTX_CONFIG)
+    except OSError as error:
+        return None, f'WebRTC video off: cannot write {MEDIAMTX_CONFIG}: {error}'
+    process = ExecuteProcess(
+        cmd=[found, path], name='mediamtx', output='screen', respawn=True, respawn_delay=3.0
+    )
+    return process, (
+        f'WebRTC video: MediaMTX {video.version_text(version)} ({found}), '
+        f'WHEP on port {video.WEBRTC_PORT}, media on UDP {video.ICE_PORT}'
     )
 
 
@@ -109,6 +165,11 @@ def launch_setup(context):
     version = package_version(share('pashupati', 'package.xml'))
     git = os.environ.get('PASHUPATI_GIT', 'unknown')
 
+    mediamtx, video_note = video_server(arg('webrtc'), arg('mediamtx'), [bridge, *site])
+    teleop = {'robot_command_prefix': f'/{ns}/'}
+    if mediamtx is not None:
+        teleop['video_port'] = video.WEBRTC_PORT  # the handheld asks for WebRTC video here
+
     actions = [
         LogInfo(
             msg=f'Pashupati {version} ({git}) robot_id={arg("robot_id") or "(fleet default)"} '
@@ -116,9 +177,12 @@ def launch_setup(context):
             f'mode={mode} odometry={odometry} site_config={site[0] if site else "(none)"}'
         ),
         *[LogInfo(msg=f'WARNING {w}') for w in warnings],
+        LogInfo(msg=video_note),
     ]
     if robot is not None:
         actions.append(robot)
+    if mediamtx is not None:
+        actions.append(mediamtx)
     actions.append(
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(share('robot_odometry', 'launch', 'odometry.launch.py')),
@@ -185,7 +249,7 @@ def launch_setup(context):
             'robot_bridge',
             'teleop_udp_node',
             [bridge],
-            {'robot_command_prefix': f'/{ns}/'},
+            teleop,
             remappings=[
                 ('cmd_vel', topic('cmd_vel')),
                 ('battery', topic('battery')),
@@ -282,6 +346,16 @@ def generate_launch_description():
                 'inspection', default_value=env('INSPECTION', 'true'), description='VLM checks'
             ),
             DeclareLaunchArgument('health', default_value='true'),
+            DeclareLaunchArgument(
+                'webrtc',
+                default_value=env('WEBRTC', 'true'),
+                description='handheld video over WebRTC (MediaMTX); false: JPEG frames only',
+            ),
+            DeclareLaunchArgument(
+                'mediamtx',
+                default_value=env('MEDIAMTX'),
+                description=f'MediaMTX binary; empty: {video.INSTALL_DIR}, then PATH',
+            ),
             OpaqueFunction(function=launch_setup),
         ]
     )

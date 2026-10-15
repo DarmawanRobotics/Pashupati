@@ -57,6 +57,7 @@ def launch_setup(context):
                 'people': 'false',
                 'inspection': 'false',
                 'health': 'true',
+                'webrtc': 'false',  # no simulated camera to stream
             }.items(),
         ),
     ]

@@ -41,6 +41,11 @@ teleop_udp_node:
     # The handheld's action menu: std_srvs/Trigger services of the robot driver (/<ROBOT_NS>/<name>)
     robot_commands: [stand_up, sit_down, emergency_stop]
 
+# video_stream_node:                  # the handheld's WebRTC video (MediaMTX)
+#   ros__parameters:
+#     bitrate_kbps: 800               # weak Wi-Fi: lower it
+#     fps: 10.0
+
 # ---------------------------------------------------------------- this site
 
 obstacle_avoidance_node:

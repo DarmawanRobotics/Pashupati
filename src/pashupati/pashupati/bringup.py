@@ -35,6 +35,7 @@ NODES = (
     'path_follower_node',
     'control_mux_node',
     'teleop_udp_node',
+    'video_stream_node',  # started by MediaMTX while the handheld watches the WebRTC video
     'fleet_uplink_node',
     'anomaly_detector_node',
     'health_monitor_node',
@@ -117,6 +118,30 @@ def load_site_config(path: str):
         if name not in NODES and name != '/**':
             warnings.append(f'site config {path}: no node is called "{name}" (typo?)')
     return [path], warnings
+
+
+def node_parameter(files: list, node: str, name: str, default=None):
+    """
+    Return one parameter of a node as ROS would see it from these parameter files.
+
+    Later files win, and in one file the node's own section wins over '/**'. Unreadable files
+    are skipped (load_site_config already rejected broken site files).
+    """
+    value = default
+    for path in files:
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for key in ('/**', node, f'/{node}'):
+            section = data.get(key)
+            params = section.get('ros__parameters') if isinstance(section, dict) else None
+            if isinstance(params, dict) and name in params:
+                value = params[name]
+    return value
 
 
 def expected_nodes(started: list[str], odometry: str) -> list[str]:
