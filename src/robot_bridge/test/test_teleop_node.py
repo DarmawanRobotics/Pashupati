@@ -270,3 +270,124 @@ def test_webrtc_video_keeps_the_tags_without_jpeg_frames(video_rig):
     assert tags in topics() and camera in topics()
     video_rig.send(a, {'t': 'streams', 'camera': False})
     assert tags not in topics()
+
+
+def wait_until(rig, condition, timeout: float = 5.0) -> bool:
+    """Spin until condition holds (service discovery, latched messages) or timeout passes."""
+    end = time.monotonic() + timeout
+    while not condition() and time.monotonic() < end:
+        rig.spin(0.05)
+    return condition()
+
+
+def fake_node(rig, name: str, params: dict):
+    """Add a node with the given parameters (and so their parameter services) to the rig."""
+    node = rclpy.create_node(name)
+    for param, value in params.items():
+        node.declare_parameter(param, value)
+    rig.executor.add_node(node)
+    return node
+
+
+def acks_of(rig, sock) -> dict:
+    """Return the acknowledgements waiting on a client socket, by command id."""
+    return {m['id']: m for m in rig.received(sock) if m['t'] == 'ack'}
+
+
+def test_inspection_arguments_are_checked():
+    """inspection_set maps to the detector's live parameters; junk is refused with the reason."""
+    from robot_bridge.teleop_udp_node import inspection_parameters, set_parameters_request
+
+    assert inspection_parameters({'enabled': False, 'model': ' moondream ', 'interval': 0}) == [
+        ('enabled', False),
+        ('model', 'moondream'),
+        ('interval_sec', 0.0),
+    ]
+    assert inspection_parameters({'interval': -5}) == [('interval_sec', -1.0)]
+    for bad in ({}, {'enabled': 'yes'}, {'model': ''}, {'interval': 'x'}, {'interval': 1e9}):
+        with pytest.raises(ValueError):
+            inspection_parameters(bad)
+    request = set_parameters_request([('enabled', True), ('interval_sec', 2.0), ('model', 'm')])
+    assert [p.value.type for p in request.parameters] == [1, 3, 4]  # bool, double, string
+
+
+def test_inspection_is_set_on_the_detector_and_shown(rig):
+    """The handheld turns inspection off and picks a model; the detector status reaches it."""
+    detector = fake_node(
+        rig,
+        'anomaly_detector_node',
+        {'enabled': True, 'model': 'qwen3-vl:2b-instruct', 'interval_sec': 0.0},
+    )
+    latched = rclpy.qos.QoSProfile(
+        depth=1, durability=rclpy.qos.QoSDurabilityPolicy.TRANSIENT_LOCAL
+    )
+    status_pub = detector.create_publisher(String, 'anomaly_detector/status', latched)
+    a = rig.client()
+    rig.send(a, {'t': 'hello'})
+    welcome = next(m for m in rig.received(a) if m['t'] == 'welcome')
+    assert {'inspection_set', 'inspection_models', 'nav_speed'} <= set(welcome['commands'])
+    assert wait_until(rig, rig.node._commands['inspection_set'][1].service_is_ready)
+
+    rig.send(a, {'t': 'cmd', 'id': 1, 'name': 'inspection_set', 'args': {'enabled': False}})
+    rig.send(a, {'t': 'cmd', 'id': 2, 'name': 'inspection_set', 'args': {'model': 'moondream'}})
+    rig.send(a, {'t': 'cmd', 'id': 3, 'name': 'inspection_set', 'args': {'interval': 'soon'}})
+    acks = {}
+    wait_until(rig, lambda: acks.update(acks_of(rig, a)) or len(acks) >= 3)
+    assert acks[1]['ok'] and acks[2]['ok'] and not acks[3]['ok']
+    assert detector.get_parameter('enabled').value is False
+    assert detector.get_parameter('model').value == 'moondream'
+
+    status = {
+        'enabled': False,
+        'model': 'moondream',
+        'state': 'off',
+        'interval_sec': 0.0,
+        'models': [{'name': 'moondream', 'installed': True, 'active': True}],
+        'last': {'category': 'trash', 'reported': True, 'latency_ms': 900, 'at': time.time()},
+        'inspections': 7,
+        'reports': 1,
+    }
+    status_pub.publish(String(data=json.dumps(status)))
+    states = []
+    wait_until(
+        rig,
+        lambda: states.extend(m for m in rig.received(a) if m['t'] == 'state')
+        or (states and states[-1]['inspection'] is not None),
+    )
+    inspection = states[-1]['inspection']
+    assert (inspection['on'], inspection['state'], inspection['model']) == (
+        False, 'off', 'moondream',
+    )
+    assert inspection['last']['cat'] == 'trash' and inspection['reports'] == 1
+    rig.send(a, {'t': 'cmd', 'id': 4, 'name': 'inspection_models'})
+    assert acks_of(rig, a)[4]['data'] == status['models']
+    rig.executor.remove_node(detector)
+    detector.destroy_node()
+
+
+def test_patrol_speed_is_read_and_set_within_the_limits(rig):
+    """The handheld sees the path follower's speed and sets it, never above its maximum."""
+    follower = fake_node(
+        rig, 'path_follower_node', {'target_linear_velocity': 0.4, 'max_linear_velocity': 0.6}
+    )
+    a = rig.client()
+    assert wait_until(rig, rig.node._speed_client.service_is_ready)
+    rig.send(a, {'t': 'hello'})
+    states = []
+    wait_until(
+        rig,
+        lambda: states.extend(m for m in rig.received(a) if m['t'] == 'state')
+        or (states and states[-1]['speed'] is not None),
+    )
+    assert states[-1]['speed'] == {'target': 0.4, 'min': 0.1, 'max': 0.6}
+
+    rig.send(a, {'t': 'cmd', 'id': 1, 'name': 'nav_speed', 'args': {'speed': 0.55}})
+    rig.send(a, {'t': 'cmd', 'id': 2, 'name': 'nav_speed', 'args': {'speed': 0.9}})
+    rig.send(a, {'t': 'cmd', 'id': 3, 'name': 'nav_speed', 'args': {}})
+    acks = {}
+    wait_until(rig, lambda: acks.update(acks_of(rig, a)) or len(acks) >= 3)
+    assert acks[1]['ok'] and not acks[2]['ok'] and not acks[3]['ok']
+    assert '0.6' in acks[2]['msg']
+    assert follower.get_parameter('target_linear_velocity').value == 0.55
+    rig.executor.remove_node(follower)
+    follower.destroy_node()

@@ -14,6 +14,7 @@
 # Env: ROS_DISTRO (humble), LIVOX_SDK_REF (master), ROBOT_SETUP (the robot package's own
 #      installer, `<script> check|install`, e.g. for a vendor SDK; see src/xtras/README.md),
 #      ROBOT_IP (robot SDK address for the network check), VLM_MODEL (qwen3-vl:2b-instruct),
+#      VLM_EXTRA_MODELS (other models the handheld can switch to, pulled best effort),
 #      PEOPLE_MODEL (models/yolo11n.engine), BUILD_WORKERS / BUILD_JOBS (parallel packages /
 #      compile jobs, lower them when the build runs out of memory), REALSENSE_BLACKLIST_UVC
 #      (1 on Jetson), MEDIAMTX (a MediaMTX binary to use instead of installing one), FORCE=1
@@ -50,6 +51,7 @@ SERVICE_NAME=pashupati
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 SITE_FILE="${SITE_CONFIG:-/etc/pashupati/site.yaml}"
 VLM_MODEL="${VLM_MODEL:-qwen3-vl:2b-instruct}"
+VLM_EXTRA_MODELS="${VLM_EXTRA_MODELS:-moondream:latest ahmadwaqar/smolvlm2-2.2b-instruct:latest}"
 PEOPLE_MODEL="${PEOPLE_MODEL:-$ROOT/models/yolo11n.engine}"
 REALSENSE_RULES=/etc/udev/rules.d/99-realsense-libusb.rules
 LIVOX_IP="${LIVOX_IP:-192.168.123.20}"
@@ -343,6 +345,10 @@ install_ollama() {
     $SUDO systemctl enable --now ollama 2>/dev/null || true
     for _ in $(seq 20); do curl -fsS --max-time 2 "$OLLAMA_URL/api/tags" >/dev/null 2>&1 && break; sleep 1; done
     ollama pull "$VLM_MODEL"  # pulled by the service, into its own store
+    local model
+    for model in $VLM_EXTRA_MODELS; do
+        ollama pull "$model" || log "${YELLOW}could not pull $model${RESET}: the handheld shows it as not pulled"
+    done
 }
 
 check_people_model() {

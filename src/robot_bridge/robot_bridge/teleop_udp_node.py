@@ -12,9 +12,12 @@ import time
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import Twist
 import numpy as np
+from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.srv import GetParameters, SetParameters
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
 from robot_bridge import protocol
@@ -38,6 +41,11 @@ except ImportError:  # no AprilTag detector here: no tag overlay on the handheld
 # extras (gait or speed modes, ...) are added per robot with robot_commands in the site file.
 ROBOT_COMMANDS = ['stand_up', 'sit_down', 'emergency_stop']
 
+# anomaly_detector/status comes every 2 s; older than this the detector is gone (not running)
+INSPECTION_STALE_SEC = 6.0
+# how often the path follower is asked for its patrol speed while a handheld is connected
+SPEED_POLL_SEC = 3.0
+
 
 def yaw_of(q) -> float:
     """Return the yaw of a geometry_msgs Quaternion."""
@@ -53,6 +61,79 @@ def level_of(status) -> int:
 def finite(value, digits: int = 2):
     """Round a float for JSON, or None when it is NaN/inf."""
     return round(float(value), digits) if math.isfinite(value) else None
+
+
+def number(value, default=None):
+    """Return a finite int/float as float (bools and text are not numbers), else default."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return default
+    return float(value)
+
+
+def inspection_parameters(args: dict) -> list:
+    """Map inspection_set args to (name, value) of the anomaly detector's live parameters."""
+    params = []
+    if 'enabled' in args:
+        if not isinstance(args['enabled'], bool):
+            raise ValueError('enabled must be true or false')
+        params.append(('enabled', args['enabled']))
+    if 'model' in args:
+        model = args['model']
+        if not isinstance(model, str) or not model.strip() or len(model) > 200:
+            raise ValueError('model must be an Ollama model name')
+        params.append(('model', model.strip()))
+    if 'interval' in args:
+        interval = number(args['interval'])
+        if interval is None or interval > 3600.0:
+            raise ValueError('interval: 0 continuous, 1 to 3600 s, < 0 at stop points only')
+        params.append(('interval_sec', max(interval, -1.0)))
+    if not params:
+        raise ValueError('nothing to change: give enabled, model or interval')
+    return params
+
+
+def set_parameters_request(params: list) -> SetParameters.Request:
+    """Return a SetParameters request for (name, value) pairs (types from the values)."""
+    return SetParameters.Request(
+        parameters=[Parameter(name, value=value).to_parameter_msg() for name, value in params]
+    )
+
+
+def command_outcome(result) -> tuple:
+    """Return (ok, message) of a service response: success / message or SetParameters results."""
+    if result is None:
+        return False, 'no response'
+    results = getattr(result, 'results', None)
+    if results is not None:
+        refused = [r.reason or 'refused' for r in results if not r.successful]
+        return not refused, '; '.join(refused)
+    return bool(getattr(result, 'success', True)), getattr(result, 'message', '')
+
+
+def inspection_summary(status: dict, stale: bool, now: float) -> dict:
+    """Compact anomaly_detector/status for the handheld's state message (no model list)."""
+    last = status.get('last') if isinstance(status.get('last'), dict) else None
+    summary = {
+        'on': status.get('enabled') is True,
+        'state': 'offline' if stale else str(status.get('state', ''))[:16],
+        'model': str(status.get('model', ''))[:120],
+        'interval': number(status.get('interval_sec'), 0.0),
+        'error': str(status.get('error', ''))[:160],
+        'count': int(number(status.get('inspections'), 0.0)),
+        'reports': int(number(status.get('reports'), 0.0)),
+        'last': None,
+    }
+    if last is not None:
+        at = number(last.get('at'))
+        summary['last'] = {
+            'cat': str(last.get('category', ''))[:40],
+            'reported': last.get('reported') is True,
+            'ms': int(number(last.get('latency_ms'), 0.0)),
+            'age': None if at is None else max(0, round(now - at)),
+            'desc': str(last.get('description', ''))[:80],
+            'source': str(last.get('source', ''))[:16],
+        }
+    return summary
 
 
 def dwell_seconds(value) -> float:
@@ -98,6 +179,9 @@ class TeleopUdpNode(Node):
             'lidar_hz': 2.0,
             'lidar_voxel': 0.1,
             'lidar_max_points': 3000,
+            'inspection_node': '/anomaly_detector_node',
+            'navigation_node': '/path_follower_node',
+            'patrol_speed_min': 0.1,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -150,6 +234,14 @@ class TeleopUdpNode(Node):
         self._tags_max_age = float(p('tags_max_age_sec'))
         self._camera_period = 1.0 / max(float(p('camera_fps')), 0.1)
         self._lidar_period = 1.0 / max(float(p('lidar_hz')), 0.1)
+        self._inspection = None  # latest anomaly_detector/status
+        self._inspection_time = 0.0
+        self._speed = None  # {target, min, max} of the path follower, None until it answered
+        self._speed_asked = 0.0
+        self._speed_future = None
+        self._speed_min = float(p('patrol_speed_min'))
+        self._inspection_node = str(p('inspection_node')).rstrip('/')
+        self._navigation_node = str(p('navigation_node')).rstrip('/')
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -213,6 +305,13 @@ class TeleopUdpNode(Node):
                 lambda a, v=value: SetBool.Request(data=v),
             )
 
+        def set_params(node, params_of):
+            return (
+                SetParameters,
+                self.create_client(SetParameters, f'{node}/set_parameters'),
+                lambda a: set_parameters_request(params_of(a)),
+            )
+
         estop = self.create_client(SetBool, 'bridge/estop')
         self._estop_request_pub = self.create_publisher(String, 'bridge/estop_request', 10)
         start_nav = self.create_client(SetBool, 'navigation/start_nav')
@@ -244,7 +343,15 @@ class TeleopUdpNode(Node):
             ),
             'localize': trigger('localization/start'),
             'record_tags': trigger('localization/record_tags'),
+            'inspection_set': set_params(self._inspection_node, inspection_parameters),
+            'nav_speed': set_params(
+                self._navigation_node,
+                lambda a: [('target_linear_velocity', self.patrol_speed(a.get('speed')))],
+            ),
         }
+        self._speed_client = self.create_client(
+            GetParameters, f'{self._navigation_node}/get_parameters'
+        )
         self._robot_commands = [name for name in robot_commands if name]
         for name in self._robot_commands:
             self._commands[name] = trigger(prefix + name)
@@ -266,6 +373,7 @@ class TeleopUdpNode(Node):
             latched,
         )
         self.create_subscription(String, 'health/status', self.on_health, latched)
+        self.create_subscription(String, 'anomaly_detector/status', self.on_inspection, latched)
         self.create_subscription(WaypointPath, 'navigation/waypoints', self.on_route, latched)
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
@@ -436,7 +544,8 @@ class TeleopUdpNode(Node):
             welcome = {
                 't': 'welcome',
                 'name': self._robot_name,
-                'commands': sorted(self._commands) + ['get_route', 'list_routes'],
+                'commands': sorted(self._commands)
+                + ['get_route', 'inspection_models', 'list_routes'],
                 'robot_commands': self._robot_commands,
                 'limits': self._limits,
             }
@@ -444,6 +553,7 @@ class TeleopUdpNode(Node):
                 welcome['video'] = self._video  # WebRTC (WHEP) through MediaMTX
             self.send_json(welcome)
             self.send_route()
+            self.ask_speed()
         elif addr != self._client:
             return
         self._client_seen = time.monotonic()
@@ -466,6 +576,8 @@ class TeleopUdpNode(Node):
             self.get_logger().warn(f'teleop client {self._client} timed out')
             self.end_session()
             self.sync_subscriptions()
+        if self._client and time.monotonic() - self._speed_asked > SPEED_POLL_SEC:
+            self.ask_speed()
         self.send_state()
 
     def on_joy(self, message: dict):
@@ -498,6 +610,13 @@ class TeleopUdpNode(Node):
             self.send_route()
             self.ack(key, True, f'{len(self._route)} points')
             return
+        if name == 'inspection_models':
+            models = (self._inspection or {}).get('models')
+            if not isinstance(models, list) or self.inspection_stale():
+                self.ack(key, False, 'inspection not running (INSPECTION=true in pashupati.env)')
+            else:
+                self.ack(key, True, '', [m for m in models if isinstance(m, dict)][:30])
+            return
         if name not in self._commands:
             self.ack(key, False, f'unknown command {name}')
             return
@@ -523,10 +642,11 @@ class TeleopUdpNode(Node):
         except Exception as error:  # noqa: B902  the service raised, report it to the client
             ok, msg = False, f'{name} failed: {error}'
         else:
-            ok = bool(result and getattr(result, 'success', True))
-            msg = getattr(result, 'message', '') if result else 'no response'
+            ok, msg = command_outcome(result)
         if ok and name in ('record_start', 'record_stop'):
             self._state['recording'] = name == 'record_start'
+        if ok and name == 'nav_speed':
+            self._speed_asked = 0.0  # show the new speed with the next state
         if session == self._session:
             self.ack(key, ok, msg)
 
@@ -594,6 +714,61 @@ class TeleopUdpNode(Node):
             'issues': health.get('issues', [])[:5],
         }
 
+    def on_inspection(self, msg: String):
+        """Cache the anomaly detector's status (on, model, state, last inspection, models)."""
+        try:
+            status = json.loads(msg.data)
+        except ValueError:
+            return
+        if isinstance(status, dict):
+            self._inspection = status
+            self._inspection_time = time.monotonic()
+
+    def inspection_stale(self) -> bool:
+        """Return True when the detector stopped sending its status (not running any more)."""
+        return time.monotonic() - self._inspection_time > INSPECTION_STALE_SEC
+
+    def inspection_state(self):
+        """Return the inspection part of the state message, None when no detector ever ran."""
+        if self._inspection is None:
+            return None
+        return inspection_summary(self._inspection, self.inspection_stale(), time.time())
+
+    def patrol_speed(self, value) -> float:
+        """Validate a patrol speed from the handheld against the path follower's limits."""
+        speed = number(value)
+        top = number((self._speed or {}).get('max'), 1.0)
+        if speed is None or not self._speed_min <= speed <= top:
+            raise ValueError(f'speed must be {self._speed_min:g} to {top:g} m/s')
+        return round(speed, 2)
+
+    def ask_speed(self):
+        """Ask the path follower for its patrol speed and cap, one request at a time."""
+        self._speed_asked = time.monotonic()
+        if self._speed_future is not None and not self._speed_future.done():
+            return
+        if not self._speed_client.service_is_ready():
+            self._speed = None  # no navigation running (teach mode, or it is restarting)
+            return
+        request = GetParameters.Request(names=['target_linear_velocity', 'max_linear_velocity'])
+        self._speed_future = self._speed_client.call_async(request)
+        self._speed_future.add_done_callback(self.on_speed)
+
+    def on_speed(self, future):
+        """Keep the path follower's answer: target and max linear velocity."""
+        try:
+            values = future.result().values
+        except Exception:  # noqa: B902  the node went away meanwhile: ask again later
+            return
+        double = ParameterType.PARAMETER_DOUBLE
+        if len(values) == 2 and all(v.type == double for v in values):
+            target, top = values[0].double_value, values[1].double_value
+            self._speed = {
+                'target': round(target, 2),
+                'min': self._speed_min,
+                'max': round(max(top, self._speed_min), 2),
+            }
+
     def on_battery(self, msg: BatteryState):
         """Cache battery readings."""
         self._state['battery'] = {
@@ -649,6 +824,8 @@ class TeleopUdpNode(Node):
                     'seq': self._seq,
                     'pose': self.pose(),
                     'tags': self.tags(),
+                    'inspection': self.inspection_state(),
+                    'speed': self._speed,
                     **self._state,
                 }
             )

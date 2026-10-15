@@ -111,3 +111,36 @@ def parse_response(text: str, categories: list[str], use_schema: bool) -> dict:
         'description': description[:300],
         'valid': valid,
     }
+
+
+def full_name(model: str) -> str:
+    """Return a model name as Ollama lists it: 'moondream' -> 'moondream:latest'."""
+    model = model.strip()
+    return model if ':' in model.rsplit('/', 1)[-1] else f'{model}:latest'
+
+
+def model_options(configured: list[str], installed, current: str) -> list[dict]:
+    """
+    Models the operator can choose from: the configured ones first, then other vision models.
+
+    `installed` maps the models in Ollama to whether they take images (None: unknown), or is None
+    when Ollama could not be asked. Each option is {name, installed (True, False or None when
+    unknown), active (the model in use)}; a text-only model is never offered.
+    """
+    options, seen = [], set()
+    wanted = full_name(current) if current else ''
+
+    def add(name: str, available):
+        key = full_name(name)
+        if key in seen:
+            return
+        seen.add(key)
+        options.append({'name': name, 'installed': available, 'active': key == wanted})
+
+    for name in [*configured, current]:
+        if name and name.strip():
+            add(name.strip(), None if installed is None else full_name(name) in installed)
+    for name in sorted(installed or {}):
+        if installed[name] is not False:
+            add(name, True)
+    return options

@@ -1,8 +1,14 @@
 anomaly_detector_node:
   ros__parameters:
+    enabled: true                     # live: false stops inspecting (stop points answer "inspection off")
+    state_file: ~/.pashupati/inspection.json   # live changes (handheld) kept across restarts; "": off
     image_topic: /camera/camera/color/image_raw   # sensor_msgs/Image (rgb8, bgr8, rgba8, bgra8, mono8)
     ollama_url: http://127.0.0.1:11434
-    model: qwen3-vl:2b-instruct       # any Ollama vision model (moondream, ahmadwaqar/smolvlm2-2.2b-instruct ...)
+    model: qwen3-vl:2b-instruct       # live: any Ollama vision model, see models
+    models:                           # offered on the handheld (plus every other vision model in Ollama)
+      - qwen3-vl:2b-instruct
+      - moondream:latest
+      - ahmadwaqar/smolvlm2-2.2b-instruct:latest
     categories: [trash, spill, stain] # what the model chooses from (plus "none")
     alarm_categories: [trash, spill]  # only these are reported; stain is logged but not reported
     use_schema: true                  # false: free-text answer (FLOOR:/TYPE:) parsed manually
@@ -13,5 +19,5 @@ anomaly_detector_node:
     timeout_sec: 30.0
     max_image_age_sec: 2.0
     max_image_width: 640              # downscale before inference
-    interval_sec: 0.0                 # 0: inspect back to back, > 0: every N s, < 0: only check_now
+    interval_sec: 0.0                 # live: 0 back to back, > 0 every N s, < 0 only at stop points
     cooldown_sec: 60.0                # periodic mode: do not report a category again within this time

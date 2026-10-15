@@ -35,7 +35,8 @@ instead of a global planner:
 - **Sense crowds** — people seen by the camera are placed on the floor plan and aggregated into
   per-minute crowd heatmaps.
 - **Operate** — schedules and live control from NETRA, manual control from a Retroid handheld
-  over UDP, one supervised systemd service on the robot with self-respawning nodes.
+  over UDP (which also switches the inspection on and off, picks its model and pace, and sets the
+  patrol speed), one supervised systemd service on the robot with self-respawning nodes.
 
 ## System
 

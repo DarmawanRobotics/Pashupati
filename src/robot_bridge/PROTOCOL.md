@@ -56,6 +56,9 @@ from an earlier session are not delivered. Start ids at a random value per app s
 | `get_route` | | resend the loaded route stream |
 | `localize` | | localize from a visible AprilTag |
 | `record_tags` | | record AprilTag poses |
+| `inspection_set` | any of `enabled` (bool), `model` (Ollama model name), `interval` (s: `0` continuous, `> 0` every N s, `< 0` at stop points only) | change the VLM inspection live (`anomaly_detector_node` parameters, kept across restarts) |
+| `inspection_models` | | `ack.data` = models to choose from: `[{name, installed (bool or null when unknown), active}]` |
+| `nav_speed` | `speed` (m/s, `state.speed.min`–`max`) | patrol speed (`path_follower_node` `target_linear_velocity`) until the next restart |
 | `stand_up`, `sit_down`, `emergency_stop` (also latches the software e-stop), `move_mode`, `balance_stand_mode`, `lock_mode`, `slow_speed`, `normal_speed`, `fast_speed` | | robot driver commands (`robot_commands` parameter) |
 
 ## Robot → client (JSON)
@@ -64,7 +67,7 @@ from an earlier session are not delivered. Start ids at a random value per app s
 |---|---|
 | `welcome` | `name` (robot), `commands` (every command name), `robot_commands` (the driver commands of this robot, in the order of the `robot_commands` parameter), `limits` ([vx, vy, wz] maxima), `video` ({port, path}: WebRTC video, see below; absent when the robot only sends JPEG) |
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
-| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `field` (protective field: `clear`, `limited`, `stop`, `stale`, `off` or `null`), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`), `tags` (AprilTags in the camera image while the camera or video stream is on: [[id, x0, y0, x1, y1, x2, y2, x3, y3], ...], corners as fractions of the image width and height) |
+| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `field` (protective field: `clear`, `limited`, `stop`, `stale`, `off` or `null`), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`), `tags` (AprilTags in the camera image while the camera or video stream is on: [[id, x0, y0, x1, y1, x2, y2, x3, y3], ...], corners as fractions of the image width and height), `inspection` (VLM inspection, `null` when no detector runs: {`on`, `state` (`loading`, `running`, `off`, `error`, `offline` = no status for 6 s), `model`, `interval` (as in `inspection_set`), `error`, `count` (inspections), `reports` (findings sent to NETRA), `last`: {`cat` (category or `none`), `reported`, `ms` (latency), `age` (s), `desc`, `source` (`periodic` or `stop_point`)} or `null`}), `speed` (patrol speed {`target`, `min`, `max`} in m/s, `null` without navigation) |
 | `pong` | `ts` |
 | `busy` | `msg`: another device is driving, retry later |
 | `denied` | `msg`: the `hello` had a missing or wrong token |

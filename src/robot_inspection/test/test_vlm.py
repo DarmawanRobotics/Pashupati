@@ -1,6 +1,13 @@
 import json
 
-from robot_inspection.vlm import build_prompt, build_request, build_schema, parse_response
+from robot_inspection.vlm import (
+    build_prompt,
+    build_request,
+    build_schema,
+    full_name,
+    model_options,
+    parse_response,
+)
 
 CATS = ['trash', 'spill', 'stain']
 
@@ -55,3 +62,28 @@ def test_garbage_answer_is_none_and_invalid():
     }
     assert not parse_response('not json', CATS, True)['valid']
     assert not parse_response('{"type": "dirty"}', CATS, True)['valid']
+
+
+def test_full_name_adds_the_latest_tag():
+    """Ollama lists 'moondream' as 'moondream:latest'; namespaces and tags are kept."""
+    assert full_name('moondream') == 'moondream:latest'
+    assert full_name(' qwen3-vl:2b-instruct ') == 'qwen3-vl:2b-instruct'
+    assert full_name('ahmadwaqar/smolvlm2-2.2b-instruct') == (
+        'ahmadwaqar/smolvlm2-2.2b-instruct:latest'
+    )
+
+
+def test_model_options_put_configured_first_and_skip_text_models():
+    """Configured models first (installed or not), then other vision models Ollama has."""
+    installed = {'moondream:latest': True, 'llama3:latest': False, 'llava:7b': None}
+    options = model_options(['qwen3-vl:2b-instruct', 'moondream'], installed, 'moondream')
+    assert options == [
+        {'name': 'qwen3-vl:2b-instruct', 'installed': False, 'active': False},
+        {'name': 'moondream', 'installed': True, 'active': True},
+        {'name': 'llava:7b', 'installed': True, 'active': False},
+    ]
+    unknown = model_options(['moondream'], None, 'other:1b')
+    assert unknown == [
+        {'name': 'moondream', 'installed': None, 'active': False},
+        {'name': 'other:1b', 'installed': None, 'active': True},
+    ]

@@ -9,11 +9,26 @@
 | `~/check_now` (`/anomaly_detector_node/check_now`) | `std_srvs/Trigger` | inspect the latest frame now; called by `path_follower_node` at every stop point |
 | `anomaly_detector/result` | `std_msgs/String` (JSON) | `{category, description, model, latency_ms, is_anomaly, source, evidence_stamp}`, published only for `alarm_categories`; `robot_fleet` uploads them with the evidence frame and pose |
 | `anomaly_detector/evidence` | `sensor_msgs/CompressedImage` | the camera frame the result was detected in (full size), published just before the result; its stamp equals `evidence_stamp` |
+| `anomaly_detector/status` | `std_msgs/String` (JSON, latched, every 2 s and on change) | `{enabled, model, state (loading, running, off, error), error, interval_sec, models [{name, installed, active}], last {category, reported, latency_ms, description, source, at}, inspections, reports}`, shown on the handheld |
 
 The model picks one of `categories` (default `trash`, `spill`, `stain`) or `none`. Only
 `alarm_categories` (default `trash`, `spill`) are reported; `stain` is too easily confused with
 reflections on shiny floors. With `interval_sec: 0` the node inspects back to back and reports a
 category at most once per `cooldown_sec`; `check_now` (source `stop_point`) always reports.
+
+## Live control
+
+`enabled`, `model` and `interval_sec` change while the node runs: from the handheld (Inspection
+page) or with `ros2 param set /anomaly_detector_node model moondream:latest`. A new model is
+loaded into Ollama and the one before it unloaded (the Jetson shares its memory with the GPU);
+while off, the loaded model stays in memory so turning it on again is instant. The live choice is
+kept in `state_file` (`~/.pashupati/inspection.json`) and wins over the parameter files at the next
+start; delete that file to go back to them.
+
+The handheld offers the `models` parameter (known to work on the robot: `qwen3-vl:2b-instruct`,
+`moondream:latest`, `ahmadwaqar/smolvlm2-2.2b-instruct:latest`) plus every other vision model
+Ollama has; models not pulled yet are marked so (`script/setup.sh install ollama` pulls these
+three).
 
 Debug parameters: `model`, `use_schema` (false = free-text `FLOOR:`/`TYPE:` answer, for models
 whose runner crashes on grammar), `describe` (one sentence about the floor) and `debug` (log every

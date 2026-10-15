@@ -60,6 +60,10 @@ teleop_udp_node:
     lidar_hz: 2.0
     lidar_voxel: 0.1
     lidar_max_points: 3000
+    # Inspection and patrol speed from the handheld: parameters of these nodes, set live
+    inspection_node: /anomaly_detector_node   # enabled, model, interval_sec; status topic
+    navigation_node: /path_follower_node      # target_linear_velocity up to max_linear_velocity
+    patrol_speed_min: 0.1                     # m/s, slowest patrol speed the handheld may set
 
 # H.264 for the handheld's WebRTC video. MediaMTX (robot.launch.py) starts this node while the
 # handheld watches and stops it after; it publishes to MediaMTX over RTSP on the loopback.
