@@ -98,5 +98,5 @@ def test_queued_finding_takes_the_pose_of_when_it_was_seen():
     pose_at = pytest.importorskip('robot_fleet.fleet_uplink_node').pose_at
     history = [(100.0, {'x': 0.0}), (101.0, {'x': 0.5}), (102.0, {'x': 1.0})]
     assert pose_at(history, 101.3) == {'x': 0.5}
-    assert pose_at(history, 106.5) is None  # nothing recorded that close
+    assert pose_at(history, 107.5) is None  # nothing recorded within 5 s
     assert pose_at([], 101.0) is None
