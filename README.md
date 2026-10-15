@@ -165,6 +165,7 @@ pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.lau
 | `model ... is not installed in Ollama` | model pulled into `~/.ollama`, not into the service | `script/setup.sh install ollama` |
 | `malformed launch argument 'route:='` | empty launch argument | leave it out; `robot.launch.py` reads the env |
 | build killed (out of memory) | too many parallel compile jobs | `BUILD_WORKERS=1 BUILD_JOBS=2 script/setup.sh install build` |
+| `apt-get update`: "no longer has a Release file" | a dead apt mirror (vendor images often use `mirrors.tuna.tsinghua.edu.cn`) | point `/etc/apt/sources.list*` at `ports.ubuntu.com/ubuntu-ports` (`archive.ubuntu.com/ubuntu` on x86) and `packages.ros.org/ros2/ubuntu` |
 
 ## Develop (macOS / Linux)
 

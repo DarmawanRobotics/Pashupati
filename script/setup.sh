@@ -75,7 +75,13 @@ fi
 
 log() { echo "${BOLD}==>${RESET} $*"; }
 enabled() { [[ "${1,,}" =~ ^(1|true|yes|on)$ ]]; }
-apt_install() { $SUDO apt-get update -qq && $SUDO apt-get install -y --no-install-recommends "$@"; }
+# A broken mirror in the apt sources fails `apt-get update` but rarely the packages we need: warn,
+# then try the install (it says which package it could not get).
+apt_install() {
+    $SUDO apt-get update -qq \
+        || log "${YELLOW}apt-get update had errors: check the mirrors in /etc/apt/sources.list*${RESET}"
+    $SUDO apt-get install -y --no-install-recommends "$@"
+}
 source_ros() {
     set +u
     # shellcheck disable=SC1090
