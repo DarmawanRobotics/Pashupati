@@ -70,7 +70,15 @@ jobs:
           # sequential: the in-process ROS tests share one DDS domain
           colcon test --packages-select $PACKAGES --executor sequential \
             --event-handlers console_cohesion+
-          colcon test-result --verbose
+          if ! colcon test-result --verbose > test-result.txt 2>&1; then
+            cat test-result.txt
+            # the failures as one annotation too: on the run page and through the API
+            msg=$(head -c 30000 test-result.txt \
+              | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
+            echo "::error title=Failing tests::$msg"
+            exit 1
+          fi
+          cat test-result.txt
       - name: Launch smoke test
         run: |
           source /opt/ros/humble/setup.bash
