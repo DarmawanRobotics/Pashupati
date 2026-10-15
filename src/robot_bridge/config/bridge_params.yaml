@@ -49,10 +49,26 @@ teleop_udp_node:
     camera_jpeg_quality: 60
     camera_max_width: 640
     camera_max_bytes: 60000           # bigger driver JPEGs are re-encoded (needs OpenCV)
-    # AprilTags drawn over the handheld video (while the camera stream is on); "" turns it off
+    # WebRTC video (MediaMTX WHEP port, robot.launch.py sets it when MediaMTX runs); 0: the
+    # handheld only gets the JPEG frames above
+    video_port: 0
+    video_path: camera
+    # AprilTags drawn over the handheld video (JPEG or WebRTC); "" turns it off
     tags_topic: /perception/apriltag/detections
     tags_camera_info_topic: /perception/apriltag/camera_info
     lidar_topic: /cloud_registered_body   # FAST-LIO body-frame cloud
     lidar_hz: 2.0
     lidar_voxel: 0.1
     lidar_max_points: 3000
+
+# H.264 for the handheld's WebRTC video. MediaMTX (robot.launch.py) starts this node while the
+# handheld watches and stops it after; it publishes to MediaMTX over RTSP on the loopback.
+video_stream_node:
+  ros__parameters:
+    image_topic: /camera/camera/color/image_raw   # raw rgb8/bgr8/mono8/yuv422 image
+    fps: 15.0
+    max_width: 1280                   # wider camera images are scaled down
+    bitrate_kbps: 1500
+    keyframe_sec: 1.0                 # a viewer starts at a key frame: keep it short
+    # auto: the first that works of nvv4l2h264enc (Jetson hardware), x264enc, openh264enc
+    encoder: auto

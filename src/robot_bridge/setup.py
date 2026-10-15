@@ -20,12 +20,13 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Auto/remote control mux and the UDP teleop gateway (no ROS on the handheld)',
+    description='Control mux, UDP teleop gateway (no ROS on the handheld), WebRTC video encoder',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
             'control_mux_node = robot_bridge.control_mux_node:main',
             'teleop_udp_node = robot_bridge.teleop_udp_node:main',
+            'video_stream_node = robot_bridge.video_stream_node:main',
         ],
     },
 )
