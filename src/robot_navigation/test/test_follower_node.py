@@ -56,3 +56,22 @@ def test_stop_reports_inspection_when_every_inspector_is_down(follower):
     assert (event, index) == ('inspected', 0)
     assert 'no_such_inspector: not available' in message
     assert follower._inspection_pending == 0
+
+
+def test_start_finds_the_robot_again_after_the_route_end(follower):
+    """A finished or far-away progress is replaced by the robot's place on the route at start."""
+    from robot_navigation.utils.pose2d import Pose2D
+
+    follower._waypoints = [(0.1 * i, 0.0, 0.0, 5.0 if i == 30 else 0.0) for i in range(60)]
+    follower.compute_speed_profile()
+    follower.restart_route()
+    follower._controller.set_path([(w[0], w[1]) for w in follower._waypoints], 59)
+    follower._follower_state = 'GOAL_HOLD'
+    follower.current_pose = lambda: Pose2D(1.0, 0.05, 0.0)
+    assert follower.find_robot_on_route()
+    assert follower._follower_state == 'FOLLOWING'
+    assert abs(follower._controller.progress_index() - 10) <= 1
+    assert follower._next_stop_index == 30
+
+    follower.current_pose = lambda: Pose2D(1.2, 0.0, 0.0)  # still on its progress: kept
+    assert not follower.find_robot_on_route()

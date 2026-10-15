@@ -27,6 +27,7 @@ from robot_navigation.utils.controllers.registry import create_controller
 from robot_navigation.utils.final_approach import FinalApproach
 from robot_navigation.utils.geometry import clamp, yaw_from_quaternion
 from robot_navigation.utils.path_processing import velocity_profile
+from robot_navigation.utils.path_progress import PathProgress
 from robot_navigation.utils.path_shift import PathShift, PathShiftConfig
 from robot_navigation.utils.pose2d import Pose2D
 from robot_navigation.utils.safety import SafetySupervisor
@@ -499,6 +500,33 @@ class PathFollowerNode(Node):
         self._follower_state = 'FOLLOWING'
         self._next_stop_index = self.find_next_stop_index(0)
 
+    def find_robot_on_route(self) -> bool:
+        """
+        On start: keep the progress if the robot is still near it, else search the whole route.
+
+        Progress survives a stop so a paused patrol resumes where it was; after the route end or
+        once the robot was moved elsewhere the old progress would report the route as finished or
+        the robot as far off it, so the robot is located on the route again.
+        """
+        if not self._waypoints:
+            return False
+        pose = self.current_pose()
+        if pose is None:
+            return False
+        held = self._follower_state == 'GOAL_HOLD'
+        near = float(self.get_parameter('off_path_slow_distance').value)
+        if not held and self.cross_track_error(pose) <= near:
+            return False
+        path = [(x, y) for x, y, _, _ in self._waypoints]
+        locator = PathProgress()
+        locator.set_path(path)
+        index = locator.update(pose)
+        self.restart_route()
+        self._controller.set_path(path, index)
+        self._next_stop_index = self.find_next_stop_index(index)
+        self.get_logger().info(f'robot located on the route at point {index}')
+        return True
+
     def waypoints_callback(self, msg: WaypointPath):
         """Load a new route; identical republished routes are ignored so progress is kept."""
         waypoints = [(w.x, w.y, w.yaw, w.dwell_sec) for w in msg.waypoints]
@@ -619,6 +647,8 @@ class PathFollowerNode(Node):
             self._nav_active = True
             response.success = True
             response.message = 'navigation started'
+            if self.find_robot_on_route():
+                response.message += ' (progress found again on the route)'
             self.get_logger().info(response.message)
             return response
 
