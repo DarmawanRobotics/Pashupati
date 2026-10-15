@@ -70,6 +70,7 @@ def test_discovery_beacon_and_seq():
     node._robot_name, node._token, node._client, node._client_seen = 'dog-01', 'secret', None, 0.0
     node._client_timeout, node._client_name, node._seq = 1.0, '', 0
     node._state = {'mode': 'remote', 'battery': {'pct': 80}}
+    node._inspection, node._speed = None, None
     server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server.bind(('127.0.0.1', 0))
     node._sock = server
