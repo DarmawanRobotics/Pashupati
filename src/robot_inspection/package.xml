@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_inspection</name>
   <version>0.1.0</version>
-  <description>Early anomaly detection on the robot with a local VLM (Moondream via Ollama).</description>
+  <description>Early anomaly detection on the robot with a local VLM via Ollama.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 

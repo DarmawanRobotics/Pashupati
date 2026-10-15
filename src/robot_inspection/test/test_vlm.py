@@ -1,53 +1,57 @@
 import json
 
-from robot_inspection.vlm import build_prompt, build_request, parse_response
+from robot_inspection.vlm import build_prompt, build_request, build_schema, parse_response
 
-CATS = ['trash', 'spill', 'floor_damage', 'fallen_person']
+CATS = ['trash', 'spill', 'stain']
 
 
 def test_prompt_lists_categories_and_none():
-    """The model is told every category and none."""
-    prompt = build_prompt(CATS)
-    assert 'floor damage' in prompt
-    assert '<one of trash, spill, floor_damage, fallen_person, none>' in prompt
+    """The model is told every category and none, with their meaning."""
+    prompt = build_prompt(CATS, describe=False, use_schema=True)
+    for name in [*CATS, 'none']:
+        assert f'- {name}:' in prompt
+    assert 'TYPE:' not in prompt
 
 
-def test_request_is_json_constrained():
-    """Requests ask Ollama for JSON with the image attached."""
-    body = build_request('moondream', 'p', b'\xff\xd8', '30m')
-    assert body['format'] == 'json' and body['images'] and body['stream'] is False
+def test_free_prompt_asks_floor_then_type():
+    """Without a schema the model answers FLOOR: then TYPE:."""
+    prompt = build_prompt(CATS, describe=False, use_schema=False)
+    assert prompt.index('FLOOR:') < prompt.index('TYPE:')
 
 
-def test_valid_json_answer():
-    """A clean JSON answer is taken as is."""
-    r = parse_response(
-        json.dumps({'category': 'trash', 'confidence': 0.9, 'description': 'bottle'}), CATS
-    )
-    assert r == {
-        'is_anomaly': True,
-        'category': 'trash',
-        'confidence': 0.9,
-        'description': 'bottle',
+def test_schema_puts_description_first():
+    """With describe the description comes before the type."""
+    schema = build_schema(CATS, describe=True)
+    assert list(schema['properties']) == ['description', 'type']
+    assert schema['properties']['type']['enum'] == [*CATS, 'none']
+    assert list(build_schema(CATS, describe=False)['properties']) == ['type']
+
+
+def test_request_format_follows_use_schema():
+    """`format` is sent only in schema mode; the image is attached."""
+    body = build_request('m', b'\xff\xd8', CATS, False, True, -1, 2048)
+    assert body['format']['type'] == 'object' and body['images'] and body['stream'] is False
+    assert 'format' not in build_request('m', b'\xff\xd8', CATS, False, False, -1, 2048)
+
+
+def test_schema_answer():
+    """A JSON answer is read as is."""
+    r = parse_response(json.dumps({'description': 'a bottle', 'type': 'trash'}), CATS, True)
+    assert r == {'category': 'trash', 'description': 'a bottle', 'valid': True}
+
+
+def test_free_text_answer():
+    """FLOOR:/TYPE: answers are parsed."""
+    r = parse_response('FLOOR: a puddle near the door.\nTYPE: spill', CATS, False)
+    assert r == {'category': 'spill', 'description': 'a puddle near the door.', 'valid': True}
+
+
+def test_garbage_answer_is_none_and_invalid():
+    """Unknown or broken answers never raise and map to none."""
+    assert parse_response('6666666666666666', CATS, False) == {
+        'category': 'none',
+        'description': '',
+        'valid': False,
     }
-
-
-def test_free_text_category_is_mapped_by_keywords():
-    """Off-list categories fall back to keyword matching."""
-    r = parse_response(
-        '{"category": "liquid", "description": "a puddle near the escalator"}', CATS
-    )
-    assert r['category'] == 'spill' and r['confidence'] == 0.6
-
-
-def test_none_and_percent_confidence():
-    """'none' is not an anomaly and 0-100 confidences are scaled."""
-    assert not parse_response('{"category": "none", "confidence": 80}', CATS)['is_anomaly']
-    assert (
-        parse_response('{"category": "fallen person", "confidence": 85}', CATS)['confidence']
-        == 0.85
-    )
-
-
-def test_garbage_answer_is_safe():
-    """Non-JSON output does not raise."""
-    assert parse_response('I see a clean corridor', CATS)['category'] == 'none'
+    assert not parse_response('not json', CATS, True)['valid']
+    assert not parse_response('{"type": "dirty"}', CATS, True)['valid']

@@ -1,85 +1,111 @@
+"""Prompt, request and answer parsing for the Ollama vision model (no ROS here)."""
 import base64
 import json
 import re
 
-DEFAULT_CATEGORIES = {
-    'trash': ('trash', 'garbage', 'litter', 'rubbish', 'bottle', 'cup', 'wrapper', 'plastic bag'),
-    'spill': ('spill', 'liquid', 'puddle', 'wet floor', 'water on'),
-    'floor_damage': ('crack', 'broken tile', 'damaged floor', 'hole', 'loose tile'),
-    'fallen_person': (
-        'fallen',
-        'lying on the floor',
-        'person lying',
-        'collapsed',
-        'on the ground',
+# What each category means to the model; a category not listed here is sent by its name.
+CATEGORY_HINTS = {
+    'trash': (
+        'any loose item lying on the floor that should not be there, such as wrappers, '
+        'packaging, paper, bottles, cans, food, snack bags, plastic bags or litter'
     ),
+    'spill': 'liquid, a wet patch or a puddle on the floor',
+    'stain': 'a dry dirty mark or smear on the floor',
+    'floor_damage': 'a crack, a hole, or a broken or loose tile in the floor',
+    'fallen_person': 'a person lying or collapsed on the floor',
 }
-NONE_WORDS = ('none', 'nothing', 'clean', 'normal', 'no anomaly', 'no issue')
-
-PROMPT = (
-    'You are a mall patrol robot inspecting the floor and corridor in this photo. '
-    'Report the single most important problem among: {categories}, or "none" if the area is fine. '
-    'Answer only with JSON: {{"category": "<one of {options}>", "confidence": <0..1>, '
-    '"description": "<short reason>"}}.'
-)
 
 
-def build_prompt(categories: list[str]) -> str:
-    """Return the prompt listing the categories the model must choose from."""
-    names = ', '.join(c.replace('_', ' ') for c in categories)
-    return PROMPT.format(categories=names, options=', '.join([*categories, 'none']))
+def build_prompt(categories: list[str], describe: bool, use_schema: bool) -> str:
+    """Return the prompt listing every category plus 'none'."""
+    lines = [f'- {c}: {CATEGORY_HINTS.get(c, c.replace("_", " "))}' for c in categories]
+    lines.append('- none: the floor is clean with nothing lying on it')
+    ignore = 'furniture, shelves and walls' if 'fallen_person' in categories else (
+        'furniture, shelves, walls and people'
+    )
+    prompt = (
+        'You are inspecting the floor of a public building for cleanliness. '
+        'Classify the floor as exactly one of these types:\n'
+        + '\n'.join(lines)
+        + f'\nIgnore {ignore}. Only the floor matters.'
+    )
+    if not use_schema:
+        return prompt + (
+            '\nAnswer in this format:\n'
+            'FLOOR: <one short sentence describing what is lying on the floor>\n'
+            f'TYPE: <{", ".join([*categories, "none"])}>'
+        )
+    if describe:
+        prompt += (
+            '\nFirst describe what is lying on the floor in one short sentence, '
+            'then give the type.'
+        )
+    return prompt
 
 
-def build_request(model: str, prompt: str, jpeg: bytes, keep_alive: str) -> dict:
-    """Return an Ollama /api/generate body with JSON-constrained output."""
-    return {
+def build_schema(categories: list[str], describe: bool) -> dict:
+    """Return the JSON schema for Ollama structured output.
+
+    `description` comes before `type` so the model looks first and decides after.
+    """
+    properties, required = {}, []
+    if describe:
+        properties['description'] = {'type': 'string'}
+        required.append('description')
+    properties['type'] = {'type': 'string', 'enum': [*categories, 'none']}
+    required.append('type')
+    return {'type': 'object', 'properties': properties, 'required': required}
+
+
+def build_request(
+    model: str,
+    jpeg: bytes,
+    categories: list[str],
+    describe: bool,
+    use_schema: bool,
+    keep_alive,
+    num_ctx: int,
+) -> dict:
+    """Return an Ollama /api/generate body."""
+    body = {
         'model': model,
-        'prompt': prompt,
+        'prompt': build_prompt(categories, describe, use_schema),
         'images': [base64.b64encode(jpeg).decode()],
-        'format': 'json',
         'stream': False,
         'keep_alive': keep_alive,
-        'options': {'temperature': 0.0, 'num_predict': 96},
+        'options': {
+            'temperature': 0.0,
+            'repeat_penalty': 1.1,
+            'num_ctx': num_ctx,
+            'num_predict': 96 if (describe or not use_schema) else 16,
+        },
     }
+    if use_schema:
+        body['format'] = build_schema(categories, describe)
+    return body
 
 
-def classify_text(text: str, categories: list[str]) -> str:
-    """Map free text to a category by keywords; 'none' when nothing matches."""
-    low = text.lower()
-    for category in categories:
-        words = DEFAULT_CATEGORIES.get(category, (category.replace('_', ' '),))
-        if any(w in low for w in words):
-            return category
-    return 'none'
+def parse_response(text: str, categories: list[str], use_schema: bool) -> dict:
+    """Normalise a model answer to {category, description, valid}.
 
-
-def parse_response(text: str, categories: list[str]) -> dict:
-    """Normalise a model answer to {is_anomaly, category, confidence, description}."""
-    data: dict = {}
-    match = re.search(r'\{.*\}', text, re.S)
-    if match:
+    `valid` is False when no known category could be read; category is then 'none'.
+    """
+    category, description = '', ''
+    if use_schema:
         try:
-            data = json.loads(match.group(0))
-        except ValueError:
-            data = {}
-    raw_category = str(data.get('category', '')).strip().lower().replace(' ', '_')
-    description = str(data.get('description', '') or text).strip()[:300]
-    if raw_category in categories:
-        category = raw_category
-    elif raw_category in ('none', 'normal', '') and not description:
-        category = 'none'
-    elif any(w == raw_category.replace('_', ' ') for w in NONE_WORDS):
-        category = 'none'
+            data = json.loads(text)
+            category = str(data.get('type', '')).strip().lower()
+            description = str(data.get('description', '')).strip()
+        except (ValueError, AttributeError):
+            pass
     else:
-        category = classify_text(f'{raw_category} {description}', categories)
-    try:
-        confidence = float(data.get('confidence', 0.6))
-    except (TypeError, ValueError):
-        confidence = 0.6
-    confidence = min(1.0, max(0.0, confidence if confidence <= 1.0 else confidence / 100.0))
+        m_type = re.search(r'TYPE\s*:\s*\W*(\w+)', text, re.I)
+        m_floor = re.search(r'FLOOR\s*:\s*(.+)', text, re.I)
+        category = m_type.group(1).lower() if m_type else ''
+        description = m_floor.group(1).strip() if m_floor else ''
+    valid = category in categories or category == 'none'
     return {
-        'is_anomaly': category != 'none',
-        'category': category,
-        'confidence': round(confidence, 3),
-        'description': description,
+        'category': category if valid else 'none',
+        'description': description[:300],
+        'valid': valid,
     }

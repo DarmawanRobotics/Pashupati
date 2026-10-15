@@ -1,13 +1,17 @@
 anomaly_detector_node:
   ros__parameters:
-    image_topic: /camera/camera/color/image_raw/compressed
+    image_topic: /camera/camera/color/image_raw   # sensor_msgs/Image (rgb8, bgr8, rgba8, bgra8, mono8)
     ollama_url: http://127.0.0.1:11434
-    model: moondream                  # any Ollama vision model (moondream, llava-phi3, qwen2.5vl:3b ...)
-    categories: [trash, spill, floor_damage, fallen_person]   # must match the NETRA rule codes
-    keep_alive: 30m                   # keep the model in memory between inspections
-    timeout_sec: 25.0
+    model: qwen3-vl:2b-instruct       # any Ollama vision model (moondream, ahmadwaqar/smolvlm2-2.2b-instruct ...)
+    categories: [trash, spill, stain] # what the model chooses from (plus "none")
+    alarm_categories: [trash, spill]  # only these are reported; stain is logged but not reported
+    use_schema: true                  # false: free-text answer (FLOOR:/TYPE:) parsed manually
+    describe: false                   # true: model also writes one sentence about the floor
+    debug: false                      # true: log every inspection and the raw model answer
+    keep_alive: "-1"                  # keep the model in memory: "-1" forever, or e.g. "30m" (quoted)
+    num_ctx: 2048
+    timeout_sec: 30.0
     max_image_age_sec: 2.0
-    max_image_width: 640              # downscale before inference (faster, same accuracy for this task)
-    min_confidence: 0.5
-    periodic_check_sec: 0.0           # > 0: also inspect while driving every N s
-    cooldown_sec: 60.0                # periodic mode: do not repeat a category within this time
+    max_image_width: 640              # downscale before inference
+    interval_sec: 0.0                 # 0: inspect back to back, > 0: every N s, < 0: only check_now
+    cooldown_sec: 60.0                # periodic mode: do not report a category again within this time

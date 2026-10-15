@@ -20,7 +20,7 @@ setup(
     zip_safe=True,
     maintainer='Agus Darmawan',
     maintainer_email='darmawandeveloper@gmail.com',
-    description='Early anomaly detection on the robot with a local VLM (Moondream via Ollama)',
+    description='Early anomaly detection on the robot with a local VLM via Ollama',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
