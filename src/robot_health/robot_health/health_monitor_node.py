@@ -10,8 +10,11 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from robot_health.checks import (
     cpu_temperature,
+    CpuUsage,
     disk_free_gb,
-    memory_percent,
+    gpu_load_path,
+    gpu_percent,
+    memory_kb,
     missing_nodes,
     overall_level,
     parse_topic_specs,
@@ -59,6 +62,8 @@ class HealthMonitorNode(Node):
         self._expected_nodes = [n for n in p('expected_nodes') if n]
         self._grace_until = time.monotonic() + float(p('startup_grace_sec'))
         self._states = {'odometry': '', 'localization': '', 'field': '', 'estop': False}
+        self._cpu = CpuUsage()
+        self._gpu_path = gpu_load_path()
 
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self._diag_pub = self.create_publisher(DiagnosticArray, 'pashupati/diagnostics', 10)
@@ -111,9 +116,20 @@ class HealthMonitorNode(Node):
             statuses.append(self.status(f'topic {topic}', ok, f'{hz:.1f} Hz', {'min_hz': min_hz}))
 
         max_temp, max_mem, min_disk = self._limits
-        temp, mem, disk = cpu_temperature(), memory_percent(), disk_free_gb(self._disk_path)
+        temp, disk = cpu_temperature(), disk_free_gb(self._disk_path)
+        memory = memory_kb()
+        mem = 100.0 * memory[0] / memory[1] if memory and memory[1] else None
         load = os.getloadavg()[0]
-        system = {'cpu_temp_c': temp, 'memory_percent': mem, 'disk_free_gb': disk, 'load': load}
+        system = {
+            'cpu_temp_c': temp,
+            'memory_percent': mem,
+            'disk_free_gb': disk,
+            'load': load,
+            'cpu_percent': self._cpu.percent(),
+            'gpu_percent': gpu_percent(self._gpu_path),
+            'memory_used_gb': memory[0] / 1048576.0 if memory else None,
+            'memory_total_gb': memory[1] / 1048576.0 if memory else None,
+        }
         for label, value, bad in (
             ('cpu temperature', temp, temp is not None and temp > max_temp),
             ('memory', mem, mem is not None and mem > max_mem),

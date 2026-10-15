@@ -1,5 +1,9 @@
 from robot_health.checks import (
+    CpuUsage,
     disk_free_gb,
+    gpu_load_path,
+    gpu_percent,
+    memory_kb,
     missing_nodes,
     overall_level,
     parse_topic_specs,
@@ -54,3 +58,27 @@ def test_state_issues_and_level():
     assert overall_level([], []) == 'ok'
     assert overall_level(['/livox/lidar 2.0/5 Hz'], []) == 'warn'
     assert overall_level(issues, issues) == 'error'
+
+
+def test_cpu_usage_between_two_readings(tmp_path):
+    """The busy share comes from the /proc/stat counters between two readings."""
+    stat = tmp_path / 'stat'
+    stat.write_text('cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 1 2 3 4\n')
+    cpu = CpuUsage(str(stat))
+    assert cpu.percent() is None  # nothing to compare with yet
+    stat.write_text('cpu  200 0 200 1300 100 0 0 0 0 0\n')
+    assert cpu.percent() == 25.0
+    assert CpuUsage(str(tmp_path / 'missing')).percent() is None
+
+
+def test_jetson_gpu_load_and_memory(tmp_path):
+    """The Jetson GPU load is per mille; no load file means no GPU figure."""
+    load = tmp_path / 'gpu.0' / 'load'
+    load.parent.mkdir()
+    load.write_text('412\n')
+    path = gpu_load_path([str(tmp_path / 'nope' / 'load'), str(tmp_path / '*.0' / 'load')])
+    assert path == str(load) and gpu_percent(path) == 41.2
+    assert gpu_load_path([str(tmp_path / 'nope' / 'load')]) is None and gpu_percent(None) is None
+    meminfo = tmp_path / 'meminfo'
+    meminfo.write_text('MemTotal: 16000000 kB\nMemFree: 1000 kB\nMemAvailable: 12000000 kB\n')
+    assert memory_kb(str(meminfo)) == (4000000, 16000000)

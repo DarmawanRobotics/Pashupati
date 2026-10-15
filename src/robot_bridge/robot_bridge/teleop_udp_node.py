@@ -41,8 +41,10 @@ except ImportError:  # no AprilTag detector here: no tag overlay on the handheld
 # extras (gait or speed modes, ...) are added per robot with robot_commands in the site file.
 ROBOT_COMMANDS = ['stand_up', 'sit_down', 'emergency_stop']
 
-# anomaly_detector/status comes every 2 s; older than this the detector is gone (not running)
+# anomaly_detector/status and perception/people_status come every 2 s; older than this the node
+# is gone (not running)
 INSPECTION_STALE_SEC = 6.0
+PEOPLE_STALE_SEC = 6.0
 # how often the path follower is asked for its patrol speed while a handheld is connected
 SPEED_POLL_SEC = 3.0
 
@@ -136,6 +138,44 @@ def inspection_summary(status: dict, stale: bool, now: float) -> dict:
     return summary
 
 
+def people_parameters(args: dict) -> list:
+    """Map people_set args to the person detector's live parameters."""
+    if not isinstance(args.get('enabled'), bool):
+        raise ValueError('enabled must be true or false')
+    return [('enabled', args['enabled'])]
+
+
+def people_summary(status: dict, stale: bool, now: float) -> dict:
+    """Compact perception/people_status for the handheld's state message."""
+    count, at = number(status.get('count')), number(status.get('at'))
+    return {
+        'on': status.get('enabled') is True,
+        'state': 'offline' if stale else str(status.get('state', ''))[:16],
+        'count': None if count is None else int(count),
+        'ms': int(number(status.get('latency_ms'), 0.0)),
+        'age': None if at is None else max(0, round(now - at)),
+        'backend': str(status.get('backend', ''))[:24],
+        'error': str(status.get('error', ''))[:160],
+    }
+
+
+def system_load(health: dict) -> dict:
+    """CPU, GPU and RAM use and the hottest temperature of health/status, for the handheld."""
+
+    def pick(key: str, digits: int = 0):
+        value = number(health.get(key))
+        return None if value is None else round(value, digits)
+
+    return {
+        'cpu': pick('cpu_percent'),
+        'gpu': pick('gpu_percent'),
+        'ram': pick('memory_percent'),
+        'ram_used': pick('memory_used_gb', 1),
+        'ram_total': pick('memory_total_gb', 1),
+        'temp': pick('cpu_temp_c'),
+    }
+
+
 def dwell_seconds(value) -> float:
     """Validate a stop-point dwell time from the client (0 < dwell <= 1 h)."""
     dwell = float(value)
@@ -180,6 +220,7 @@ class TeleopUdpNode(Node):
             'lidar_voxel': 0.1,
             'lidar_max_points': 3000,
             'inspection_node': '/anomaly_detector_node',
+            'people_node': '/person_detector_node',
             'navigation_node': '/path_follower_node',
             'patrol_speed_min': 0.1,
         }
@@ -236,6 +277,9 @@ class TeleopUdpNode(Node):
         self._lidar_period = 1.0 / max(float(p('lidar_hz')), 0.1)
         self._inspection = None  # latest anomaly_detector/status
         self._inspection_time = 0.0
+        self._people = None  # latest perception/people_status
+        self._people_time = 0.0
+        self._people_node = str(p('people_node')).rstrip('/')
         self._speed = None  # {target, min, max} of the path follower, None until it answered
         self._speed_asked = 0.0
         self._speed_future = None
@@ -344,6 +388,7 @@ class TeleopUdpNode(Node):
             'localize': trigger('localization/start'),
             'record_tags': trigger('localization/record_tags'),
             'inspection_set': set_params(self._inspection_node, inspection_parameters),
+            'people_set': set_params(self._people_node, people_parameters),
             'nav_speed': set_params(
                 self._navigation_node,
                 lambda a: [('target_linear_velocity', self.patrol_speed(a.get('speed')))],
@@ -374,6 +419,7 @@ class TeleopUdpNode(Node):
         )
         self.create_subscription(String, 'health/status', self.on_health, latched)
         self.create_subscription(String, 'anomaly_detector/status', self.on_inspection, latched)
+        self.create_subscription(String, 'perception/people_status', self.on_people, latched)
         self.create_subscription(WaypointPath, 'navigation/waypoints', self.on_route, latched)
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
@@ -712,6 +758,7 @@ class TeleopUdpNode(Node):
         self._state['health'] = {
             'ok': bool(health.get('ok')),
             'issues': health.get('issues', [])[:5],
+            **system_load(health),
         }
 
     def on_inspection(self, msg: String):
@@ -723,6 +770,23 @@ class TeleopUdpNode(Node):
         if isinstance(status, dict):
             self._inspection = status
             self._inspection_time = time.monotonic()
+
+    def on_people(self, msg: String):
+        """Cache the person detector's status (on, state, people counted)."""
+        try:
+            status = json.loads(msg.data)
+        except ValueError:
+            return
+        if isinstance(status, dict):
+            self._people = status
+            self._people_time = time.monotonic()
+
+    def people_state(self):
+        """Return the people part of the state message, None when no detector ever ran."""
+        if self._people is None:
+            return None
+        stale = time.monotonic() - self._people_time > PEOPLE_STALE_SEC
+        return people_summary(self._people, stale, time.time())
 
     def inspection_stale(self) -> bool:
         """Return True when the detector stopped sending its status (not running any more)."""
@@ -825,6 +889,7 @@ class TeleopUdpNode(Node):
                     'pose': self.pose(),
                     'tags': self.tags(),
                     'inspection': self.inspection_state(),
+                    'people': self.people_state(),
                     'speed': self._speed,
                     **self._state,
                 }

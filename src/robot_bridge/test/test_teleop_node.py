@@ -391,3 +391,53 @@ def test_patrol_speed_is_read_and_set_within_the_limits(rig):
     assert follower.get_parameter('target_linear_velocity').value == 0.55
     rig.executor.remove_node(follower)
     follower.destroy_node()
+
+
+def test_people_detection_is_switched_and_shown_with_the_system_load(rig):
+    """The handheld turns the person detector off; people, CPU, GPU and RAM reach it."""
+    detector = fake_node(rig, 'person_detector_node', {'enabled': True})
+    latched = rclpy.qos.QoSProfile(
+        depth=1, durability=rclpy.qos.QoSDurabilityPolicy.TRANSIENT_LOCAL
+    )
+    people_pub = detector.create_publisher(String, 'perception/people_status', latched)
+    health_pub = detector.create_publisher(String, 'health/status', latched)
+    a = rig.client()
+    rig.send(a, {'t': 'hello'})
+    welcome = next(m for m in rig.received(a) if m['t'] == 'welcome')
+    assert 'people_set' in welcome['commands']
+    assert wait_until(rig, rig.node._commands['people_set'][1].service_is_ready)
+
+    rig.send(a, {'t': 'cmd', 'id': 1, 'name': 'people_set', 'args': {'enabled': False}})
+    rig.send(a, {'t': 'cmd', 'id': 2, 'name': 'people_set', 'args': {'enabled': 'no'}})
+    acks = {}
+    wait_until(rig, lambda: acks.update(acks_of(rig, a)) or len(acks) >= 2)
+    assert acks[1]['ok'] and not acks[2]['ok']
+    assert detector.get_parameter('enabled').value is False
+
+    people = {'enabled': True, 'state': 'running', 'count': 3, 'latency_ms': 80, 'at': time.time()}
+    people_pub.publish(String(data=json.dumps(people)))
+    health = {
+        'ok': True,
+        'issues': [],
+        'cpu_percent': 23.4,
+        'gpu_percent': 41.2,
+        'memory_percent': 33.3,
+        'memory_used_gb': 5.12,
+        'memory_total_gb': 15.3,
+        'cpu_temp_c': 52.6,
+    }
+    health_pub.publish(String(data=json.dumps(health)))
+    states = []
+
+    def arrived():
+        states.extend(m for m in rig.received(a) if m['t'] == 'state')
+        return bool(states) and states[-1]['people'] is not None and states[-1]['health']
+
+    assert wait_until(rig, arrived)
+    state = states[-1]
+    assert (state['people']['count'], state['people']['state']) == (3, 'running')
+    assert (state['health']['cpu'], state['health']['gpu'], state['health']['ram_used']) == (
+        23.0, 41.0, 5.1,
+    )
+    rig.executor.remove_node(detector)
+    detector.destroy_node()

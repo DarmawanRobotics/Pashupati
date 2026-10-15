@@ -11,15 +11,18 @@ import time
 
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseArray
+from rcl_interfaces.srv import SetParameters
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
 from robot_fleet.anomaly import parse_result
 from robot_fleet.crowd import CrowdAggregator
 from robot_fleet.routes import safe_route_id, summarize_csv
 from robot_fleet.spool import Spool
+from robot_fleet.switches import live_parameters, status_summary, SWITCHES
 from robot_interfaces.msg import MissionStatus, NavigationStatus, StopPointEvent
 from robot_interfaces.srv import LoadPath
 from sensor_msgs.msg import BatteryState, CompressedImage
@@ -87,6 +90,8 @@ class FleetUplinkNode(Node):
             'battery': None,
             'driver': None,
             'people': 0,
+            'inspection': None,
+            'people_detection': None,
             'health': None,
             'estop': False,
             'field': None,
@@ -136,6 +141,10 @@ class FleetUplinkNode(Node):
         self._localize = self.create_client(Trigger, 'localization/start')
         self._estop = self.create_client(SetBool, 'bridge/estop')
         self._estop_request_pub = self.create_publisher(String, 'bridge/estop_request', 10)
+        self._switches = {
+            command: self.create_client(SetParameters, f'{node}/set_parameters')
+            for command, node in SWITCHES.items()
+        }
 
     def make_subscriptions(self, anomaly_topic: str, image_topic: str, evidence_topic: str):
         """Subscribe to state, events, people, routes and anomalies."""
@@ -154,6 +163,13 @@ class FleetUplinkNode(Node):
         )
         self.create_subscription(String, 'bridge/estop_reason', self.on_estop_reason, latched)
         self.create_subscription(String, 'health/status', self.on_health, latched)
+        for topic, key in (
+            ('anomaly_detector/status', 'inspection'),
+            ('perception/people_status', 'people_detection'),
+        ):
+            self.create_subscription(
+                String, topic, lambda m, k=key: self.on_detector_status(k, m), latched
+            )
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
         self.create_subscription(PoseArray, 'perception/people', self.on_people, 10)
@@ -414,6 +430,13 @@ class FleetUplinkNode(Node):
         except ValueError:
             pass
 
+    def on_detector_status(self, key: str, msg: String):
+        """Keep the on/off and state of a detector (inspection, people) for the telemetry."""
+        try:
+            self._state[key] = status_summary(json.loads(msg.data))
+        except ValueError:
+            pass
+
     def on_battery(self, msg: BatteryState):
         """Cache battery readings."""
         self._state['battery'] = {
@@ -546,6 +569,16 @@ class FleetUplinkNode(Node):
             self.call(self._estop, SetBool.Request(data=True), cid)
         elif name == 'estop_release':
             self.call(self._estop, SetBool.Request(data=False), cid)
+        elif name in self._switches:
+            try:
+                params = live_parameters(name, args)
+            except ValueError as error:
+                self.ack(cid, False, str(error))
+                return
+            request = SetParameters.Request(
+                parameters=[Parameter(n, value=v).to_parameter_msg() for n, v in params]
+            )
+            self.call(self._switches[name], request, cid)
         else:
             self.ack(cid, False, f'unknown command {name}')
 
@@ -563,6 +596,10 @@ class FleetUplinkNode(Node):
                 return
             ok = bool(result and getattr(result, 'success', True))
             text = getattr(result, 'message', '') if result else 'no response'
+            refused = [r.reason or 'refused' for r in getattr(result, 'results', []) or []
+                       if not r.successful]
+            if refused:  # rcl_interfaces/SetParameters answers per parameter
+                ok, text = False, '; '.join(refused)
             if ok and then:
                 then()
             else:

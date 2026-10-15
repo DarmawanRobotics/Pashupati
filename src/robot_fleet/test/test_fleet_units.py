@@ -66,3 +66,26 @@ def test_route_ids_cannot_escape_the_routes_dir():
         assert safe_route_id(good)
     for bad in ('', None, '../etc/passwd', '/abs', 'a/b', '.hidden', 'x' * 65, ['1']):
         assert not safe_route_id(bad)
+
+
+def test_live_switches_from_the_command_center():
+    """set_inspection / set_people map to the detectors' live parameters; junk is refused."""
+    import pytest
+    from robot_fleet.switches import live_parameters, status_summary
+
+    assert live_parameters('set_people', {'enabled': False}) == [('enabled', False)]
+    assert live_parameters('set_inspection', {'model': ' moondream ', 'interval': -9}) == [
+        ('model', 'moondream'),
+        ('interval_sec', -1.0),
+    ]
+    for command, args in (
+        ('set_people', {}),
+        ('set_people', {'model': 'x'}),  # people have no model to choose
+        ('set_inspection', {'enabled': 1}),
+        ('set_inspection', {'interval': float('nan')}),
+    ):
+        with pytest.raises(ValueError):
+            live_parameters(command, args)
+    status = {'enabled': True, 'state': 'running', 'models': [], 'count': 3}
+    assert status_summary(status) == {'enabled': True, 'state': 'running', 'count': 3}
+    assert status_summary('junk') is None

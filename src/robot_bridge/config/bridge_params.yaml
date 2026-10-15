@@ -62,6 +62,7 @@ teleop_udp_node:
     lidar_max_points: 3000
     # Inspection and patrol speed from the handheld: parameters of these nodes, set live
     inspection_node: /anomaly_detector_node   # enabled, model, interval_sec; status topic
+    people_node: /person_detector_node        # enabled; perception/people_status
     navigation_node: /path_follower_node      # target_linear_velocity up to max_linear_velocity
     patrol_speed_min: 0.1                     # m/s, slowest patrol speed the handheld may set
 
