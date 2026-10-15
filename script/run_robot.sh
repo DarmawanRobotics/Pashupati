@@ -10,6 +10,12 @@ source /opt/ros/humble/setup.bash
 source "$WS/install/setup.bash"
 set -u
 
+# Libraries found before ROS's own, e.g. a librealsense built from source in /usr/local/lib
+# (the apt one under /opt/ros may not see a camera that the source build does).
+if [[ -n "${LD_LIBRARY_PATH_FIRST:-}" ]]; then
+    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH_FIRST:${LD_LIBRARY_PATH:-}"
+fi
+
 # Robot-specific preparation, e.g. stopping a vendor autostart that would fight for the robot.
 if [[ -n "${ROBOT_PRESTART:-}" ]]; then
     bash -c "$ROBOT_PRESTART" || echo "ROBOT_PRESTART failed, starting anyway" >&2

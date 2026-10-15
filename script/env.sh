@@ -33,6 +33,10 @@ if [[ -f "$PASHUPATI_WS/install/setup.bash" ]]; then
 else
     echo "workspace not built yet: $PASHUPATI_WS/script/setup.sh install build" >&2
 fi
+# Same library order as run_robot.sh
+if [[ -n "${LD_LIBRARY_PATH_FIRST:-}" ]]; then
+    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH_FIRST:${LD_LIBRARY_PATH:-}"
+fi
 
 pnode() {
     if [[ $# -lt 3 ]]; then

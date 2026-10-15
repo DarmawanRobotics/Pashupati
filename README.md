@@ -158,6 +158,7 @@ pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.lau
 | RViz on a laptop sees no topics | `ROS_LOCALHOST_ONLY=1` | set 0 in the env file while debugging, restart the service |
 | robot or LiDAR also driven by the vendor stack | vendor autostart | `ROBOT_PRESTART` |
 | camera drops out, udev and journal flooded every second | kernel `uvcvideo` and librealsense both bind the camera | `script/setup.sh install realsense` (blacklists `uvcvideo` on Jetson), reboot |
+| camera works with `ros2 run`, but the service logs "No RealSense devices were found!" | the shell has a source-built librealsense first in `LD_LIBRARY_PATH` (e.g. `~/.bashrc`), the service uses the apt one | `LD_LIBRARY_PATH_FIRST=/usr/local/lib` in `pashupati.env`, restart |
 | a Python node at 100-200 % CPU | numpy OpenBLAS threads busy-wait | `OPENBLAS_NUM_THREADS=1` (env file) |
 | handheld: "wrong token" | app token differs from `teleop_udp_node.token` | same token in both |
 | handheld connected, robot does not walk | mode AUTO, or the e-stop is latched | REMOTE on the handheld, release the e-stop |
