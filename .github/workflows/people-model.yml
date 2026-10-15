@@ -39,10 +39,16 @@ jobs:
   check:
     needs: export
     runs-on: ubuntu-22.04
+    # the OpenCV DNN fallback on JetPack's OpenCV is informative only; ONNX Runtime must work
+    continue-on-error: ${{ matrix.optional }}
     strategy:
       fail-fast: false
       matrix:
-        opencv: ['4.5.4.60', '4.8.0.76']   # Ubuntu 22.04 apt, JetPack 6
+        include:
+          - opencv: '4.5.4.60'   # Ubuntu 22.04 apt (ROS Humble)
+            optional: false
+          - opencv: '4.8.0.76'   # JetPack 6
+            optional: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
