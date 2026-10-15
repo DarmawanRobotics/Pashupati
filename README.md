@@ -119,6 +119,9 @@ script/setup.sh                         # every line ok?
 - **Vendor stacks.** Pashupati runs on `rmw_fastrtps_cpp`, domain 0 (`RMW_IMPLEMENTATION`,
   `ROS_DOMAIN_ID`). A vendor autostart that also drives the robot or its LiDAR is stopped by
   `ROBOT_PRESTART` before every start.
+- **ROS stays on the robot** (`ROS_LOCALHOST_ONLY=1`): nothing on the robot's Wi-Fi can publish to
+  the driver around the control mux. Set it to 0 when the driver runs on another computer, or for
+  RViz on a laptop while debugging (then `ros2 daemon stop` in open shells).
 - **Heavy extras** are off: `PEOPLE=true` needs a TensorRT model (`script/setup.sh install
   people_model` prints the Jetson steps), `INSPECTION=true` needs Ollama and the VLM
   (`script/setup.sh install ollama`, then `install service` again).
@@ -147,7 +150,8 @@ pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.lau
 | Symptom | Cause | Fix |
 |---|---|---|
 | `-bash: stop: command not found` when loading the env | value with spaces not quoted | quote it; `script/setup.sh` shows the line |
-| `ros2 topic list` empty or only vendor topics | shell on another RMW or domain | `pashu` (`script/env.sh`) |
+| `ros2 topic list` empty or only vendor topics | shell on another RMW, domain or `ROS_LOCALHOST_ONLY` | `pashu` (`script/env.sh`), then `ros2 daemon stop` |
+| RViz on a laptop sees no topics | `ROS_LOCALHOST_ONLY=1` | set 0 in the env file while debugging, restart the service |
 | robot or LiDAR also driven by the vendor stack | vendor autostart | `ROBOT_PRESTART` |
 | camera drops out, udev and journal flooded every second | kernel `uvcvideo` and librealsense both bind the camera | `script/setup.sh install realsense` (blacklists `uvcvideo` on Jetson), reboot |
 | a Python node at 100-200 % CPU | numpy OpenBLAS threads busy-wait | `OPENBLAS_NUM_THREADS=1` (env file) |
