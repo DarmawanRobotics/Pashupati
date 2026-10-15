@@ -107,6 +107,25 @@ def default_sigint():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 
+def session_processes(sid: int) -> str:
+    """List the processes of session sid as 'pid state command' lines, read from /proc."""
+    rows = []
+    for entry in os.listdir('/proc'):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f'/proc/{entry}/stat') as f:
+                stat = f.read()
+            with open(f'/proc/{entry}/cmdline', 'rb') as f:
+                cmd = f.read().replace(b'\0', b' ').decode(errors='replace').strip()
+        except OSError:  # gone meanwhile
+            continue
+        fields = stat[stat.rfind(')') + 2:].split()  # state ppid pgrp session ...
+        if len(fields) > 3 and fields[3] == str(sid):
+            rows.append(f'{entry} {fields[0]} {cmd[:160]}')
+    return '\n'.join(rows) or '(none)'
+
+
 @pytest.fixture(scope='module')
 def sim():
     """Run the simulation for the module; yields the recorder and checks the logs at the end."""
@@ -132,13 +151,13 @@ def sim():
         # SIGINT to ros2 launch only, as `systemctl stop` does (KillMode=mixed); signalling the
         # whole group as well would interrupt every node twice
         os.kill(proc.pid, signal.SIGINT)
+        still = ''
         try:
             proc.wait(timeout=30)
-            stopped = True
         except subprocess.TimeoutExpired:
+            still = session_processes(proc.pid)  # what keeps the launch from stopping
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
-            stopped = False
         log.seek(0)
         output = log.read()
         log.close()
@@ -146,7 +165,11 @@ def sim():
             line for line in output.splitlines()
             if 'process has died' in line or 'Traceback' in line
         ]
-        assert stopped, f'ros2 launch did not stop within 30 s of SIGINT\nfull log: {log.name}'
+        tail = '\n'.join(output.splitlines()[-40:])
+        assert not still, (
+            f'ros2 launch did not stop within 30 s of SIGINT; still running:\n{still}\n'
+            f'end of the log:\n{tail}\nfull log: {log.name}'
+        )
         assert not problems, '\n'.join(problems) + f'\nfull log: {log.name}'
 
 
