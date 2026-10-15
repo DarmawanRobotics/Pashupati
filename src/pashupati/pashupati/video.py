@@ -11,7 +11,7 @@ No launch or ROS imports, so everything here is unit-tested without a robot.
 
 import base64
 import hashlib
-import importlib.util
+from importlib.util import find_spec
 import os
 import re
 import shlex
@@ -62,7 +62,7 @@ def mediamtx_version(binary: str):
 
 def gstreamer_missing():
     """Return why video_stream_node cannot run here (no GStreamer for Python), or None."""
-    if importlib.util.find_spec('gi') is None:
+    if find_spec('gi') is None:
         return 'no GStreamer for Python (python3-gi)'
     return None
 

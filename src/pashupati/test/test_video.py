@@ -35,7 +35,7 @@ def test_mediamtx_is_found_with_its_version(tmp_path):
 
 def test_gstreamer_check(monkeypatch):
     """Without python3-gi the launch offers no WebRTC (the encoder could not start)."""
-    monkeypatch.setattr('importlib.util.find_spec', lambda name: None)
+    monkeypatch.setattr(video, 'find_spec', lambda name: None)
     assert 'python3-gi' in video.gstreamer_missing()
 
 
