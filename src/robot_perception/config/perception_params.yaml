@@ -58,6 +58,10 @@ person_detector_node:
     map_frame: map
     base_frame: base_link
 
+apriltag_throttle:
+  ros__parameters:
+    rate_hz: 5.0                 # camera frames per second given to the AprilTag detector
+
 apriltag:
   ros__parameters:
     # Input image configuration

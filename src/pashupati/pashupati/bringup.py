@@ -27,6 +27,7 @@ NODES = (
     'route_recorder_node',
     'localization_node',
     'lidar_sector_node',
+    'apriltag_throttle',
     'apriltag',
     'person_detector_node',
     'path_loader_node',

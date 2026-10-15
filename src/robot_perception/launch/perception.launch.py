@@ -31,6 +31,20 @@ def generate_launch_description():
                 output='screen',
                 parameters=[params_file],
             ),
+            # the tag detector sees the camera at rate_hz only (localization needs a few poses/s)
+            Node(
+                package='robot_perception',
+                executable='image_throttle_node',
+                name='apriltag_throttle',
+                output='screen',
+                parameters=[params_file],
+                remappings=[
+                    ('in/image', image),
+                    ('in/camera_info', '/camera/camera/color/camera_info'),
+                    ('out/image', '/perception/apriltag/image_rect'),
+                    ('out/camera_info', '/perception/apriltag/camera_info'),
+                ],
+            ),
             Node(
                 package='apriltag_ros',
                 executable='apriltag_node',
@@ -38,8 +52,8 @@ def generate_launch_description():
                 output='screen',
                 parameters=[params_file],
                 remappings=[
-                    ('image_rect', image),
-                    ('camera_info', '/camera/camera/color/camera_info'),
+                    ('image_rect', '/perception/apriltag/image_rect'),
+                    ('camera_info', '/perception/apriltag/camera_info'),
                     ('detections', '/perception/apriltag/detections'),
                 ],
             ),
