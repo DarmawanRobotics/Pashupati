@@ -89,6 +89,8 @@ class TeleopUdpNode(Node):
             'camera_jpeg_quality': 60,
             'camera_max_width': 640,
             'camera_max_bytes': 60000,
+            'video_port': 0,
+            'video_path': 'camera',
             'tags_topic': '/perception/apriltag/detections',
             'tags_camera_info_topic': '/perception/apriltag/camera_info',
             'tags_max_age_sec': 0.6,
@@ -113,7 +115,10 @@ class TeleopUdpNode(Node):
         self._client_seen = 0.0
         self._session = 0
         self._denied: dict = {}
-        self._streams = {'camera': False, 'lidar': False}
+        self._streams = {'camera': False, 'lidar': False, 'video': False}
+        self._video = None
+        if int(p('video_port')) > 0:
+            self._video = {'port': int(p('video_port')), 'path': str(p('video_path'))}
         self._stream_subs: dict = {}
         self._acks: dict = {}
         self._frame_ids = {
@@ -247,7 +252,7 @@ class TeleopUdpNode(Node):
     def make_subscriptions(
         self, camera_topic: str, compressed: bool, lidar_topic: str, tag_topics: tuple
     ):
-        """Subscribe to telemetry; camera (with its tags) and lidar wait for a client."""
+        """Subscribe to telemetry; camera, tags and lidar wait for a client that wants them."""
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(NavigationStatus, 'navigation/status', self.on_nav_status, 10)
         self.create_subscription(MissionStatus, 'navigation/mission_status', self.on_mission, 10)
@@ -265,19 +270,20 @@ class TeleopUdpNode(Node):
         self.create_subscription(BatteryState, 'battery', self.on_battery, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self.on_diagnostics, 10)
         self.create_subscription(Twist, 'cmd_vel', self.on_cmd_vel, 10)
-        # name: (stream that needs it, type, topic, callback)
+        # name: (streams that need it, type, topic, callback); the tags go over any video
+        video = ('camera', 'video')
         sources = {
             'camera': (
-                'camera',
+                ('camera',),
                 CompressedImage if compressed else Image,
                 camera_topic,
                 self.on_camera,
             ),
-            'lidar': ('lidar', PointCloud2, lidar_topic, self.on_lidar),
+            'lidar': (('lidar',), PointCloud2, lidar_topic, self.on_lidar),
         }
         if AprilTagDetectionArray is not None:
-            sources['tags'] = ('camera', AprilTagDetectionArray, tag_topics[0], self.on_tags)
-            sources['tags_info'] = ('camera', CameraInfo, tag_topics[1], self.on_tags_info)
+            sources['tags'] = (video, AprilTagDetectionArray, tag_topics[0], self.on_tags)
+            sources['tags_info'] = (video, CameraInfo, tag_topics[1], self.on_tags_info)
         self._stream_sources = {name: source for name, source in sources.items() if source[2]}
 
     def sync_subscriptions(self):
@@ -293,8 +299,8 @@ class TeleopUdpNode(Node):
         elif not live and self._tf_listener is not None:
             self._tf_listener.unregister()
             self._tf_listener = None
-        for name, (stream, kind, topic, callback) in self._stream_sources.items():
-            wanted = live and self._streams[stream]
+        for name, (streams, kind, topic, callback) in self._stream_sources.items():
+            wanted = live and any(self._streams[stream] for stream in streams)
             subscription = self._stream_subs.get(name)
             if wanted and subscription is None:
                 self._stream_subs[name] = self.create_subscription(
@@ -427,15 +433,16 @@ class TeleopUdpNode(Node):
                 streams = {}
             self.set_camera_fps(streams.get('camera_fps'))
             self._streams = {k: bool(streams.get(k, False)) for k in self._streams}
-            self.send_json(
-                {
-                    't': 'welcome',
-                    'name': self._robot_name,
-                    'commands': sorted(self._commands) + ['get_route', 'list_routes'],
-                    'robot_commands': self._robot_commands,
-                    'limits': self._limits,
-                }
-            )
+            welcome = {
+                't': 'welcome',
+                'name': self._robot_name,
+                'commands': sorted(self._commands) + ['get_route', 'list_routes'],
+                'robot_commands': self._robot_commands,
+                'limits': self._limits,
+            }
+            if self._video:
+                welcome['video'] = self._video  # WebRTC (WHEP) through MediaMTX
+            self.send_json(welcome)
             self.send_route()
         elif addr != self._client:
             return

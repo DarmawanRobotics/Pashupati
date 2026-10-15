@@ -30,10 +30,10 @@ connected handheld or ""), "mode", "battery"}`; the handheld lists robots withou
 
 | `t` | Fields | Meaning |
 |---|---|---|
-| `hello` | `name`, `streams: {camera: bool, lidar: bool, camera_fps?: number}` | register / keep alive |
+| `hello` | `name`, `streams: {camera: bool, lidar: bool, video: bool, camera_fps?: number}` | register / keep alive |
 | `joy` | `vx`, `vy` (m/s), `wz` (rad/s) | teleop velocity, send at 20–30 Hz; only used in `remote` mode |
 | `cmd` | `id` (int, unique per command), `name`, `args` (object) | run a command, see below |
-| `streams` | `camera`, `lidar` (bool), `camera_fps` (number, capped by the `camera_fps` parameter) | change subscriptions and camera rate |
+| `streams` | `camera`, `lidar`, `video` (bool), `camera_fps` (number, capped by the `camera_fps` parameter) | change subscriptions and camera rate |
 | `ping` | `ts` | latency probe, echoed as `pong` |
 | `bye` | | leave |
 
@@ -62,9 +62,9 @@ from an earlier session are not delivered. Start ids at a random value per app s
 
 | `t` | Fields |
 |---|---|
-| `welcome` | `name` (robot), `commands` (every command name), `robot_commands` (the driver commands of this robot, in the order of the `robot_commands` parameter), `limits` ([vx, vy, wz] maxima) |
+| `welcome` | `name` (robot), `commands` (every command name), `robot_commands` (the driver commands of this robot, in the order of the `robot_commands` parameter), `limits` ([vx, vy, wz] maxima), `video` ({port, path}: WebRTC video, see below; absent when the robot only sends JPEG) |
 | `ack` | `id`, `ok` (bool, `null` while pending), `msg`, optional `data` |
-| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `field` (protective field: `clear`, `limited`, `stop`, `stale`, `off` or `null`), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`), `tags` (AprilTags in the camera image while the camera stream is on: [[id, x0, y0, x1, y1, x2, y2, x3, y3], ...], corners as fractions of the image width and height) |
+| `state` | `seq` (increments per state, for packet-loss estimates), `mode`, `estop` (bool), `field` (protective field: `clear`, `limited`, `stop`, `stale`, `off` or `null`), `nav`, `nav_msg`, `mission`, `localization`, `recording`, `pose` ([x, y, yaw] in map or `null`), `battery` ({pct, v, a, temp} or `null`), `driver` ({level, msg} or `null`), `cmd` ([vx, vy, wz] sent to the robot), `health` ({ok, issues[]} or `null`), `tags` (AprilTags in the camera image while the camera or video stream is on: [[id, x0, y0, x1, y1, x2, y2, x3, y3], ...], corners as fractions of the image width and height) |
 | `pong` | `ts` |
 | `busy` | `msg`: another device is driving, retry later |
 | `denied` | `msg`: the `hello` had a missing or wrong token |
@@ -91,3 +91,22 @@ camera, the cloud and TF only while a client is connected and has the stream ena
 | 1 camera | one JPEG image |
 | 2 lidar | N × (int16 x, int16 y, int16 z) in centimetres, robot frame (`base_link`), little-endian |
 | 3 route | JSON `{"t": "route", "points": [[x, y, dwell_sec], ...]}` in the map frame |
+
+## WebRTC video
+
+When the robot runs MediaMTX (`pashupati` `robot.launch.py`, `script/setup.sh install webrtc`), the
+`welcome` carries `video: {port, path}` and the handheld can play the camera as H.264 over WebRTC
+instead of the JPEG stream: smoother, a fraction of the bandwidth, and no lost frames when one
+datagram is lost.
+
+1. POST an SDP offer (receive-only video, all ICE candidates gathered) to
+   `http://<robot>:<port>/<path>/whep` with `Content-Type: application/sdp` and HTTP basic auth,
+   user `teleop`, password the token (any user and password when the robot has no token).
+2. `201 Created` returns the SDP answer; its `Location` header is the session to `DELETE` when
+   done. `401` means a wrong token. The first answer can take a few seconds: MediaMTX starts the
+   encoder (`video_stream_node`) when the first viewer comes and stops it 10 s after the last one.
+3. While the WebRTC video plays, send `streams` with `camera: false, video: true`: the JPEG frames
+   stop and the `tags` keep coming for the overlay. Turn `camera` back on when WebRTC fails.
+
+The media goes over UDP (`8190` with the default launch); WHEP signalling over TCP `<port>`
+(`8890`).

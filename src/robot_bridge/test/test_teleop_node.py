@@ -25,9 +25,12 @@ def free_port() -> int:
 class Rig:
     """The node, a listener on bridge/remote_cmd_vel and UDP clients."""
 
-    def __init__(self):
+    def __init__(self, params=()):
         self.port = free_port()
-        rclpy.init(args=['--ros-args', '-p', f'port:={self.port}', '-p', f'token:={TOKEN}'])
+        args = ['--ros-args', '-p', f'port:={self.port}', '-p', f'token:={TOKEN}']
+        for param in params:
+            args += ['-p', param]
+        rclpy.init(args=args)
         try:
             self.node = TeleopUdpNode()
         except Exception:
@@ -91,6 +94,14 @@ class Rig:
 def rig():
     """Provide a running teleop node."""
     r = Rig()
+    yield r
+    r.close()
+
+
+@pytest.fixture
+def video_rig():
+    """Provide a teleop node on a robot with WebRTC video (MediaMTX on port 8890)."""
+    r = Rig(['video_port:=8890'])
     yield r
     r.close()
 
@@ -225,3 +236,37 @@ def test_streams_are_subscribed_only_while_wanted(rig):
     assert camera not in topics() and '/tf' in topics()
     rig.send(a, {'t': 'bye'})
     assert '/tf' not in topics()
+
+
+def test_no_webrtc_video_without_mediamtx(rig):
+    """Without MediaMTX (video_port 0) the welcome offers no WebRTC: JPEG frames only."""
+    a = rig.client()
+    rig.send(a, {'t': 'hello'})
+    welcome = next(m for m in rig.received(a) if m['t'] == 'welcome')
+    assert 'video' not in welcome
+
+
+def test_webrtc_video_is_offered_when_mediamtx_runs(video_rig):
+    """The welcome names the WHEP port and path when robot.launch.py started MediaMTX."""
+    a = video_rig.client()
+    video_rig.send(a, {'t': 'hello'})
+    welcome = next(m for m in video_rig.received(a) if m['t'] == 'welcome')
+    assert welcome['video'] == {'port': 8890, 'path': 'camera'}
+
+
+def test_webrtc_video_keeps_the_tags_without_jpeg_frames(video_rig):
+    """While the handheld plays WebRTC video the tags still come, the JPEG camera does not."""
+    pytest.importorskip('apriltag_msgs.msg')
+    camera = '/camera/camera/color/image_raw/compressed'
+    tags = '/perception/apriltag/detections'
+
+    def topics():
+        return {s.topic_name for s in video_rig.node.subscriptions}
+
+    a = video_rig.client()
+    video_rig.send(a, {'t': 'hello', 'streams': {'camera': False, 'video': True}})
+    assert tags in topics() and camera not in topics()
+    video_rig.send(a, {'t': 'streams', 'video': False, 'camera': True})
+    assert tags in topics() and camera in topics()
+    video_rig.send(a, {'t': 'streams', 'camera': False})
+    assert tags not in topics()
