@@ -1,6 +1,10 @@
 # Site configuration for the simulator (robot_sim/sim.launch.py): the stack reads the simulated
 # body-frame cloud, writes nothing into the real map/ or ~/.pashupati, and asks the simulator
 # instead of the VLM to inspect at stop points.
+control_mux_node:
+  ros__parameters:
+    field_in_remote: true             # off on robots by default; the sim tests the option
+
 lidar_sector_node:
   ros__parameters:
     input_type: pointcloud2

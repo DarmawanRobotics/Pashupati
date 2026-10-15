@@ -7,7 +7,7 @@ versions follow [SemVer](https://semver.org).
 
 ### Changed
 - REMOTE drives without the protective field (`field_in_remote: false`): the operator watches the
-  robot; the software e-stop and the speed envelope still apply.
+  robot; the software e-stop and the speed envelope still apply. The simulator keeps it on.
 
 ### Fixed
 - Teleop camera stayed black: driver JPEGs (quality 95) were too big to arrive whole as one burst

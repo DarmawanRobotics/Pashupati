@@ -198,7 +198,7 @@ def test_patrol_stops_for_a_crowd_and_drives_on(sim):
 
 
 def test_handheld_cannot_drive_into_a_person(sim):
-    """In REMOTE nothing but the protective field is between the stick and a person."""
+    """With field_in_remote (sim_site.yaml) the protective field keeps the stick off a person."""
     assert sim.set_mode('remote'), 'control mux did not switch to remote'
     sim.spin_until(lambda: False, 1.5)  # navigation pauses, the robot comes to rest
 
