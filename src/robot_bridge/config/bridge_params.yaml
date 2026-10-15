@@ -48,6 +48,7 @@ teleop_udp_node:
     camera_fps: 8.0
     camera_jpeg_quality: 60
     camera_max_width: 640
+    camera_max_bytes: 60000           # bigger driver JPEGs are re-encoded (needs OpenCV)
     lidar_topic: /cloud_registered_body   # FAST-LIO body-frame cloud
     lidar_hz: 2.0
     lidar_voxel: 0.1

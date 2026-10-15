@@ -84,6 +84,7 @@ class TeleopUdpNode(Node):
             'camera_fps': 8.0,
             'camera_jpeg_quality': 60,
             'camera_max_width': 640,
+            'camera_max_bytes': 60000,
             'lidar_topic': '/cloud_registered_body',
             'lidar_hz': 2.0,
             'lidar_voxel': 0.1,
@@ -130,11 +131,16 @@ class TeleopUdpNode(Node):
         self._route: list = []
         self._extrinsics: dict = {}
         self._last_camera = self._last_lidar = 0.0
+        self._big_frame_warned = False
         self._camera_period = 1.0 / max(float(p('camera_fps')), 0.1)
         self._lidar_period = 1.0 / max(float(p('lidar_hz')), 0.1)
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:  # room for a camera frame sent as one burst of datagrams (capped by wmem_max)
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1 << 20)
+        except OSError:
+            pass
         try:
             self._sock.bind(('0.0.0.0', int(p('port'))))
         except OSError as error:
@@ -272,25 +278,27 @@ class TeleopUdpNode(Node):
 
     # ------------------------------------------------------------------ socket
 
-    def send(self, data: bytes, addr=None):
-        """Send one datagram to the client (or addr), dropping it when the socket is busy."""
+    def send(self, data: bytes, addr=None) -> bool:
+        """Send one datagram to the client (or addr); False when it was dropped (socket busy)."""
         addr = addr or self._client
         if addr is None:
-            return
+            return False
         try:
             self._sock.sendto(data, addr)
         except (BlockingIOError, OSError):
-            pass
+            return False
+        return True
 
     def send_json(self, message: dict, addr=None):
         """Send a JSON message to the client (or addr)."""
         self.send(protocol.encode_json(message), addr)
 
     def send_stream(self, stream: int, payload: bytes):
-        """Send a chunked binary payload to the client."""
+        """Send a chunked binary payload to the client; stop at a dropped chunk."""
         self._frame_ids[stream] += 1
         for datagram in protocol.chunk(stream, self._frame_ids[stream], payload):
-            self.send(datagram)
+            if not self.send(datagram):
+                return  # the client cannot rebuild this frame any more
 
     def read_socket(self):
         """Receive datagrams on the reader thread and wake the executor to handle them."""
@@ -639,21 +647,50 @@ class TeleopUdpNode(Node):
         if now - self._last_camera < self._camera_period:
             return
         self._last_camera = now
-        jpeg = bytes(msg.data) if isinstance(msg, CompressedImage) else self.encode(msg)
+        if isinstance(msg, CompressedImage):
+            jpeg = self.shrink(bytes(msg.data))
+        else:
+            jpeg = self.encode(msg)
         if jpeg:
             self.send_stream(protocol.STREAM_CAMERA, jpeg)
 
+    def shrink(self, jpeg: bytes) -> bytes:
+        """
+        Re-encode a driver JPEG bigger than camera_max_bytes (drivers default to quality 95).
+
+        A frame travels as a burst of 1400-byte datagrams and one lost datagram loses the frame,
+        so a 150 kB JPEG rarely reaches the handheld whole over Wi-Fi.
+        """
+        if len(jpeg) <= int(self.get_parameter('camera_max_bytes').value):
+            return jpeg
+        if cv2 is None:
+            if not self._big_frame_warned:
+                self._big_frame_warned = True
+                self.get_logger().warn(
+                    f'camera frames of {len(jpeg)} B are too big for the handheld and OpenCV is '
+                    'missing to shrink them: install python3-opencv or lower the JPEG quality'
+                )
+            return jpeg
+        img = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+        return self.compress(img) if img is not None else b''
+
     def encode(self, msg: Image) -> bytes:
-        """JPEG-encode a raw rgb8/bgr8 image, downscaled to camera_max_width."""
+        """JPEG-encode a raw rgb8/bgr8 image."""
         if cv2 is None or msg.encoding not in ('rgb8', 'bgr8'):
             return b''
         img = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.step // 3, 3)
         img = img[:, : msg.width]
         if msg.encoding == 'rgb8':
-            img = img[:, :, ::-1]
+            img = np.ascontiguousarray(img[:, :, ::-1])
+        return self.compress(img)
+
+    def compress(self, img) -> bytes:
+        """JPEG-encode a BGR image at camera_jpeg_quality, no wider than camera_max_width."""
+        height, width = img.shape[:2]
         max_width = int(self.get_parameter('camera_max_width').value)
-        if msg.width > max_width:
-            img = cv2.resize(img, (max_width, int(msg.height * max_width / msg.width)))
+        if width > max_width:
+            size = (max_width, int(height * max_width / width))
+            img = cv2.resize(img, size, interpolation=cv2.INTER_AREA)
         quality = int(self.get_parameter('camera_jpeg_quality').value)
         ok, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return buf.tobytes() if ok else b''

@@ -6,6 +6,9 @@ versions follow [SemVer](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- Teleop camera stayed black: driver JPEGs (quality 95) were too big to arrive whole as one burst
+  of datagrams. Frames above `camera_max_bytes` are re-encoded at `camera_jpeg_quality` and
+  `camera_max_width`, the send buffer is larger, and a frame stops at its first dropped chunk.
 - Lighter on the robot: the AprilTag detector gets the camera at 5 Hz (`apriltag_throttle`)
   instead of every frame; `lidar_sector_node` stops listening to TF once it knows the LiDAR
   mount, `route_recorder_node` only listens while recording, and `fleet_uplink_node` only runs
