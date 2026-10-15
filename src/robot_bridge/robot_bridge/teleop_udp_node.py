@@ -145,6 +145,9 @@ def people_parameters(args: dict) -> list:
     return [('enabled', args['enabled'])]
 
 
+PEOPLE_BOX_SEC = 2.0  # older person boxes are not drawn
+
+
 def people_summary(status: dict, stale: bool, now: float) -> dict:
     """Compact perception/people_status for the handheld's state message."""
     count, at = number(status.get('count')), number(status.get('at'))
@@ -154,9 +157,24 @@ def people_summary(status: dict, stale: bool, now: float) -> dict:
         'count': None if count is None else int(count),
         'ms': int(number(status.get('latency_ms'), 0.0)),
         'age': None if at is None else max(0, round(now - at)),
+        'boxes': [] if stale or at is None or now - at > PEOPLE_BOX_SEC else people_boxes(status),
         'backend': str(status.get('backend', ''))[:24],
         'error': str(status.get('error', ''))[:160],
     }
+
+
+def people_boxes(status: dict) -> list:
+    """Person boxes [x1, y1, x2, y2, score] as fractions of the image, at most 20."""
+    boxes = []
+    raw = status.get('boxes')
+    for box in raw[:20] if isinstance(raw, list) else []:
+        if not isinstance(box, list) or len(box) != 5:
+            continue
+        values = [number(v) for v in box]
+        if None in values:
+            continue
+        boxes.append([round(min(max(v, 0.0), 1.0), 3) for v in values])
+    return boxes
 
 
 def system_load(health: dict) -> dict:

@@ -30,6 +30,7 @@ LIVE_PARAMS = ('enabled', 'rate_hz', 'confidence')
 STATUS_PERIOD_SEC = 2.0  # perception/people_status also when nothing changes
 RELOAD_AFTER_SEC = 30.0  # retry a model that failed to load
 NO_CAMERA_SEC = 3.0  # without frames for this long the status says so
+MAX_BOXES = 20  # person boxes in the status (fractions of the image, for the handheld)
 
 
 class PersonDetectorNode(Node):
@@ -181,6 +182,7 @@ class PersonDetectorNode(Node):
             'backend': getattr(self._detector, 'backend', ''),
             'model': os.path.basename(self._model_path),
             'count': result.get('count'),
+            'boxes': result.get('boxes', []),
             'placed': result.get('placed'),
             'latency_ms': result.get('latency_ms'),
             'at': result.get('at'),
@@ -284,8 +286,14 @@ class PersonDetectorNode(Node):
             people.poses.append(pose)
         if t_map_base is not None:
             self._people_pub.publish(people)
+        height, width = image.shape[:2]
         self._result = {
             'count': len(boxes),
+            'boxes': [
+                [round(x1 / width, 3), round(y1 / height, 3), round(x2 / width, 3),
+                 round(y2 / height, 3), round(score, 2)]
+                for x1, y1, x2, y2, score in boxes[:MAX_BOXES]
+            ],
             'placed': len(people.poses),
             'latency_ms': int(latency * 1000),
             'at': time.time(),

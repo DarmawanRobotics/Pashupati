@@ -415,6 +415,7 @@ def test_people_detection_is_switched_and_shown_with_the_system_load(rig):
     assert detector.get_parameter('enabled').value is False
 
     people = {'enabled': True, 'state': 'running', 'count': 3, 'latency_ms': 80, 'at': time.time()}
+    people['boxes'] = [[0.1, 0.2, 0.3, 0.9, 0.87], [0, 0, 1.5, 0.5, 0.5], [1, 2], 'x']
     people_pub.publish(String(data=json.dumps(people)))
     health = {
         'ok': True,
@@ -436,6 +437,7 @@ def test_people_detection_is_switched_and_shown_with_the_system_load(rig):
     assert wait_until(rig, arrived)
     state = states[-1]
     assert (state['people']['count'], state['people']['state']) == (3, 'running')
+    assert state['people']['boxes'] == [[0.1, 0.2, 0.3, 0.9, 0.87], [0.0, 0.0, 1.0, 0.5, 0.5]]
     assert (state['health']['cpu'], state['health']['gpu'], state['health']['ram_used']) == (
         23.0, 41.0, 5.1,
     )
