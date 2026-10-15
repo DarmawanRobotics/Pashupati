@@ -17,7 +17,16 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from robot_inspection.frame_queue import frame_change, FrameQueue, thumbnail
-from robot_inspection.vlm import build_request, full_name, model_options, parse_response
+from robot_inspection.vlm import (
+    build_request,
+    CATEGORY_HINTS,
+    category_names,
+    describe_category,
+    full_name,
+    model_options,
+    parse_descriptions,
+    parse_response,
+)
 from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Header, String
 from std_srvs.srv import Trigger
@@ -32,12 +41,20 @@ ENCODINGS = {
 }
 
 # Changed while running (handheld, NETRA, `ros2 param set`); the rest is read at start.
-LIVE_PARAMS = ('enabled', 'model', 'interval_sec')
+LIVE_PARAMS = (
+    'enabled',
+    'model',
+    'interval_sec',
+    'categories',
+    'alarm_categories',
+    'category_descriptions',
+)
+CATEGORY_PARAMS = ('categories', 'alarm_categories', 'category_descriptions')
 
 # How often the status is republished even when nothing changed, and Ollama is asked for models.
 STATUS_PERIOD_SEC = 2.0
 MODELS_PERIOD_SEC = 30.0
-CAPTURE_TICK_SEC = 0.2  # how often interval mode checks whether a frame is due for the queue
+CAPTURE_TICK_SEC = 0.05  # how often interval mode checks whether a frame is due for the queue
 
 
 class AnomalyDetectorNode(Node):
@@ -59,6 +76,7 @@ class AnomalyDetectorNode(Node):
             ],
             'categories': ['trash', 'spill', 'stain'],
             'alarm_categories': ['trash', 'spill'],
+            'category_descriptions': [''],
             'use_schema': True,
             'describe': False,
             'debug': False,
@@ -78,14 +96,20 @@ class AnomalyDetectorNode(Node):
         p = lambda name: self.get_parameter(name).value  # noqa: E731
         state_file = str(p('state_file')).strip()
         self._state_file = os.path.expanduser(state_file) if state_file else ''
+        self._own_categories = False  # categories changed live: kept in state_file
         self.restore_choice()
         self._base_url = p('ollama_url').rstrip('/')
         self._url = self._base_url + '/api/generate'
         self._enabled = bool(p('enabled'))
         self._model = str(p('model')).strip()
         self._models = [str(m).strip() for m in p('models') if str(m).strip()]
-        self._categories = [c for c in p('categories') if c]
-        self._alarm = {c for c in p('alarm_categories') if c}
+        try:
+            self._categories = category_names(p('categories'))
+            self._hints = parse_descriptions(p('category_descriptions'))
+        except ValueError as error:
+            self.get_logger().error(f'categories: {error}; using trash, spill, stain')
+            self._categories, self._hints = ['trash', 'spill', 'stain'], {}
+        self._alarm = {str(c).strip() for c in p('alarm_categories') if str(c).strip()}
         self._use_schema = bool(p('use_schema'))
         self._describe = bool(p('describe'))
         self._debug = bool(p('debug'))
@@ -177,6 +201,18 @@ class AnomalyDetectorNode(Node):
                         successful=False, reason='interval_sec is not finite'
                     )
                 updates['interval'] = interval
+            elif param.name in CATEGORY_PARAMS:
+                try:
+                    if param.name == 'categories':
+                        updates['categories'] = category_names(param.value)
+                    elif param.name == 'category_descriptions':
+                        updates['hints'] = parse_descriptions(param.value)
+                    else:
+                        updates['alarm'] = {
+                            str(c).strip() for c in param.value if str(c).strip()
+                        }
+                except (TypeError, ValueError) as error:
+                    return SetParametersResult(successful=False, reason=str(error))
             else:
                 updates['enabled'] = bool(param.value)
         if 'model' in updates:
@@ -186,6 +222,15 @@ class AnomalyDetectorNode(Node):
             self._next_capture = 0.0  # the first frame at once
         if 'enabled' in updates:
             self._enabled = updates['enabled']
+        if {'categories', 'hints', 'alarm'} & set(updates):
+            self._categories = updates.get('categories', self._categories)
+            self._hints = updates.get('hints', self._hints)
+            self._alarm = updates.get('alarm', self._alarm)
+            self._own_categories = True
+            self.get_logger().info(
+                f'categories {self._categories}, reported {sorted(self._alarm)}, '
+                f'own descriptions {sorted(self._hints)}'
+            )
         self.get_logger().info(
             f'inspection {"on" if self._enabled else "off"}, model {self._model}, '
             f'interval {self._interval:g} s'
@@ -222,6 +267,12 @@ class AnomalyDetectorNode(Node):
             and math.isfinite(interval)
         ):
             params.append(Parameter('interval_sec', value=float(interval)))
+        for name in CATEGORY_PARAMS:  # only there when changed live (handheld)
+            values = saved.get(name)
+            if isinstance(values, list) and all(isinstance(v, str) for v in values):
+                # never an empty list: rclpy would take it for a byte array
+                params.append(Parameter(name, value=values or ['']))
+                self._own_categories = True
         if params:
             self.set_parameters(params)
             restored = ', '.join(f'{param.name}={param.value}' for param in params)
@@ -232,6 +283,12 @@ class AnomalyDetectorNode(Node):
         if not self._state_file:
             return
         choice = {'enabled': self._enabled, 'model': self._model, 'interval_sec': self._interval}
+        if self._own_categories:  # else the parameter files keep deciding them
+            choice.update(
+                categories=list(self._categories),
+                alarm_categories=sorted(self._alarm),
+                category_descriptions=[f'{n}: {d}' for n, d in sorted(self._hints.items())],
+            )
         try:
             os.makedirs(os.path.dirname(self._state_file) or '.', exist_ok=True)
             partial = self._state_file + '.tmp'
@@ -265,6 +322,16 @@ class AnomalyDetectorNode(Node):
                 'error': self._error,
                 'interval_sec': self._interval,
                 'models': model_options(self._models, self._installed, self._model),
+                'categories': [
+                    {
+                        'name': name,
+                        'desc': describe_category(name, self._hints),
+                        'report': name in self._alarm,
+                        'builtin': name in CATEGORY_HINTS,  # has a description of its own
+                        'own_desc': name in self._hints,
+                    }
+                    for name in self._categories
+                ],
                 'last': self._last,
                 'inspections': self._inspections,
                 'reports': self._reports,
@@ -390,6 +457,7 @@ class AnomalyDetectorNode(Node):
             self._use_schema,
             self._keep_alive,
             self._num_ctx,
+            self._hints,
         )
         start = time.monotonic()
         for attempt in range(2):

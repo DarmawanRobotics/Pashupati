@@ -311,12 +311,50 @@ def test_inspection_arguments_are_checked():
     assert [p.value.type for p in request.parameters] == [1, 3, 4]  # bool, double, string
 
 
+def test_own_finding_types_map_to_the_category_parameters():
+    """The handheld's types become names, reported names and 'name: description' entries."""
+    from robot_bridge.teleop_udp_node import inspection_parameters, set_parameters_request
+
+    types = [
+        {'name': 'trash', 'desc': '', 'report': True},
+        {'name': 'bag', 'desc': ' a bag  left alone ', 'report': True},
+        {'name': 'stain', 'report': False},
+    ]
+    params = inspection_parameters({'categories': types})
+    assert params == [
+        ('categories', ['trash', 'bag', 'stain']),
+        ('alarm_categories', ['trash', 'bag']),
+        ('category_descriptions', ['bag: a bag left alone']),
+    ]
+    request = set_parameters_request(params + [('alarm_categories', [])])
+    assert {p.value.type for p in request.parameters} == {9}  # string arrays, also when empty
+    assert list(request.parameters[-1].value.string_array_value) == ['']
+    for bad in (
+        [],
+        [{'name': 'Bag'}],
+        [{'name': 'none'}],
+        [{'name': 'bag'}, {'name': 'bag'}],
+        [{'name': 'bag', 'desc': 'x' * 201}],
+        [{'name': f'c{i}'} for i in range(13)],
+        'trash',
+    ):
+        with pytest.raises(ValueError):
+            inspection_parameters({'categories': bad})
+
+
 def test_inspection_is_set_on_the_detector_and_shown(rig):
     """The handheld turns inspection off and picks a model; the detector status reaches it."""
     detector = fake_node(
         rig,
         'anomaly_detector_node',
-        {'enabled': True, 'model': 'qwen3-vl:2b-instruct', 'interval_sec': 0.0},
+        {
+            'enabled': True,
+            'model': 'qwen3-vl:2b-instruct',
+            'interval_sec': 0.0,
+            'categories': ['trash', 'spill', 'stain'],
+            'alarm_categories': ['trash', 'spill'],
+            'category_descriptions': [''],
+        },
     )
     latched = rclpy.qos.QoSProfile(
         depth=1, durability=rclpy.qos.QoSDurabilityPolicy.TRANSIENT_LOCAL
@@ -331,11 +369,16 @@ def test_inspection_is_set_on_the_detector_and_shown(rig):
     rig.send(a, {'t': 'cmd', 'id': 1, 'name': 'inspection_set', 'args': {'enabled': False}})
     rig.send(a, {'t': 'cmd', 'id': 2, 'name': 'inspection_set', 'args': {'model': 'moondream'}})
     rig.send(a, {'t': 'cmd', 'id': 3, 'name': 'inspection_set', 'args': {'interval': 'soon'}})
+    types = [{'name': 'trash', 'report': False}, {'name': 'bag', 'desc': 'a bag', 'report': True}]
+    rig.send(a, {'t': 'cmd', 'id': 5, 'name': 'inspection_set', 'args': {'categories': types}})
     acks = {}
-    wait_until(rig, lambda: acks.update(acks_of(rig, a)) or len(acks) >= 3)
-    assert acks[1]['ok'] and acks[2]['ok'] and not acks[3]['ok']
+    wait_until(rig, lambda: acks.update(acks_of(rig, a)) or len(acks) >= 4)
+    assert acks[1]['ok'] and acks[2]['ok'] and not acks[3]['ok'] and acks[5]['ok']
     assert detector.get_parameter('enabled').value is False
     assert detector.get_parameter('model').value == 'moondream'
+    assert list(detector.get_parameter('categories').value) == ['trash', 'bag']
+    assert list(detector.get_parameter('alarm_categories').value) == ['bag']
+    assert list(detector.get_parameter('category_descriptions').value) == ['bag: a bag']
 
     status = {
         'enabled': False,
@@ -343,6 +386,7 @@ def test_inspection_is_set_on_the_detector_and_shown(rig):
         'state': 'off',
         'interval_sec': 0.0,
         'models': [{'name': 'moondream', 'installed': True, 'active': True}],
+        'categories': [{'name': 'bag', 'desc': 'a bag', 'report': True}],
         'last': {
             'category': 'trash',
             'reported': True,
@@ -372,6 +416,8 @@ def test_inspection_is_set_on_the_detector_and_shown(rig):
     )
     rig.send(a, {'t': 'cmd', 'id': 4, 'name': 'inspection_models'})
     assert acks_of(rig, a)[4]['data'] == status['models']
+    rig.send(a, {'t': 'cmd', 'id': 6, 'name': 'inspection_categories'})
+    assert acks_of(rig, a)[6]['data'] == status['categories']
     rig.executor.remove_node(detector)
     detector.destroy_node()
 

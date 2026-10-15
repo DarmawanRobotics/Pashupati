@@ -4,6 +4,7 @@ import hmac
 import json
 import math
 import os
+import re
 import select
 import socket
 import threading
@@ -72,6 +73,45 @@ def number(value, default=None):
     return float(value)
 
 
+CATEGORY_NAME = re.compile(r'^[a-z][a-z0-9_]{0,31}$')  # as the anomaly detector takes them
+MAX_CATEGORIES = 12
+MAX_CATEGORY_DESC = 200
+
+
+def category_parameters(categories) -> list:
+    """
+    Map the handheld's finding types to the detector's category parameters.
+
+    categories: [{name, desc, report}] in the order the model is given them; desc empty keeps
+    the built-in description of a known type. Returns categories, alarm_categories and
+    category_descriptions as (name, [str]) pairs.
+    """
+    if not isinstance(categories, list) or not 1 <= len(categories) <= MAX_CATEGORIES:
+        raise ValueError(f'categories: 1 to {MAX_CATEGORIES} types')
+    names, reported, descriptions = [], [], []
+    for entry in categories:
+        if not isinstance(entry, dict):
+            raise ValueError('categories: {name, desc, report} each')
+        name = entry.get('name')
+        if not isinstance(name, str) or not CATEGORY_NAME.match(name) or name == 'none':
+            raise ValueError(f'type {str(name)[:40]!r}: a-z, 0-9 and _, up to 32, not "none"')
+        if name in names:
+            raise ValueError(f'type {name} is listed twice')
+        desc = entry.get('desc') or ''
+        if not isinstance(desc, str) or len(desc) > MAX_CATEGORY_DESC:
+            raise ValueError(f'{name}: a description of up to {MAX_CATEGORY_DESC} characters')
+        names.append(name)
+        if entry.get('report') is True:
+            reported.append(name)
+        if ' '.join(desc.split()):
+            descriptions.append(f'{name}: {" ".join(desc.split())}')
+    return [
+        ('categories', names),
+        ('alarm_categories', reported),
+        ('category_descriptions', descriptions),
+    ]
+
+
 def inspection_parameters(args: dict) -> list:
     """Map inspection_set args to (name, value) of the anomaly detector's live parameters."""
     params = []
@@ -87,17 +127,28 @@ def inspection_parameters(args: dict) -> list:
     if 'interval' in args:
         interval = number(args['interval'])
         if interval is None or interval > 3600.0:
-            raise ValueError('interval: 0 continuous, 1 to 3600 s, < 0 at stop points only')
+            raise ValueError('interval: 0 continuous, 0.1 to 3600 s, < 0 at stop points only')
+        if 0.0 < interval < 0.1:
+            interval = 0.1  # the camera gives no more than that anyway
         params.append(('interval_sec', max(interval, -1.0)))
+    if 'categories' in args:
+        params += category_parameters(args['categories'])
     if not params:
-        raise ValueError('nothing to change: give enabled, model or interval')
+        raise ValueError('nothing to change: give enabled, model, interval or categories')
     return params
+
+
+def typed_parameter(name: str, value) -> Parameter:
+    """Return a Parameter; a list is a string array, never empty (rclpy: byte array)."""
+    if isinstance(value, list):
+        return Parameter(name, Parameter.Type.STRING_ARRAY, [str(v) for v in value] or [''])
+    return Parameter(name, value=value)
 
 
 def set_parameters_request(params: list) -> SetParameters.Request:
     """Return a SetParameters request for (name, value) pairs (types from the values)."""
     return SetParameters.Request(
-        parameters=[Parameter(name, value=value).to_parameter_msg() for name, value in params]
+        parameters=[typed_parameter(name, value).to_parameter_msg() for name, value in params]
     )
 
 
@@ -612,7 +663,7 @@ class TeleopUdpNode(Node):
                 't': 'welcome',
                 'name': self._robot_name,
                 'commands': sorted(self._commands)
-                + ['get_route', 'inspection_models', 'list_routes'],
+                + ['get_route', 'inspection_categories', 'inspection_models', 'list_routes'],
                 'robot_commands': self._robot_commands,
                 'limits': self._limits,
             }
@@ -677,12 +728,14 @@ class TeleopUdpNode(Node):
             self.send_route()
             self.ack(key, True, f'{len(self._route)} points')
             return
-        if name == 'inspection_models':
-            models = (self._inspection or {}).get('models')
-            if not isinstance(models, list) or self.inspection_stale():
+        if name in ('inspection_models', 'inspection_categories'):
+            listed = (self._inspection or {}).get(name.split('_')[1])
+            if self.inspection_stale() or self._inspection is None:
                 self.ack(key, False, 'inspection not running (INSPECTION=true in pashupati.env)')
+            elif not isinstance(listed, list):
+                self.ack(key, False, 'update the robot: its inspection has no own types yet')
             else:
-                self.ack(key, True, '', [m for m in models if isinstance(m, dict)][:30])
+                self.ack(key, True, '', [m for m in listed if isinstance(m, dict)][:30])
             return
         if name not in self._commands:
             self.ack(key, False, f'unknown command {name}')

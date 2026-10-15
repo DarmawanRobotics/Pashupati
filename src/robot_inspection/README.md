@@ -16,9 +16,26 @@ The model picks one of `categories` (default `trash`, `spill`, `stain`) or `none
 reflections on shiny floors. With `interval_sec: 0` the node inspects back to back and reports a
 category at most once per `cooldown_sec`; `check_now` (source `stop_point`) always reports.
 
+### Own finding types
+
+`categories`, `alarm_categories` and `category_descriptions` change live too. On the handheld
+(Inspection page, *Finding types*) a type is added with a name and a description of what the
+model should look for, switched between reported and only shown, edited or removed. The model
+reads every type with its description in the prompt, so a short concrete English description
+works best, e.g. `bag: a bag, backpack or suitcase standing alone on the floor`. Up to 12 types
+of up to 200 characters; `trash`, `spill`, `stain`, `floor_damage` and `fallen_person` have
+built-in descriptions. Changed live they are kept in `state_file` and win over the parameter
+files.
+
+```bash
+ros2 param set /anomaly_detector_node categories "[trash, spill, bag]"
+ros2 param set /anomaly_detector_node category_descriptions "['bag: a bag or suitcase left alone']"
+ros2 param set /anomaly_detector_node alarm_categories "[trash, spill, bag]"
+```
+
 ## Live control
 
-`enabled`, `model` and `interval_sec` change while the node runs: from the handheld (Inspection
+`enabled`, `model`, `interval_sec` and the finding types change while the node runs: from the handheld (Inspection
 page) or with `ros2 param set /anomaly_detector_node model moondream:latest`. A new model is
 loaded into Ollama and the one before it unloaded (the Jetson shares its memory with the GPU).
 Off, or a stopped node, unloads the model too (`keep_alive` holds it only while inspecting), so

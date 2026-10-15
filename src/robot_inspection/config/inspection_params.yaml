@@ -9,8 +9,12 @@ anomaly_detector_node:
       - qwen3-vl:2b-instruct
       - moondream:latest
       - ahmadwaqar/smolvlm2-2.2b-instruct:latest
-    categories: [trash, spill, stain] # what the model chooses from (plus "none")
+    # live (handheld: Inspection page, finding types), kept in state_file once changed there
+    categories: [trash, spill, stain] # what the model chooses from (plus "none"), a-z 0-9 _
     alarm_categories: [trash, spill]  # only these are reported; stain is logged but not reported
+    category_descriptions: [""]       # own text per type, "name: what to look for" (English
+                                      # works best); trash, spill, stain, floor_damage and
+                                      # fallen_person have built-in texts
     use_schema: true                  # false: free-text answer (FLOOR:/TYPE:) parsed manually
     describe: false                   # true: model also writes one sentence about the floor
     debug: false                      # true: log every inspection and the raw model answer

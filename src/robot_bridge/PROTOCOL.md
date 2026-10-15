@@ -56,8 +56,9 @@ from an earlier session are not delivered. Start ids at a random value per app s
 | `get_route` | | resend the loaded route stream |
 | `localize` | | localize from a visible AprilTag |
 | `record_tags` | | record AprilTag poses |
-| `inspection_set` | any of `enabled` (bool), `model` (Ollama model name), `interval` (s: `0` continuous, `> 0` every N s, `< 0` at stop points only) | change the VLM inspection live (`anomaly_detector_node` parameters, kept across restarts) |
+| `inspection_set` | any of `enabled` (bool), `model` (Ollama model name), `interval` (s: `0` continuous, `> 0` every N s, `< 0` at stop points only), `categories` (the finding types, all of them in the order the model gets them: `[{name (a-z, 0-9, _), desc (what the model looks for, up to 200 characters; empty keeps the built-in text of a known type), report (bool: sent to NETRA)}]`, 1 to 12) | change the VLM inspection live (`anomaly_detector_node` parameters, kept across restarts) |
 | `inspection_models` | | `ack.data` = models to choose from: `[{name, installed (bool or null when unknown), active}]` |
+| `inspection_categories` | | `ack.data` = the finding types: `[{name, desc (as the model reads it), report, builtin (known type with its own text), own_desc}]` |
 | `people_set` | `enabled` (bool) | person detection on or off (`person_detector_node`, kept across restarts) |
 | `nav_speed` | `speed` (m/s, `state.speed.min`–`max`) | patrol speed (`path_follower_node` `target_linear_velocity`) until the next restart |
 | `stand_up`, `sit_down`, `emergency_stop` (also latches the software e-stop), `move_mode`, `balance_stand_mode`, `lock_mode`, `slow_speed`, `normal_speed`, `fast_speed` | | robot driver commands (`robot_commands` parameter) |

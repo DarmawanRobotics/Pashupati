@@ -3,6 +3,11 @@ import base64
 import json
 import re
 
+# A category name: what the model answers and NETRA files a finding under.
+CATEGORY_NAME = re.compile(r'^[a-z][a-z0-9_]{0,31}$')
+MAX_CATEGORIES = 12  # each one lengthens the prompt the model reads for every frame
+MAX_DESCRIPTION = 200  # 12 of them stay well inside num_ctx with the image
+
 # What each category means to the model; a category not listed here is sent by its name.
 CATEGORY_HINTS = {
     'trash': (
@@ -16,9 +21,55 @@ CATEGORY_HINTS = {
 }
 
 
-def build_prompt(categories: list[str], describe: bool, use_schema: bool) -> str:
+def category_names(values) -> list[str]:
+    """
+    Return the category names of a parameter list ('' entries dropped).
+
+    Raises ValueError for a bad, repeated or reserved name, or too many / no names.
+    """
+    names = [str(v).strip() for v in values if str(v).strip()]
+    for name in names:
+        if not CATEGORY_NAME.match(name) or name == 'none':
+            raise ValueError(f'category {name!r}: a-z, 0-9 and _, up to 32, not "none"')
+    if len(set(names)) != len(names):
+        raise ValueError('a category is listed twice')
+    if not names or len(names) > MAX_CATEGORIES:
+        raise ValueError(f'1 to {MAX_CATEGORIES} categories')
+    return names
+
+
+def parse_descriptions(values) -> dict:
+    """
+    Return {category: description} from 'name: description' entries ('' entries dropped).
+
+    Raises ValueError for an entry without a valid name or with an empty or long description.
+    """
+    descriptions = {}
+    for value in values:
+        entry = str(value).strip()
+        if not entry:
+            continue
+        name, _, text = entry.partition(':')
+        name, text = name.strip(), ' '.join(text.split())
+        if not CATEGORY_NAME.match(name) or not text or len(text) > MAX_DESCRIPTION:
+            raise ValueError(
+                f'{entry[:40]!r}: "name: what the model should look for", '
+                f'up to {MAX_DESCRIPTION} characters'
+            )
+        descriptions[name] = text
+    return descriptions
+
+
+def describe_category(category: str, hints: dict) -> str:
+    """Return what a category means to the model: own description, built-in, or its name."""
+    return hints.get(category) or CATEGORY_HINTS.get(category) or category.replace('_', ' ')
+
+
+def build_prompt(
+    categories: list[str], describe: bool, use_schema: bool, hints: dict | None = None
+) -> str:
     """Return the prompt listing every category plus 'none'."""
-    lines = [f'- {c}: {CATEGORY_HINTS.get(c, c.replace("_", " "))}' for c in categories]
+    lines = [f'- {c}: {describe_category(c, hints or {})}' for c in categories]
     lines.append('- none: the floor is clean with nothing lying on it')
     ignore = 'furniture, shelves and walls' if 'fallen_person' in categories else (
         'furniture, shelves, walls and people'
@@ -66,11 +117,12 @@ def build_request(
     use_schema: bool,
     keep_alive,
     num_ctx: int,
+    hints: dict | None = None,
 ) -> dict:
-    """Return an Ollama /api/generate body."""
+    """Return an Ollama /api/generate body (hints: own category descriptions)."""
     body = {
         'model': model,
-        'prompt': build_prompt(categories, describe, use_schema),
+        'prompt': build_prompt(categories, describe, use_schema, hints),
         'images': [base64.b64encode(jpeg).decode()],
         'stream': False,
         'keep_alive': keep_alive,
@@ -78,7 +130,8 @@ def build_request(
             'temperature': 0.0,
             'repeat_penalty': 1.1,
             'num_ctx': num_ctx,
-            'num_predict': 96 if (describe or not use_schema) else 16,
+            # {"type": "<category>"}: room for a long own category name
+            'num_predict': 96 if (describe or not use_schema) else 32,
         },
     }
     if use_schema:

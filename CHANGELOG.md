@@ -17,6 +17,9 @@ versions follow [SemVer](https://semver.org).
   them as fractions of the image. `rate_hz: 0` (new default) detects 5 times a second on the GPU,
   2 on the CPU.
 
+- Own finding types from the handheld: add a type with a description of what to look for,
+  choose whether it is reported, edit or remove it (`categories`, `alarm_categories` and the new
+  `category_descriptions` are live and kept across restarts). Intervals below a second.
 - Interval inspection queues its frames: every `interval_sec` a frame is taken even while the
   model is busy and waits in a first-in-first-out queue (kept across restarts, `queue_max` 50)
   that the model works through when free. Findings keep the time and pose of the frame.

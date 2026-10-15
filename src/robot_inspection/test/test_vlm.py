@@ -1,11 +1,14 @@
 import json
 
+import pytest
 from robot_inspection.vlm import (
     build_prompt,
     build_request,
     build_schema,
+    category_names,
     full_name,
     model_options,
+    parse_descriptions,
     parse_response,
 )
 
@@ -87,3 +90,27 @@ def test_model_options_put_configured_first_and_skip_text_models():
         {'name': 'moondream', 'installed': None, 'active': False},
         {'name': 'other:1b', 'installed': None, 'active': True},
     ]
+
+
+def test_own_categories_and_descriptions_reach_the_prompt():
+    """An own type is described in the prompt; own text replaces a built-in one."""
+    entries = ['bag: a bag or suitcase left alone', 'trash:  wrappers  only ', '']
+    hints = parse_descriptions(entries)
+    assert hints == {'bag': 'a bag or suitcase left alone', 'trash': 'wrappers only'}
+    prompt = build_prompt(['trash', 'bag', 'spill'], False, True, hints)
+    assert '- bag: a bag or suitcase left alone' in prompt
+    assert '- trash: wrappers only' in prompt
+    assert '- spill: liquid' in prompt  # built-in text
+    body = build_request('m', b'x', ['trash', 'bag'], False, True, -1, 2048, hints)
+    assert body['format']['properties']['type']['enum'] == ['trash', 'bag', 'none']
+
+
+def test_category_names_are_checked():
+    """Names are lower case, unique, not 'none', 1 to 12; descriptions need a name and text."""
+    assert category_names(['trash', ' bag ', '']) == ['trash', 'bag']
+    for bad in (['Bag'], ['none'], ['bag', 'bag'], [''], [f'c{i}' for i in range(13)], ['a-b']):
+        with pytest.raises(ValueError):
+            category_names(bad)
+    for bad in (['no colon'], ['bag:'], ['Bag: x'], ['bag: ' + 'x' * 201]):
+        with pytest.raises(ValueError):
+            parse_descriptions(bad)

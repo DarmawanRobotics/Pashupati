@@ -195,8 +195,10 @@ def test_inspection_reports_and_can_be_switched_off(detector):
 
 def test_only_live_parameters_change_while_running(detector):
     """Parameters read at start are refused with the reason; bad values too."""
-    result = detector.set_parameters([Parameter('categories', value=['trash'])])[0]
+    result = detector.set_parameters([Parameter('use_schema', value=False)])[0]
     assert not result.successful and 'restart' in result.reason
+    result = detector.set_parameters([Parameter('categories', value=['Not ok'])])[0]
+    assert not result.successful and 'a-z' in result.reason
     assert not detector.set_parameters([Parameter('model', value=' ')])[0].successful
     assert detector.set_parameters([Parameter('interval_sec', value=5.0)])[0].successful
     assert detector.status()['interval_sec'] == 5.0
@@ -267,3 +269,39 @@ def test_interval_frames_wait_in_a_queue_first_in_first_out(detector, ollama):
     status = detector.status()
     assert status['inspections'] == 3 and status['reports'] == 1  # trash once: cooldown
     assert status['last']['waited_sec'] >= 0.0 and status['queue_max'] == 50
+
+
+def test_own_categories_are_used_shown_and_kept(detector, ollama, state_file):
+    """A type added live, with its description, reaches the model, the status and a restart."""
+    assert wait_for(lambda: detector.status()['state'] == 'running')
+    assert detector.set_parameters(
+        [
+            Parameter('categories', value=['trash', 'bag']),
+            Parameter('alarm_categories', value=['bag']),
+            Parameter('category_descriptions', value=['bag: a bag or suitcase left alone']),
+        ]
+    )[0].successful
+    shown = {c['name']: c for c in detector.status()['categories']}
+    assert list(shown) == ['trash', 'bag']
+    assert shown['bag'] == {
+        'name': 'bag',
+        'desc': 'a bag or suitcase left alone',
+        'report': True,
+        'builtin': False,
+        'own_desc': True,
+    }
+    assert not shown['trash']['report'] and shown['trash']['builtin']
+
+    detector.on_image(frame())
+    detector.check_now(Trigger.Request(), Trigger.Response())
+    prompt = next(b['prompt'] for path, b in reversed(ollama.requests) if b.get('images'))
+    assert '- bag: a bag or suitcase left alone' in prompt and 'stain' not in prompt
+
+    saved = json.loads(state_file.read_text())
+    assert saved['categories'] == ['trash', 'bag'] and saved['alarm_categories'] == ['bag']
+    again = AnomalyDetectorNode()
+    try:
+        assert [c['name'] for c in again.status()['categories']] == ['trash', 'bag']
+        assert again.status()['categories'][1]['desc'] == 'a bag or suitcase left alone'
+    finally:
+        again.destroy_node()
