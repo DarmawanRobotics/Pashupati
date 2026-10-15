@@ -16,9 +16,10 @@ from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
+from robot_inspection.frame_queue import frame_change, FrameQueue, thumbnail
 from robot_inspection.vlm import build_request, full_name, model_options, parse_response
 from sensor_msgs.msg import CompressedImage, Image
-from std_msgs.msg import String
+from std_msgs.msg import Header, String
 from std_srvs.srv import Trigger
 
 # encoding -> (channels, cv2 conversion to BGR or None)
@@ -36,6 +37,7 @@ LIVE_PARAMS = ('enabled', 'model', 'interval_sec')
 # How often the status is republished even when nothing changed, and Ollama is asked for models.
 STATUS_PERIOD_SEC = 2.0
 MODELS_PERIOD_SEC = 30.0
+CAPTURE_TICK_SEC = 0.2  # how often interval mode checks whether a frame is due for the queue
 
 
 class AnomalyDetectorNode(Node):
@@ -67,6 +69,9 @@ class AnomalyDetectorNode(Node):
             'max_image_width': 640,
             'interval_sec': 0.0,
             'cooldown_sec': 60.0,
+            'queue_dir': '~/.pashupati/inspection_queue',
+            'queue_max': 50,
+            'queue_min_change': 12.0,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -91,6 +96,12 @@ class AnomalyDetectorNode(Node):
         self._max_width = int(p('max_image_width'))
         self._interval = float(p('interval_sec'))
         self._cooldown = float(p('cooldown_sec'))
+        # interval mode: a frame every interval_sec waits here for the model, first in first out
+        self._queue = FrameQueue(str(p('queue_dir')).strip(), int(p('queue_max')))
+        self._min_change = float(p('queue_min_change'))
+        self._next_capture = 0.0
+        self._last_thumb = None
+        self._unchanged = 0  # frames not queued: the picture was the same as the last one
 
         self._frame_lock = threading.Lock()
         self._frame = (0.0, None)  # (receive time, Image msg)
@@ -128,6 +139,9 @@ class AnomalyDetectorNode(Node):
         )
         self.add_on_set_parameters_callback(self.on_parameters)
         self.create_timer(STATUS_PERIOD_SEC, self.publish_status)
+        self.create_timer(
+            CAPTURE_TICK_SEC, self.capture, callback_group=MutuallyExclusiveCallbackGroup()
+        )
         self._models_timer = self.create_timer(
             MODELS_PERIOD_SEC, self.refresh_models, callback_group=MutuallyExclusiveCallbackGroup()
         )
@@ -169,6 +183,7 @@ class AnomalyDetectorNode(Node):
             self._model = updates['model']
         if 'interval' in updates:
             self._interval = updates['interval']
+            self._next_capture = 0.0  # the first frame at once
         if 'enabled' in updates:
             self._enabled = updates['enabled']
         self.get_logger().info(
@@ -253,6 +268,9 @@ class AnomalyDetectorNode(Node):
                 'last': self._last,
                 'inspections': self._inspections,
                 'reports': self._reports,
+                'queue': len(self._queue),
+                'queue_max': self._queue.limit,
+                'queue_dropped': self._queue.dropped,
                 'stamp': time.time(),
             }
 
@@ -312,6 +330,35 @@ class AnomalyDetectorNode(Node):
         img = img[:, :, 0] if channels == 1 else img
         img = cv2.cvtColor(img, conversion) if conversion is not None else img.copy()
         return img, msg.header
+
+    def capture(self):
+        """Interval mode: every interval_sec queue the latest frame (unless nothing changed)."""
+        if not self._enabled or self._interval <= 0.0:
+            return
+        now = time.monotonic()
+        if now < self._next_capture:
+            return
+        frame = self.latest_frame()
+        if frame is None:
+            return  # no camera: next tick
+        self._next_capture = now + self._interval
+        img, header = frame
+        thumb = thumbnail(img)
+        if self._min_change > 0.0 and frame_change(thumb, self._last_thumb) < self._min_change:
+            self._unchanged += 1  # standing still: the same floor again
+            return
+        self._last_thumb = thumb
+        jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
+        self._queue.put(
+            jpeg,
+            {
+                'sec': header.stamp.sec,
+                'nanosec': header.stamp.nanosec,
+                'frame_id': header.frame_id,
+                'at': time.time(),
+            },
+        )
+        self._wake.set()
 
     def model_jpeg(self, img) -> bytes:
         """Downscale to max_image_width and encode as JPEG for the model."""
@@ -409,19 +456,27 @@ class AnomalyDetectorNode(Node):
         return True
 
     # ---------------------------------------------------------------- inspection
-    def inspect(self, source: str, wait: float):
-        """Inspect the latest frame; returns (result or None, message)."""
+    def inspect(self, source: str, wait: float, queued=None):
+        """
+        Inspect the latest frame, or a queued one; returns (result or None, message).
+
+        queued: (BGR image, header, capture time, JPEG) of a frame from the queue.
+        """
         if not self._busy.acquire(timeout=wait):
             return None, 'inspection already running'
         try:
             model = self._loaded
             if model is None:
                 return None, f'model {self._model} not loaded yet'
-            frame = self.latest_frame()
-            if frame is None:
-                self.set_state('error', 'no recent camera frame')
-                return None, 'no recent camera frame'
-            img, header = frame
+            if queued is None:
+                frame = self.latest_frame()
+                if frame is None:
+                    self.set_state('error', 'no recent camera frame')
+                    return None, 'no recent camera frame'
+                img, header = frame
+                captured_at, jpeg = time.time(), None
+            else:
+                img, header, captured_at, jpeg = queued
             result = self.ask(model, self.model_jpeg(img))
         except (urllib.error.URLError, TimeoutError, ValueError, OSError) as error:
             self.set_state('error', f'VLM unavailable: {error}')
@@ -431,15 +486,18 @@ class AnomalyDetectorNode(Node):
 
         result['is_anomaly'] = result['category'] in self._alarm
         result['source'] = source
+        result['captured_at'] = captured_at  # a queued frame was taken before it was inspected
         report = result['is_anomaly']
-        if report and source == 'periodic':
-            last = self._last_report.get(result['category'], -1e9)
-            report = time.monotonic() - last > self._cooldown
+        if report and source == 'periodic':  # cooldown in capture time: queued frames are older
+            last = self._last_report.get(result['category'], -1e18)
+            report = captured_at - last > self._cooldown
         if report:
-            self._last_report[result['category']] = time.monotonic()
+            self._last_report[result['category']] = captured_at
             result['evidence_stamp'] = evidence_stamp(header.stamp)
             evidence = CompressedImage(header=header, format='jpeg')
-            evidence.data = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
+            evidence.data = jpeg or cv2.imencode(
+                '.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 90]
+            )[1].tobytes()
             self._evidence_pub.publish(evidence)
             self._result_pub.publish(String(data=json.dumps(result)))
 
@@ -453,6 +511,7 @@ class AnomalyDetectorNode(Node):
                 'description': result['description'],
                 'source': source,
                 'at': time.time(),
+                'waited_sec': round(max(time.time() - captured_at, 0.0), 1),
             }
         self.set_state('running')
         self.publish_status()
@@ -491,9 +550,13 @@ class AnomalyDetectorNode(Node):
                 if not self.load_model(self._model) and not self._stop.is_set():
                     self.pause(10.0)  # retry, or load another model as soon as one is chosen
                 continue
-            if self._interval < 0.0:  # stop points only (check_now)
+            if len(self._queue):  # interval mode, or frames left from it: oldest first
+                self.inspect_queued()
+                self.pause(0.05)
+                continue
+            if self._interval != 0.0:  # interval: capture() fills the queue; < 0: stop points
                 self.set_state('running')
-                self.pause(5.0)
+                self.pause(5.0)  # capture() and live parameters wake it
                 continue
             result, message = self.inspect('periodic', wait=0.5)
             if result is None and not self._stop.is_set():
@@ -501,6 +564,31 @@ class AnomalyDetectorNode(Node):
                 self.pause(1.0)
             # small gap so check_now can take the lock between periodic checks
             self.pause(max(self._interval, 0.05))
+
+    def inspect_queued(self):
+        """Inspect the oldest queued frame; it stays queued when the model could not take it."""
+        item = self._queue.peek()
+        if item is None:
+            return
+        name, meta, jpeg = item
+        img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        try:
+            header = Header(frame_id=str(meta.get('frame_id', '')))
+            header.stamp.sec, header.stamp.nanosec = int(meta['sec']), int(meta['nanosec'])
+            captured_at = float(meta['at'])
+        except (KeyError, TypeError, ValueError, AssertionError):
+            img = None
+        if img is None:
+            self.get_logger().warn(f'dropping unreadable queued frame {name}')
+            self._queue.remove(name)
+            return
+        queued = (img, header, captured_at, jpeg)
+        result, message = self.inspect('periodic', wait=0.5, queued=queued)
+        if result is not None:
+            self._queue.remove(name)
+        elif not self._stop.is_set():
+            self.get_logger().warn(f'queued frame waits: {message}', throttle_duration_sec=10.0)
+            self.pause(1.0)
 
     def destroy_node(self):
         """Stop the inspection loop and free the model before tearing the node down."""

@@ -21,3 +21,9 @@ anomaly_detector_node:
     max_image_width: 640              # downscale before inference
     interval_sec: 0.0                 # live: 0 back to back, > 0 every N s, < 0 only at stop points
     cooldown_sec: 60.0                # periodic mode: do not report a category again within this time
+    # interval mode: a frame every interval_sec goes into a queue the model works through, first in
+    # first out, whenever it is free (also while the robot stands at a stop)
+    queue_dir: ~/.pashupati/inspection_queue   # kept across restarts; "": in memory only
+    queue_max: 50                     # full: the oldest frame is dropped for the new one
+    queue_min_change: 12.0            # grey levels part of the picture must change to queue it
+                                      # again (standing still adds nothing); 0: every frame

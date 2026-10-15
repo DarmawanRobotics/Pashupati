@@ -17,6 +17,10 @@ versions follow [SemVer](https://semver.org).
   them as fractions of the image. `rate_hz: 0` (new default) detects 5 times a second on the GPU,
   2 on the CPU.
 
+- Interval inspection queues its frames: every `interval_sec` a frame is taken even while the
+  model is busy and waits in a first-in-first-out queue (kept across restarts, `queue_max` 50)
+  that the model works through when free. Findings keep the time and pose of the frame.
+
 ### Changed
 - REMOTE drives without the protective field (`field_in_remote: false`): the operator watches the
   robot; the software e-stop and the speed envelope still apply. The simulator keeps it on.

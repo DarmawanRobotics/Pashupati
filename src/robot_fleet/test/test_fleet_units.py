@@ -89,3 +89,14 @@ def test_live_switches_from_the_command_center():
     status = {'enabled': True, 'state': 'running', 'models': [], 'count': 3}
     assert status_summary(status) == {'enabled': True, 'state': 'running', 'count': 3}
     assert status_summary('junk') is None
+
+
+def test_queued_finding_takes_the_pose_of_when_it_was_seen():
+    """A frame inspected late is placed where the robot was when the camera took it."""
+    import pytest
+
+    pose_at = pytest.importorskip('robot_fleet.fleet_uplink_node').pose_at
+    history = [(100.0, {'x': 0.0}), (101.0, {'x': 0.5}), (102.0, {'x': 1.0})]
+    assert pose_at(history, 101.3) == {'x': 0.5}
+    assert pose_at(history, 106.5) is None  # nothing recorded that close
+    assert pose_at([], 101.0) is None

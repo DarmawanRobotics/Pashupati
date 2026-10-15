@@ -32,6 +32,16 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 ALERT_STATES = {'BLOCKED', 'OFF_PATH', 'TF_UNAVAILABLE', 'AVOIDANCE_STALE'}
 LAP_RE = re.compile(r'lap (\d+)')
+POSE_HISTORY_SEC = 900.0  # an inspection queued in interval mode can be reported this late
+
+
+LATE_REPORT_SEC = 3.0  # an anomaly reported this long after its frame was taken waited in a queue
+
+
+def pose_at(history, when: float, tolerance: float = 5.0):
+    """Return the recorded pose closest in time to when, or None when none is that close."""
+    best = min(history, key=lambda entry: abs(entry[0] - when), default=None)
+    return best[1] if best is not None and abs(best[0] - when) <= tolerance else None
 
 
 def level_of(status) -> int:
@@ -103,6 +113,7 @@ class FleetUplinkNode(Node):
         self._last_image = (0.0, b'')
         self._evidence: deque = deque(maxlen=10)  # (stamp key, jpeg) from the detector
         self._pending_anomalies: list = []  # (deadline, result, evidence key)
+        self._poses: deque = deque()  # (time, pose) once a second: where a queued frame was taken
 
         self._incoming: queue.Queue = queue.Queue()
         self._outbox: deque = deque(maxlen=500)
@@ -338,10 +349,15 @@ class FleetUplinkNode(Node):
 
     def send_telemetry(self):
         """Send the 1 Hz robot snapshot."""
+        pose, now = self.pose(), time.time()
+        if pose is not None:
+            self._poses.append((now, pose))
+        while self._poses and now - self._poses[0][0] > POSE_HISTORY_SEC:
+            self._poses.popleft()
         self.send(
             {
                 'type': 'telemetry',
-                'pose': self.pose(),
+                'pose': pose,
                 'patrol': self._patrol,
                 **self.patrol_context(),
                 **self._state,
@@ -482,9 +498,11 @@ class FleetUplinkNode(Node):
         if result is None or result['confidence'] < self._min_confidence:
             return
         try:
-            key = json.loads(msg.data).get('evidence_stamp')
-        except (ValueError, AttributeError):
-            key = None
+            raw = json.loads(msg.data)
+            key = raw.get('evidence_stamp')
+            taken = float(raw.get('captured_at') or 0.0)
+        except (ValueError, AttributeError, TypeError):
+            key, taken = None, 0.0
         meta = {
             **result,
             **self.patrol_context(),
@@ -492,6 +510,9 @@ class FleetUplinkNode(Node):
             'stop_index': self._stop_index,
             'detector': 'robot',
         }
+        if math.isfinite(taken) and time.time() - taken > LATE_REPORT_SEC:
+            # a frame from the interval queue: where and when it was taken, not now
+            meta.update(ts=taken, pose=pose_at(self._poses, taken), stop_index=None)
         self._pending_anomalies.append((time.monotonic() + 1.0, meta, key))
         self.flush_anomalies()
 

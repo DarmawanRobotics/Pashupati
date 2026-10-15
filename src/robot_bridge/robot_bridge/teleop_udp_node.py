@@ -123,6 +123,8 @@ def inspection_summary(status: dict, stale: bool, now: float) -> dict:
         'error': str(status.get('error', ''))[:160],
         'count': int(number(status.get('inspections'), 0.0)),
         'reports': int(number(status.get('reports'), 0.0)),
+        'queue': int(number(status.get('queue'), 0.0)),
+        'queue_max': int(number(status.get('queue_max'), 0.0)),
         'last': None,
     }
     if last is not None:
@@ -134,6 +136,7 @@ def inspection_summary(status: dict, stale: bool, now: float) -> dict:
             'age': None if at is None else max(0, round(now - at)),
             'desc': str(last.get('description', ''))[:80],
             'source': str(last.get('source', ''))[:16],
+            'waited': round(number(last.get('waited_sec'), 0.0)),
         }
     return summary
 

@@ -1,10 +1,12 @@
 """In-process tests of anomaly_detector_node against a fake Ollama server."""
 
+import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
 import time
 
+import cv2
 import numpy as np
 import pytest
 
@@ -29,6 +31,8 @@ class FakeOllama:
 
     def __init__(self):
         self.requests = []
+        self.fail_images = False  # True: inspections fail (HTTP 500), as with a busy runner
+        self.answered = []  # mean grey level of every image answered, in order
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -56,7 +60,11 @@ class FakeOllama:
                     self.reply(404, {'error': f"model '{model}' not found"})
                 elif self.path == '/api/show':
                     self.reply(200, {'capabilities': INSTALLED[model]})
+                elif body.get('images') and fake.fail_images:
+                    self.reply(500, {'error': 'runner busy'})
                 elif body.get('images'):
+                    jpeg = np.frombuffer(base64.b64decode(body['images'][0]), np.uint8)
+                    fake.answered.append(float(cv2.imdecode(jpeg, cv2.IMREAD_GRAYSCALE).mean()))
                     self.reply(200, {'response': json.dumps({'type': 'trash'})})
                 else:
                     self.reply(200, {'done': True})
@@ -94,7 +102,7 @@ def state_file(tmp_path):
 
 
 @pytest.fixture
-def detector(ollama, state_file):
+def detector(ollama, state_file, tmp_path):
     """Provide a detector inspecting only at stop points, talking to the fake Ollama."""
     rclpy.init(
         args=[
@@ -103,6 +111,7 @@ def detector(ollama, state_file):
             '-p', 'interval_sec:=-1.0',
             '-p', 'image_topic:=/test/image',
             '-p', f'state_file:={state_file}',
+            '-p', f'queue_dir:={tmp_path / "queue"}',
         ]
     )
     node = AnomalyDetectorNode()
@@ -121,10 +130,10 @@ def wait_for(condition, timeout: float = 5.0) -> bool:
     return condition()
 
 
-def frame() -> Image:
-    """Return a small bgr8 camera frame."""
+def frame(grey: int = 128) -> Image:
+    """Return a small bgr8 camera frame of one grey level."""
     msg = Image(height=48, width=64, encoding='bgr8', step=64 * 3)
-    msg.data = np.full((48, 64, 3), 128, np.uint8).tobytes()
+    msg.data = np.full((48, 64, 3), grey, np.uint8).tobytes()
     return msg
 
 
@@ -239,3 +248,22 @@ def test_a_stopped_node_frees_its_model(detector, ollama):
     assert wait_for(lambda: other.status()['state'] == 'running')
     other.destroy_node()
     assert ('qwen3-vl:2b-instruct', 0) in ollama.loads()
+
+
+def test_interval_frames_wait_in_a_queue_first_in_first_out(detector, ollama):
+    """Frames due while the model cannot answer wait, then go in the order they were taken."""
+    assert wait_for(lambda: detector.status()['state'] == 'running')
+    ollama.fail_images = True
+    assert detector.set_parameters([Parameter('interval_sec', value=1.0)])[0].successful
+    for grey in (40, 120, 200, 200):  # the last is the same picture again: not queued
+        detector.on_image(frame(grey))
+        detector._next_capture = 0.0  # due now (no executor spins the 0.2 s timer here)
+        detector.capture()
+    assert detector.status()['queue'] == 3
+
+    ollama.fail_images = False
+    assert wait_for(lambda: detector.status()['queue'] == 0, timeout=15.0)
+    assert ollama.answered == pytest.approx([40, 120, 200], abs=3)
+    status = detector.status()
+    assert status['inspections'] == 3 and status['reports'] == 1  # trash once: cooldown
+    assert status['last']['waited_sec'] >= 0.0 and status['queue_max'] == 50

@@ -26,6 +26,14 @@ turning it on again takes a few seconds of loading. The live choice is kept in `
 (`~/.pashupati/inspection.json`) and wins over the parameter files at the next start; delete that
 file to go back to them.
 
+**Interval queue.** With `interval_sec` above 0 a camera frame is taken every `interval_sec`
+seconds, also while the model is still busy, and waits in a queue the model works through first
+in first out whenever it is free (between frames, while the robot stands at a stop). Frames are
+kept in `queue_dir` across restarts; at `queue_max` the oldest one makes room. A frame that looks
+the same as the last queued one (`queue_min_change`, robot standing still) is not queued again.
+Findings from the queue go to NETRA with the time and the robot pose of when the frame was taken.
+The handheld shows the queue (`queue` in the status).
+
 **Memory.** Ollama's runner (llama-server) keeps earlier prompts in RAM, up to 8 GiB per loaded
 model, which an inspection never reuses: every prompt has a new image. `script/setup.sh install
 ollama` turns that cache off for the Ollama service (`/etc/systemd/system/ollama.service.d/

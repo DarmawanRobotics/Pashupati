@@ -343,9 +343,17 @@ def test_inspection_is_set_on_the_detector_and_shown(rig):
         'state': 'off',
         'interval_sec': 0.0,
         'models': [{'name': 'moondream', 'installed': True, 'active': True}],
-        'last': {'category': 'trash', 'reported': True, 'latency_ms': 900, 'at': time.time()},
+        'last': {
+            'category': 'trash',
+            'reported': True,
+            'latency_ms': 900,
+            'at': time.time(),
+            'waited_sec': 12.4,
+        },
         'inspections': 7,
         'reports': 1,
+        'queue': 4,
+        'queue_max': 50,
     }
     status_pub.publish(String(data=json.dumps(status)))
     states = []
@@ -359,6 +367,9 @@ def test_inspection_is_set_on_the_detector_and_shown(rig):
         False, 'off', 'moondream',
     )
     assert inspection['last']['cat'] == 'trash' and inspection['reports'] == 1
+    assert (inspection['queue'], inspection['queue_max'], inspection['last']['waited']) == (
+        4, 50, 12,
+    )
     rig.send(a, {'t': 'cmd', 'id': 4, 'name': 'inspection_models'})
     assert acks_of(rig, a)[4]['data'] == status['models']
     rig.executor.remove_node(detector)

@@ -5,7 +5,7 @@ SWITCHES = {
     'set_inspection': '/anomaly_detector_node',
     'set_people': '/person_detector_node',
 }
-STATUS_KEYS = ('enabled', 'state', 'error', 'model', 'interval_sec', 'count', 'backend')
+STATUS_KEYS = ('enabled', 'state', 'error', 'model', 'interval_sec', 'queue', 'count', 'backend')
 
 
 def live_parameters(command: str, args: dict) -> list:
