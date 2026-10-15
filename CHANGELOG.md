@@ -6,6 +6,11 @@ versions follow [SemVer](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- Lighter on the robot: the AprilTag detector gets the camera at 5 Hz (`apriltag_throttle`)
+  instead of every frame; `lidar_sector_node` stops listening to TF once it knows the LiDAR
+  mount, `route_recorder_node` only listens while recording, and `fleet_uplink_node` only runs
+  when `CC_URL` is set. The health monitor watches the camera on `camera_info`: its subscription
+  to the JPEG topic made the camera driver encode every frame all the time.
 - `lidar_sector_node` with `input_type: livox` ran at ~6 Hz on a full Jetson core, because rclpy
   built a Python object for each of the ~20k points of a scan. It now reads the serialized
   CustomMsg straight into numpy (~1 ms per scan) and drops points with no return.
@@ -92,7 +97,9 @@ versions follow [SemVer](https://semver.org).
 
 ### Changed
 - Person detection and VLM inspection are off in the env example (`PEOPLE=false`,
-  `INSPECTION=false`), which also sets `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`.
+  `INSPECTION=false`), which also sets `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` and
+  `ROS_LOCALHOST_ONLY=1` (nothing on the robot's Wi-Fi can publish to the driver; 0 for RViz on
+  a laptop or a driver on another computer).
 - The RealSense driver comes from apt (`ros-humble-realsense2-camera`) instead of the
   `realsense-ros` submodule, which is removed. `script/setup.sh install realsense` installs it and
   the udev rules (from the package when it ships them, so it also works offline); the component
