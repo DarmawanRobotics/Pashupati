@@ -1,12 +1,11 @@
 # FAST-LIO2 (hku-mars ROS2 branch) tuned for a Livox Mid-360 on a quadruped, indoor mall.
-# Changes from the upstream mid360.yaml are marked with "was".
-fastlio_mapping_node:   # must match the node name in odometry.launch.py
+fastlio_mapping_node:  
     ros__parameters:
         feature_extract_enable: false
-        point_filter_num: 2          # was 3: keep every 2nd point (~10k/frame); 1 if the CPU allows
-        max_iteration: 4             # was 3: one more iEKF iteration, cheap at 10 Hz
-        filter_size_surf: 0.3        # was 0.5: 0.5 m voxels wash out shop fronts and pillars
-        filter_size_map: 0.3         # was 0.5
+        point_filter_num: 3     
+        max_iteration: 3         
+        filter_size_surf: 0.5       
+        filter_size_map: 0.5       
         cube_side_length: 1000.0
         runtime_pos_log_enable: false
         map_file_path: "./test.pcd"
@@ -30,8 +29,8 @@ fastlio_mapping_node:   # must match the node name in odometry.launch.py
             b_acc_cov: 0.0001
             b_gyr_cov: 0.0001
             fov_degree:    360.0
-            det_range:     50.0      # was 100: Mid-360 is rated ~40 m at 10 % reflectivity
-            extrinsic_est_en:  false # Mid-360 IMU-LiDAR extrinsic is factory-known; estimating it drifts
+            det_range:     100.0      # was 100: Mid-360 is rated ~40 m at 10 % reflectivity
+            extrinsic_est_en:   true      # true: enable the online estimation of IMU-LiDAR extrinsic
             extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
             extrinsic_R: [ 1., 0., 0.,
                            0., 1., 0.,
