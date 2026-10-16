@@ -16,9 +16,10 @@ on-robot AI inspection, crowd sensing, a handheld controller and the NETRA comma
 ![Ollama](https://img.shields.io/badge/AI-Ollama%20VLM-000000?logo=ollama&logoColor=white)
 ![Video](https://img.shields.io/badge/video-WebRTC-333333?logo=webrtc&logoColor=white)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-manual%20%26%20tuning%20guide-1F9E93)](docs/README.md)
 
 [Features](#features) · [System](#system) · [Install](#install) · [Workflow](#workflow) ·
-[Operations](#operations) · [Develop](#develop)
+[Operations](#operations) · [Develop](#develop) · [Docs](docs/README.md)
 
 </div>
 
@@ -29,6 +30,10 @@ repeat** instead of a global planner: drive a route once, and the robot repeats 
 inspecting the floor and counting people along the way. Everything runs on the robot as one
 supervised service. The [Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController)
 handheld and NETRA connect to it over the network.
+
+**Guides:** the [User Manual](docs/Pashupati-User-Manual.pdf) for operators and the
+[Tuning Guide](docs/Pashupati-Tuning-Guide.pdf) for technicians, as PDFs that read well on a
+phone. More in [docs](docs/README.md).
 
 ## Features
 
@@ -177,7 +182,8 @@ new in the example, and `install service` rewrites an outdated unit.
   (`ROBOT_PRESTART="robot-launch stop x"`), and never put a comment after a value.
 - **`/etc/pashupati/site.yaml`** sets the parameters of this robot and site, on top of every
   package default ([example](src/pashupati/config/site.example.yaml)). It only needs a restart,
-  not a rebuild. Set the same teleop `token` in the handheld.
+  not a rebuild. Set the same teleop `token` in the handheld. The
+  [Tuning Guide](docs/Pashupati-Tuning-Guide.pdf) explains every parameter.
 - **Vendor stacks.** Pashupati runs on `rmw_fastrtps_cpp`, domain 0. A vendor autostart that also
   drives the robot or its LiDAR is stopped by `ROBOT_PRESTART` before every start.
 - **ROS stays on the robot** (`ROS_LOCALHOST_ONLY=1`), so nothing on the Wi-Fi can bypass the
@@ -418,14 +424,15 @@ Every package runs flake8 and pep257 plus its own tests:
 CI runs all of it on every push and pull request
 ([ci.yml](.github/workflows/ci.yml)), and failing tests show up as annotations. The people model
 is exported and checked by its own workflow
-([people-model.yml](.github/workflows/people-model.yml)). Branch and commit rules are in
+([people-model.yml](.github/workflows/people-model.yml)). CI also builds the PDF guides
+([docs](docs/README.md)). Branch and commit rules are in
 [CONTRIBUTING.md](CONTRIBUTING.md), and changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ```
 Pashupati/
 ├── .github/workflows/            # ci.yml (build, tests, lint), people-model.yml
 ├── docker/ docker-compose.yaml   # dev container (VNC desktop, shared workspace)
-├── docs/                         # logo
+├── docs/                         # User Manual and Tuning Guide (PDF + sources), logo
 ├── map/                          # recorded routes + example/
 ├── script/                       # setup.sh, run_robot.sh (service), env.sh (shell), start_tmux.sh, dev.sh
 └── src/

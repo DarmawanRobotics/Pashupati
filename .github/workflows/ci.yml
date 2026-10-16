@@ -42,6 +42,40 @@ jobs:
           sys.exit(1 if bad else 0)
           PY
 
+  docs:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the age check compares the commits of the PDFs and their sources
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build the PDF guides
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 \
+            fonts-dejavu-core
+          pip install weasyprint==70.0 markdown==3.11.1 pyyaml pillow
+          python docs/pdf/build.py
+      - name: Committed PDFs are up to date
+        run: |
+          stale() {
+            local pdf=$1 built changed
+            shift
+            built=$(git log -1 --format=%ct -- "$pdf")
+            changed=$(git log -1 --format=%ct -- "$@")
+            if [[ -z "$built" || "$changed" -gt "$built" ]]; then
+              echo "::warning file=$pdf::older than its sources: python3 docs/pdf/build.py, commit it"
+            fi
+          }
+          stale docs/Pashupati-User-Manual.pdf docs/manual docs/pdf
+          stale docs/Pashupati-Tuning-Guide.pdf docs/tuning docs/pdf 'src/*/config/*.yaml'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guides
+          path: docs/*.pdf
+
   build-test:
     runs-on: ubuntu-22.04
     container: ros:humble-ros-base-jammy

@@ -1,0 +1,165 @@
+/* Pashupati guides: A5 pages, readable on a phone. Colours follow the handheld app. */
+
+@font-face { font-family: "Barlow SC"; font-weight: 400; font-style: normal;
+             src: url("fonts/BarlowSemiCondensed-Regular.ttf"); }
+@font-face { font-family: "Barlow SC"; font-weight: 400; font-style: italic;
+             src: url("fonts/BarlowSemiCondensed-Italic.ttf"); }
+@font-face { font-family: "Barlow SC"; font-weight: 500; src: url("fonts/BarlowSemiCondensed-Medium.ttf"); }
+@font-face { font-family: "Barlow SC"; font-weight: 600; src: url("fonts/BarlowSemiCondensed-SemiBold.ttf"); }
+@font-face { font-family: "Barlow SC"; font-weight: 700; src: url("fonts/BarlowSemiCondensed-Bold.ttf"); }
+
+:root {
+  --ink: #16212a;
+  --muted: #5b6b75;
+  --teal: #1f9e93;
+  --teal-soft: #e3f4f2;
+  --orange: #e8892c;
+  --orange-soft: #fdf0e2;
+  --red: #d64545;
+  --red-soft: #fbe9e9;
+  --line: #d5dde2;
+  --night: #080d10;
+}
+
+@page {
+  size: A5;
+  margin: 17mm 13mm 15mm 13mm;
+  @top-center {
+    content: "%HEADER%";
+    font-family: "Barlow SC";
+    font-size: 7.5pt;
+    color: #7d8b93;
+    border-bottom: 0.5pt solid #d5dde2;
+    width: 100%;
+    vertical-align: bottom;
+    padding-bottom: 1.5mm;
+  }
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font-family: "Barlow SC";
+    font-weight: 600;
+    font-size: 7.5pt;
+    color: #5b6b75;
+  }
+}
+@page :first {
+  margin: 0;
+  @top-center { content: none; border: none; }
+  @bottom-center { content: none; }
+}
+
+html { font-family: "Barlow SC", "DejaVu Sans", sans-serif; font-size: 9.6pt; color: var(--ink); }
+body { margin: 0; line-height: 1.42; }
+p { margin: 0 0 2.2mm; }
+strong { font-weight: 600; }
+a { color: var(--teal); text-decoration: none; }
+
+/* ------------------------------------------------------------------ cover */
+.cover {
+  height: 210mm;
+  background: var(--night);
+  color: #eef3f5;
+  padding: 34mm 14mm 0 14mm;
+  box-sizing: border-box;
+  page-break-after: always;
+  position: relative;
+}
+.cover .logo { width: 30mm; display: block; margin-bottom: 7mm; }
+.cover .brand { font-weight: 700; letter-spacing: 0.32em; font-size: 11pt; color: #4fd1c5; }
+.cover .cover-title {
+  font-size: 25pt; line-height: 1.08; font-weight: 700; margin: 3mm 0 4mm; color: #ffffff;
+  page-break-before: avoid;
+}
+.cover .cover-subtitle { font-size: 11.5pt; color: #b9c7cd; margin-bottom: 14mm; }
+.cover .cover-version { font-size: 9.5pt; color: #ff9f43; font-weight: 600; }
+.cover .cover-for {
+  position: absolute; bottom: 14mm; left: 14mm; right: 14mm;
+  font-size: 8.5pt; color: #8fa1a8; border-top: 0.6pt solid #2a3a42; padding-top: 3mm;
+}
+
+/* ------------------------------------------------------------------ front matter */
+.front { page-break-after: always; }
+.front-title { font-size: 17pt; font-weight: 700; margin: 0 0 5mm; color: var(--ink); }
+.front-note { margin-top: 5mm; font-size: 8.5pt; color: var(--muted); }
+.revisions { width: 100%; }
+ul.toc { list-style: none; padding: 0; margin: 0; }
+ul.toc li { margin: 0; }
+ul.toc li a { color: var(--ink); display: block; }
+ul.toc li a::after { content: leader(".") target-counter(attr(href), page); color: var(--muted); }
+ul.toc li.toc1 { font-weight: 600; margin-top: 1.8mm; font-size: 10pt; }
+ul.toc li.toc2 { padding-left: 6mm; font-size: 9pt; margin-top: 0.2mm; line-height: 1.32; }
+ul.toc .num { display: inline-block; min-width: 7mm; color: var(--teal); }
+
+/* ------------------------------------------------------------------ headings */
+main h1 {
+  page-break-before: always;
+  font-size: 18pt; font-weight: 700; line-height: 1.15;
+  margin: 0 0 5mm; padding-bottom: 2mm; border-bottom: 1.2pt solid var(--teal);
+}
+main h2 { font-size: 12.5pt; font-weight: 700; margin: 6mm 0 2.4mm; page-break-after: avoid; }
+main h3 { font-size: 10.5pt; font-weight: 600; margin: 4.5mm 0 1.8mm; page-break-after: avoid; }
+main h1 .num, main h2 .num { color: var(--teal); margin-right: 1.5mm; }
+h3.node { font-family: "DejaVu Sans Mono", Menlo, monospace; font-size: 8.6pt; color: var(--teal); }
+p.source { font-size: 8pt; color: var(--muted); margin-top: -1mm; page-break-after: avoid; }
+
+/* ------------------------------------------------------------------ lists, steps */
+ul, ol { margin: 0 0 2.4mm; padding-left: 5.5mm; }
+li { margin: 0.8mm 0; }
+ol > li::marker { font-weight: 700; color: var(--teal); }
+
+/* ------------------------------------------------------------------ tables */
+table { border-collapse: collapse; width: 100%; margin: 1.5mm 0 3.5mm; font-size: 8.6pt;
+        page-break-inside: auto; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+th { background: var(--teal-soft); color: #0f5f58; font-weight: 600; text-align: left; }
+th, td { border: 0.5pt solid var(--line); padding: 1.3mm 1.8mm; vertical-align: top; }
+tbody tr:nth-child(even) td { background: #f6f9fa; }
+table.params { font-size: 7.6pt; }
+table.params td:first-child { width: 37%; }
+table.params td:nth-child(2) { width: 19%; }
+table.params code { font-size: 7pt; }   /* breaks only at the <wbr> of build.py */
+
+/* ------------------------------------------------------------------ code */
+code { font-family: "DejaVu Sans Mono", Menlo, monospace; font-size: 7.8pt;
+       background: #eef3f5; padding: 0.2mm 0.8mm; border-radius: 1mm; }
+pre { background: #0f171c; color: #e3ecef; padding: 2.5mm 3mm; border-radius: 1.6mm;
+      font-size: 7.4pt; line-height: 1.38; white-space: pre-wrap; word-break: break-all;
+      page-break-inside: avoid; margin: 1.5mm 0 3mm; }
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+kbd { font-family: "Barlow SC"; font-weight: 700; font-size: 8pt; border: 0.7pt solid #9aa9b0;
+      border-bottom-width: 1.4pt; border-radius: 1.2mm; padding: 0 1.2mm; background: #fbfcfc; }
+
+/* ------------------------------------------------------------------ figures */
+figure { margin: 2mm 0 4mm; page-break-inside: avoid; }
+figure img { width: 100%; border-radius: 1.8mm; border: 0.5pt solid #c8d2d7; }
+figure.diagram img { border: none; border-radius: 0; }
+figcaption { font-size: 8pt; color: var(--muted); margin-top: 1.2mm; text-align: center; }
+img { max-width: 100%; }
+
+/* ------------------------------------------------------------------ callouts (admonitions) */
+.admonition { border-left: 2.2mm solid var(--teal); background: var(--teal-soft);
+              padding: 2mm 3mm 0.6mm; margin: 2.5mm 0 3.5mm; border-radius: 0 1.6mm 1.6mm 0;
+              page-break-inside: avoid; }
+.admonition-title { font-weight: 700; margin-bottom: 1mm; text-transform: uppercase;
+                    letter-spacing: 0.06em; font-size: 8pt; color: #0f5f58; }
+.admonition.warning { border-color: var(--orange); background: var(--orange-soft); }
+.admonition.warning .admonition-title { color: #9a5310; }
+.admonition.danger { border-color: var(--red); background: var(--red-soft); }
+.admonition.danger .admonition-title { color: #9b2626; }
+.admonition p:last-child { margin-bottom: 1.4mm; }
+
+/* a formula, e.g. the protective field's stopping rule */
+blockquote { margin: 2.5mm 0 3.5mm; padding: 2.4mm 3mm; background: #f2f6f7; border-radius: 1.6mm;
+             text-align: center; font-size: 10.5pt; page-break-inside: avoid; }
+blockquote p { margin: 0; }
+blockquote p + p { margin-top: 1.2mm; font-size: 8.2pt; color: var(--muted); }
+
+/* numbered callouts on screenshots, e.g. <span class="call">3</span> */
+.call { display: inline-block; width: 4.4mm; height: 4.4mm; line-height: 4.4mm; border-radius: 50%;
+        background: var(--orange); color: #fff; font-weight: 700; font-size: 7.4pt;
+        text-align: center; margin-right: 0.8mm; }
+
+/* a whole page that should stay together, e.g. the quick card */
+.keep { page-break-inside: avoid; }
+.small { font-size: 8.2pt; color: var(--muted); }

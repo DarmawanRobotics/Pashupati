@@ -12,6 +12,7 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1024]
+        exclude: ^docs/.*\.pdf$          # the guides, screenshots included
   - repo: https://github.com/PyCQA/flake8
     rev: 7.1.1
     hooks:

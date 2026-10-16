@@ -23,6 +23,10 @@ versions follow [SemVer](https://semver.org).
 - Interval inspection queues its frames: every `interval_sec` a frame is taken even while the
   model is busy and waits in a first-in-first-out queue (kept across restarts, `queue_max` 50)
   that the model works through when free. Findings keep the time and pose of the frame.
+- Guides in `docs/`, as A5 PDFs for reading on a phone: a User Manual for operators (Genisom L1W
+  with the Pashupati Controller, real app screenshots) and a Tuning Guide for technicians (every
+  parameter, the site file, measuring the braking, symptoms and fixes, and a parameter reference
+  generated from the config files). `docs/pdf/build.py` rebuilds them; CI builds them too.
 
 ### Changed
 - REMOTE drives without the protective field (`field_in_remote: false`): the operator watches the
