@@ -18,7 +18,8 @@ parameter reference holds for every robot.
 | [Robot packages](../src/xtras/README.md) | what a robot package must provide, checklist for a new robot |
 | [Handheld protocol](../src/pashupati_bridge/PROTOCOL.md) | the UDP protocol between the robot and the Pashupati Controller |
 | [NETRA API](../src/pashupati_fleet/API.md) | what the robot sends to and takes from NETRA |
-| Package READMEs (`src/robot_*/README.md`) | nodes, topics, services and parameters of each package |
+| Package READMEs (`src/pashupati*/README.md`, and each `dharma_*` repository) | nodes, topics, services and parameters of each package |
+| [System diagram](diagrams/system.drawio.svg) | the packages and how they connect; edit it in draw.io |
 | [CONTRIBUTING](../CONTRIBUTING.md) | branches, commits, rules that come from real crashes |
 | [CHANGELOG](../CHANGELOG.md) | changes per version |
 

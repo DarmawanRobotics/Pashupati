@@ -8,7 +8,7 @@ launch. Nothing else in the repository depends on a robot brand.
 |---|---|
 | `drivers/livox_ros_driver2` | Livox Mid-360 driver (submodule) |
 | `slam/fast_lio2` | FAST-LIO2, `odometry:=fast_lio` (submodule) |
-| `slam/leg_kilo` | Leg-KILO fork, `odometry:=leg_kilo` (optional submodule, see [robot_odometry](../robot_odometry)) |
+| `slam/leg_kilo` | Leg-KILO, `odometry:=leg_kilo` (optional: clone the `pashupati` branch of the DarmawanRobotics fork here, see [dharma_odometry](https://github.com/DarmawanRobotics/dharma_odometry#leg-kilo)) |
 | `robots/<name>` | your robot package, added per deployment |
 
 ## Adding a robot
@@ -32,8 +32,8 @@ Robot-specific tuning goes in `/etc/pashupati/site.yaml` (see [below](#per-robot
 
 ## What the robot package must provide
 
-[`robot_sim`](../robot_sim) implements exactly this interface for the simulator. Use it as the
-reference.
+[`dharma_sim`](https://github.com/DarmawanRobotics/dharma_sim) implements exactly this interface
+for the simulator. Use it as the reference.
 
 ### Launch
 
@@ -72,7 +72,7 @@ base_link ─┬─ livox_frame ── livox_imu_frame     (LiDAR and its IMU)
 ### Sensors
 
 - **LiDAR: Livox Mid-360** through `livox_ros_driver2`, with `xfer_format: 1`. The cloud goes to `/livox/lidar`, the IMU to `/livox/imu`. FAST-LIO and the odometry start gate use both.
-  - Another LiDAR needs its own FAST-LIO preprocess settings (`robot_odometry/config/fast_lio.yaml`).
+  - Another LiDAR needs its own FAST-LIO preprocess settings (`src/pashupati/config/fast_lio.yaml`).
   - It also needs `lidar_sector_node` `input_type: pointcloud2`.
 - **Camera** (AprilTag localization, VLM inspection, people, handheld video). For the RealSense the
   driver comes from apt (`script/setup.sh install realsense`: `ros-humble-realsense2-camera` and

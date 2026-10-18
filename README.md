@@ -8,8 +8,9 @@
 brand with a ROS 2 driver: LiDAR-inertial teach and repeat, obstacle avoidance by path shift,
 on-robot AI inspection, crowd sensing, a handheld controller and the NETRA command center.**
 
-[![CI](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml)
+[![CI](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
+[![Dharma](https://img.shields.io/badge/stack-Dharma-4A78C2)](pashupati.repos)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
 ![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)
 ![Jetson](https://img.shields.io/badge/Jetson-Orin%20NX-76B900?logo=nvidia&logoColor=white)
@@ -30,6 +31,12 @@ repeat** instead of a global planner: drive a route once, and the robot repeats 
 inspecting the floor and counting people along the way. Everything runs on the robot as one
 supervised service. The [Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController)
 handheld and NETRA connect to it over the network.
+
+Pashupati runs on **Dharma**, the shared autonomy stack: odometry, localization, perception,
+navigation and the control mux come from the `dharma_*` repositories, at the versions pinned in
+[pashupati.repos](pashupati.repos). This repository adds what makes it a patrol robot: the AI
+inspection, the NETRA uplink, the handheld gateway, and the bringup with the configs tuned on the
+robot.
 
 **Guides:** the [User Manual](docs/Pashupati-User-Manual.pdf) for operators and the
 [Tuning Guide](docs/Pashupati-Tuning-Guide.pdf) for technicians, as PDFs that read well on a
@@ -87,32 +94,19 @@ phone. More in [docs](docs/README.md).
 
 ## System
 
-```mermaid
-flowchart LR
-    subgraph Robot[Robot — Jetson, ROS 2 Humble]
-        DRV[robot package<br/>driver · URDF] --- SENS[Livox MID-360 + RealSense]
-        SENS --> FL[FAST-LIO2 / Leg-KILO] --> LOC[localization]
-        SENS --> PER[lidar sectors · AprilTag · people]
-        LOC --> NAV[path follower + avoidance]
-        PER --> NAV
-        NAV --> MUX[control mux] --> DRV
-        INS[VLM inspection<br/>Ollama] --> UP[fleet uplink]
-        NAV --> UP
-        PER --> UP
-        HL[health] --> UP
-        TEL[teleop UDP gateway<br/>+ WebRTC video] --> MUX
-    end
-    PAD[Pashupati Controller<br/>Retroid Pocket] <-- UDP · WebRTC --> TEL
-    UP <-- WebSocket + HTTPS --> NETRA[NETRA command center<br/>Go · PostgreSQL · Next.js]
-    NETRA --> TG[Telegram groups]
-```
+![Pashupati system: Dharma and Pashupati packages on the Jetson, the robot package and hardware below, the handheld and NETRA off the robot](docs/diagrams/system.drawio.svg)
+
+<sub>The diagram is [docs/diagrams/system.drawio.svg](docs/diagrams/system.drawio.svg): open it in
+draw.io (desktop app, [app.diagrams.net](https://app.diagrams.net) or the VS Code Draw.io
+extension), edit and save, and this picture changes with it.</sub>
 
 | Repository | |
 |---|---|
-| **Pashupati** (this) | the robot workspace |
+| **Pashupati** (this) | the robot workspace: bringup, inspection, NETRA uplink, handheld gateway |
+| Dharma | the shared autonomy stack, one repository per part (`dharma_odometry`, `dharma_navigation`, ...), pinned in [pashupati.repos](pashupati.repos) and checked out into `src/dharma/` |
 | [PashupatiController](https://github.com/DarmawanRobotics/PashupatiController) | handheld app (Retroid Pocket / Android) |
 | robot package | the robot's driver, URDF and sensor launch, under `src/xtras/robots/` ([contract](src/xtras/README.md)) |
-| [`leg_kilo`](src/xtras/slam/leg_kilo) | Leg-KILO odometry, `pashupati` branch of the fork (submodule, optional) |
+| Leg-KILO | optional odometry (`odometry:=leg_kilo`): the `pashupati` branch of the DarmawanRobotics fork, cloned into `src/xtras/slam/leg_kilo` |
 | NETRA | command center: backend, dashboard, deployment |
 
 <details>
@@ -146,14 +140,15 @@ flowchart LR
 | [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, the configs tuned on the robot, the simulation and its end-to-end test |
 
 The `dharma_*` packages come from their own repositories: `script/setup.sh install dharma` (or
-`vcs import src < pashupati.repos`) checks out the versions in [pashupati.repos](pashupati.repos).
+`vcs import src < pashupati.repos`) checks them out into `src/dharma/` at the versions in
+[pashupati.repos](pashupati.repos).
 
 </details>
 
 ## Install
 
 You need Ubuntu 22.04 with ROS 2 Humble (JetPack 6 on a Jetson), internet access, and the robot's
-SSH key added to GitHub.
+SSH key added to GitHub with read access to the `dharma_*` repositories.
 
 ```bash
 git clone --recursive git@github.com:DarmawanRobotics/Pashupati.git ~/dev/Pashupati
@@ -162,21 +157,26 @@ git clone <robot package repo> src/xtras/robots/<name>   # driver + URDF + senso
 script/setup.sh install config          # creates /etc/pashupati/pashupati.env and site.yaml
 sudoedit /etc/pashupati/pashupati.env   # ROBOT_BRINGUP, ROBOT_NS, ROBOT_SETUP, ROBOT_PRESTART, ROUTE, TAGS
 sudoedit /etc/pashupati/site.yaml       # this robot: footprint, speeds, teleop token, robot_commands
-script/setup.sh install                 # everything missing, then the build
+script/setup.sh install                 # everything missing: Dharma, SDKs, apt, then the build
 script/setup.sh install service         # systemd unit, enabled at boot
 sudo systemctl start pashupati && journalctl -fu pashupati
 script/setup.sh                         # every line ok?
 ```
 
+**Dharma** is checked out with vcstool into `src/dharma/` (git-ignored), at the commits pinned in
+[pashupati.repos](pashupati.repos). `script/setup.sh` reports a checkout that is missing or not at
+its pin, and `script/setup.sh install dharma` moves it back.
+
 **Update.** Pull, rebuild and restart:
 
 ```bash
 git pull && git submodule update --init --recursive \
-  && script/setup.sh install build config service && sudo systemctl restart pashupati
+  && script/setup.sh install dharma build config service && sudo systemctl restart pashupati
 ```
 
-`install build` rebuilds whenever the checkout has moved, `install config` adds env keys that are
-new in the example, and `install service` rewrites an outdated unit.
+`install dharma` follows the pins when a new Dharma release is pinned, `install build` rebuilds
+whenever the checkout has moved, `install config` adds env keys that are new in the example, and
+`install service` rewrites an outdated unit.
 
 ### Configuration
 
@@ -385,7 +385,8 @@ map → odom → camera_init → body → base_link ─┬─ livox_frame → li
 
 ## Develop
 
-**Dev container** (macOS / Linux):
+**Dev container** (macOS / Linux). Check out Dharma first: `vcs import src < pashupati.repos`
+(vcstool: `pip install vcstool`).
 
 ```bash
 script/dev.sh up      # Docker: ROS 2 Humble + all deps + XFCE desktop over VNC
@@ -435,12 +436,14 @@ is exported and checked by its own workflow
 Pashupati/
 ├── .github/workflows/            # ci.yml (build, tests, lint), people-model.yml
 ├── docker/ docker-compose.yaml   # dev container (VNC desktop, shared workspace)
-├── docs/                         # User Manual and Tuning Guide (PDF + sources), logo
+├── docs/                         # User Manual and Tuning Guide (PDF + sources), diagrams, logo
 ├── map/                          # recorded routes + example/
+├── pashupati.repos               # the Dharma versions (vcstool)
 ├── script/                       # setup.sh, run_robot.sh (service), env.sh (shell), start_tmux.sh, dev.sh
 └── src/
-    ├── robot_* pashupati         # first-party packages
-    └── xtras/                    # submodules: livox_ros_driver2, FAST_LIO, Leg-KILO; robots/<your robot>
+    ├── pashupati pashupati_*     # first-party packages
+    ├── dharma/                   # Dharma repositories, checked out from pashupati.repos (git-ignored)
+    └── xtras/                    # submodules: livox_ros_driver2, FAST_LIO; robots/<your robot>, slam/leg_kilo
 ```
 
 Pashupati is released under the [Apache License 2.0](LICENSE).
