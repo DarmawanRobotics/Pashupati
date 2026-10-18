@@ -68,7 +68,7 @@ run robot.1 "ros2 launch dharma_odometry odometry.launch.py method:=$ODOMETRY sa
 localization:=true tags_config_file:=$TAGS leg_odom_topic:=/$ROBOT_NS/odom \
 params_file:=$CONFIG/odometry_params.yaml fast_lio_params_file:=$CONFIG/fast_lio.yaml"
 PERCEPTION="ros2 launch dharma_perception perception.launch.py visitors:=false params_file:=$CONFIG/perception_params.yaml"
-[[ "$PEOPLE" == "true" ]] && PERCEPTION+=" & ros2 launch pashupati_perception people.launch.py"
+[[ "$PEOPLE" == "true" ]] && PERCEPTION+=" & ros2 launch pashupati_inspection people.launch.py"
 run robot.2 "$PERCEPTION"
 if [[ "$RVIZ" == "1" ]]; then
     run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix pashupati_rviz)/share/pashupati_rviz/rviz/robot.rviz \

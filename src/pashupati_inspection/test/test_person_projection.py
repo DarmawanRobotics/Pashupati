@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from pashupati_perception.person_projection import ground_point, pixel_ray
+from pashupati_inspection.person_projection import ground_point, pixel_ray
 
 K = np.array([[600.0, 0.0, 320.0], [0.0, 600.0, 240.0], [0.0, 0.0, 1.0]])
 OPTICAL_TO_BODY = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])

@@ -9,7 +9,7 @@ on:
   push:
     branches: [dev]
     paths:
-      - src/pashupati_perception/pashupati_perception/detector.py
+      - src/pashupati_inspection/pashupati_inspection/person_detector.py
       - .github/scripts/check_people_model.py
       - .github/workflows/people-model.yml
   workflow_dispatch:

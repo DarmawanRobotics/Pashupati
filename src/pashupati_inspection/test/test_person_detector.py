@@ -1,7 +1,7 @@
 """Person detector pre- and post-processing for Ultralytics YOLO ONNX exports (no model needed)."""
 
 import numpy as np
-from pashupati_perception.detector import letterbox, nms, OnnxPersonDetector, person_boxes
+from pashupati_inspection.person_detector import letterbox, nms, OnnxPersonDetector, person_boxes
 import pytest
 
 

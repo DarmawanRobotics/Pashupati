@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'anomaly_detector_node = pashupati_inspection.anomaly_detector_node:main',
+            'person_detector_node = pashupati_inspection.person_detector_node:main',
         ],
     },
 )

@@ -6,7 +6,7 @@ import time
 
 from geometry_msgs.msg import Pose, PoseArray
 import numpy as np
-from pashupati_perception.person_projection import feet_pixel, ground_point, pixel_ray
+from pashupati_inspection.person_projection import feet_pixel, ground_point, pixel_ray
 from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -216,7 +216,7 @@ class PersonDetectorNode(Node):
             return False
         self._load_tried = now
         try:
-            from pashupati_perception.detector import create_detector
+            from pashupati_inspection.person_detector import create_detector
 
             self._detector = create_detector(
                 self._model_path, self._confidence, self._image_size, self._threads, self._backend

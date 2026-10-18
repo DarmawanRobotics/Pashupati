@@ -135,7 +135,7 @@ flowchart LR
 | [`dharma_interfaces`](src/dharma_interfaces) | messages and services |
 | [`dharma_odometry`](src/dharma_odometry) | LiDAR-inertial odometry (FAST-LIO2 or Leg-KILO), stillness gate, odometry monitor, route recording |
 | [`dharma_localization`](src/dharma_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
-| [`pashupati_perception`](src/pashupati_perception) | LiDAR sectors, AprilTag, person detection (YOLO11n ONNX) |
+| [`pashupati_inspection`](src/pashupati_inspection) | LiDAR sectors, AprilTag, person detection (YOLO11n ONNX) |
 | [`dharma_navigation`](src/dharma_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
 | [`pashupati_bridge`](src/pashupati_bridge) | AUTO / REMOTE control mux, UDP teleop gateway ([protocol](src/pashupati_bridge/PROTOCOL.md)), WebRTC video |
 | [`pashupati_fleet`](src/pashupati_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/pashupati_fleet/API.md)) |

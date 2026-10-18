@@ -282,7 +282,7 @@ def launch_setup(context):
     else:
         actions.append(LogInfo(msg='NETRA uplink off: no cc_url (CC_URL)'))
     if truthy(arg('people')):
-        actions.append(node('pashupati_perception', 'person_detector_node', [perception]))
+        actions.append(node('pashupati_inspection', 'person_detector_node', [perception]))
     if truthy(arg('inspection')):
         actions.append(
             node(

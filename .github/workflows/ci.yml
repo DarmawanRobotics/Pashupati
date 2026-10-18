@@ -16,7 +16,7 @@ env:
   ROSDEP_SKIP: >-
     livox_ros_driver2 fast_lio legkilo apriltag_draw
   PACKAGES: >-
-    pashupati_perception pashupati_bridge pashupati_fleet pashupati_inspection pashupati_health pashupati_rviz
+    pashupati_inspection pashupati_bridge pashupati_fleet pashupati_inspection pashupati_health pashupati_rviz
     pashupati pashupati_sim
 
 jobs:

@@ -17,7 +17,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument('params_file', default_value=default_params),
             Node(
-                package='pashupati_perception',
+                package='pashupati_inspection',
                 executable='person_detector_node',
                 name='person_detector_node',
                 output='screen',

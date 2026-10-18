@@ -3,7 +3,7 @@
 <package format="3">
   <name>pashupati_inspection</name>
   <version>0.1.0</version>
-  <description>Early anomaly detection on the robot with a local VLM via Ollama.</description>
+  <description>Early anomaly detection on the robot with a local VLM via Ollama, and the camera person detector (YOLO, ONNX) for the handheld and NETRA.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
@@ -12,6 +12,11 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>python3-transforms3d</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
 
