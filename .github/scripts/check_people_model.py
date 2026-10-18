@@ -16,8 +16,8 @@ def main(model: str, image: str, backends: list[str]) -> int:
     try:
         import cv2
 
-        sys.path.insert(0, 'src/robot_perception')
-        from robot_perception.detector import OnnxPersonDetector
+        sys.path.insert(0, 'src/pashupati_perception')
+        from pashupati_perception.detector import OnnxPersonDetector
     except Exception:  # noqa: B902  the environment itself is broken: say how
         annotate('error', 'imports', traceback.format_exc()[-1500:])
         return 1

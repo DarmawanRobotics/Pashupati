@@ -9,6 +9,8 @@ import re
 import threading
 import time
 
+from dharma_interfaces.msg import MissionStatus, NavigationStatus, StopPointEvent
+from dharma_interfaces.srv import LoadPath
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseArray
 from rcl_interfaces.srv import SetParameters
@@ -23,8 +25,6 @@ from robot_fleet.crowd import CrowdAggregator
 from robot_fleet.routes import safe_route_id, summarize_csv
 from robot_fleet.spool import Spool
 from robot_fleet.switches import live_parameters, status_summary, SWITCHES
-from robot_interfaces.msg import MissionStatus, NavigationStatus, StopPointEvent
-from robot_interfaces.srv import LoadPath
 from sensor_msgs.msg import BatteryState, CompressedImage
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger

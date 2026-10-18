@@ -22,8 +22,8 @@ rclpy = pytest.importorskip('rclpy')
 qos = pytest.importorskip('rclpy.qos')
 geometry_msgs = pytest.importorskip('geometry_msgs.msg')
 std_msgs = pytest.importorskip('std_msgs.msg')
-StopPointEvent = pytest.importorskip('robot_interfaces.msg').StopPointEvent
-SetMode = pytest.importorskip('robot_interfaces.srv').SetMode
+StopPointEvent = pytest.importorskip('dharma_interfaces.msg').StopPointEvent
+SetMode = pytest.importorskip('dharma_interfaces.srv').SetMode
 
 pytestmark = pytest.mark.skipif(
     os.environ.get('PASHUPATI_SKIP_SIM') == '1', reason='PASHUPATI_SKIP_SIM=1'

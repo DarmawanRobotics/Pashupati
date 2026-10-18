@@ -15,7 +15,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
-find_package(robot_interfaces REQUIRED)
+find_package(dharma_interfaces REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
 set(CMAKE_AUTOMOC ON)
@@ -51,7 +51,7 @@ ament_target_dependencies(${PROJECT_NAME}
   std_msgs
   geometry_msgs
   diagnostic_msgs
-  robot_interfaces
+  dharma_interfaces
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -81,6 +81,6 @@ ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
 ament_export_dependencies(
   rclcpp rviz_common pluginlib std_srvs sensor_msgs std_msgs geometry_msgs diagnostic_msgs
-  robot_interfaces)
+  dharma_interfaces)
 
 ament_package()

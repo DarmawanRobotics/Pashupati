@@ -17,7 +17,7 @@
   <depend>diagnostic_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
-  <depend>robot_interfaces</depend>
+  <depend>dharma_interfaces</depend>
   <depend>qtbase5-dev</depend>
 
   <export>
