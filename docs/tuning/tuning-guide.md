@@ -73,7 +73,7 @@ the site file. Only some nodes react to live changes:
 | `person_detector_node` | `enabled`, `confidence`, `rate_hz` |
 | all other nodes | nothing: `ros2 param set` is accepted, but the node only reads its parameters at start. Use the site file and restart |
 
-The **Tuning** panel of RViz (`robot_rviz`) edits the navigation and avoidance parameters with
+The **Tuning** panel of RViz (`pashupati_rviz`) edits the navigation and avoidance parameters with
 sliders; its **Save YAML…** button writes them to a file. RViz runs on a laptop with ROS 2
 Humble on the robot's network: set `ROS_LOCALHOST_ONLY=0` in the env file, restart, and use
 the robot's `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION` on the laptop.

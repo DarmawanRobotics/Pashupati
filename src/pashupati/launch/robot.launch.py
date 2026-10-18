@@ -102,7 +102,7 @@ def video_server(webrtc: str, binary: str, params_files: list):
         )
     try:
         executable = os.path.join(
-            get_package_prefix('robot_bridge'), 'lib', 'robot_bridge', 'video_stream_node'
+            get_package_prefix('pashupati_bridge'), 'lib', 'pashupati_bridge', 'video_stream_node'
         )
     except PackageNotFoundError:
         executable = ''
@@ -161,7 +161,7 @@ def launch_setup(context):
 
     nav = share('pashupati', 'config', 'navigation_params.yaml')
     perception = share('pashupati', 'config', 'perception_params.yaml')
-    bridge = share('robot_bridge', 'config', 'bridge_params.yaml')
+    bridge = share('pashupati_bridge', 'config', 'bridge_params.yaml')
     version = package_version(share('pashupati', 'package.xml'))
     git = os.environ.get('PASHUPATI_GIT', 'unknown')
 
@@ -251,7 +251,7 @@ def launch_setup(context):
             remappings=[('cmd_vel', topic('cmd_vel'))],
         ),
         node(
-            'robot_bridge',
+            'pashupati_bridge',
             'teleop_udp_node',
             [bridge],
             teleop,
@@ -265,9 +265,9 @@ def launch_setup(context):
     if arg('cc_url').strip():
         actions.append(
             node(
-                'robot_fleet',
+                'pashupati_fleet',
                 'fleet_uplink_node',
-                [share('robot_fleet', 'config', 'fleet_params.yaml')],
+                [share('pashupati_fleet', 'config', 'fleet_params.yaml')],
                 {
                     'server_url': arg('cc_url'),
                     'token': arg('cc_token'),
@@ -286,17 +286,17 @@ def launch_setup(context):
     if truthy(arg('inspection')):
         actions.append(
             node(
-                'robot_inspection',
+                'pashupati_inspection',
                 'anomaly_detector_node',
-                [share('robot_inspection', 'config', 'inspection_params.yaml')],
+                [share('pashupati_inspection', 'config', 'inspection_params.yaml')],
             )
         )
     if truthy(arg('health')):
         actions.append(
             node(
-                'robot_health',
+                'pashupati_health',
                 'health_monitor_node',
-                [share('robot_health', 'config', 'health_params.yaml')],
+                [share('pashupati_health', 'config', 'health_params.yaml')],
                 {'expected_nodes': expected_nodes(started, odometry), 'robot_ns': ns},
             )
         )

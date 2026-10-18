@@ -32,13 +32,13 @@ GUIDES = {
 # Config files of the parameter reference, in reading order: (package, file, what it covers)
 PARAMETER_FILES = [
     ('pashupati', 'navigation_params.yaml', 'route following, avoidance, stops'),
-    ('robot_bridge', 'bridge_params.yaml', 'control mux, protective field, handheld, video'),
+    ('pashupati_bridge', 'bridge_params.yaml', 'control mux, protective field, handheld, video'),
     ('pashupati', 'perception_params.yaml', 'LiDAR sectors, people, AprilTags'),
     ('pashupati', 'localization_params.yaml', 'map frame from AprilTags'),
-    ('robot_inspection', 'inspection_params.yaml', 'AI inspection'),
+    ('pashupati_inspection', 'inspection_params.yaml', 'AI inspection'),
     ('pashupati', 'odometry_params.yaml', 'odometry start, monitor, route recording'),
-    ('robot_health', 'health_params.yaml', 'health monitor'),
-    ('robot_fleet', 'fleet_params.yaml', 'NETRA uplink'),
+    ('pashupati_health', 'health_params.yaml', 'health monitor'),
+    ('pashupati_fleet', 'fleet_params.yaml', 'NETRA uplink'),
 ]
 
 KEY_LINE = re.compile(r'^(?P<indent> *)(?P<key>[A-Za-z0-9_./]+):\s*(?P<rest>.*)$')

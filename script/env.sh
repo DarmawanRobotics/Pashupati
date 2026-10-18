@@ -3,7 +3,7 @@
 #
 #   source ~/dev/Pashupati/script/env.sh      # e.g. alias pashu='source ~/dev/Pashupati/script/env.sh'
 #   ros2 topic list                            # sees the stack, not a vendor stack on another RMW
-#   pnode robot_bridge teleop_udp_node bridge_params.yaml [ros args]
+#   pnode pashupati_bridge teleop_udp_node bridge_params.yaml [ros args]
 #
 # pnode runs one node the way robot.launch.py does: package defaults, then SITE_CONFIG, then args.
 # Env: PASHUPATI_ENV (/etc/pashupati/pashupati.env), ROS_DISTRO (humble)

@@ -42,12 +42,12 @@ def test_gstreamer_check(monkeypatch):
 def test_only_the_handheld_may_watch_and_only_this_computer_publish(tmp_path):
     """Reading needs the token (stored as a hash), publishing comes from the loopback only."""
     command = video.node_command(
-        '/ws/install/robot_bridge/lib/robot_bridge/video_stream_node',
+        '/ws/install/pashupati_bridge/lib/pashupati_bridge/video_stream_node',
         ['/ws/my params.yaml', '/etc/pashupati/site.yaml'],
         video.rtsp_url(),
     )
     assert shlex.split(command) == [
-        '/ws/install/robot_bridge/lib/robot_bridge/video_stream_node',
+        '/ws/install/pashupati_bridge/lib/pashupati_bridge/video_stream_node',
         '--ros-args',
         '--params-file',
         '/ws/my params.yaml',
