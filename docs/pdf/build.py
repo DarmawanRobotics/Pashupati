@@ -31,12 +31,12 @@ GUIDES = {
 
 # Config files of the parameter reference, in reading order: (package, file, what it covers)
 PARAMETER_FILES = [
-    ('robot_navigation', 'navigation_params.yaml', 'route following, avoidance, stops'),
+    ('pashupati', 'navigation_params.yaml', 'route following, avoidance, stops'),
     ('robot_bridge', 'bridge_params.yaml', 'control mux, protective field, handheld, video'),
-    ('robot_perception', 'perception_params.yaml', 'LiDAR sectors, people, AprilTags'),
-    ('robot_localization', 'localization_params.yaml', 'map frame from AprilTags'),
+    ('pashupati', 'perception_params.yaml', 'LiDAR sectors, people, AprilTags'),
+    ('pashupati', 'localization_params.yaml', 'map frame from AprilTags'),
     ('robot_inspection', 'inspection_params.yaml', 'AI inspection'),
-    ('robot_odometry', 'odometry_params.yaml', 'odometry start, monitor, route recording'),
+    ('pashupati', 'odometry_params.yaml', 'odometry start, monitor, route recording'),
     ('robot_health', 'health_params.yaml', 'health monitor'),
     ('robot_fleet', 'fleet_params.yaml', 'NETRA uplink'),
 ]

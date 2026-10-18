@@ -17,7 +17,7 @@ velocity, and holds the robot still while the software e-stop is engaged.
 | pub | `cmd_vel` | `geometry_msgs/Twist` (remap to the robot, e.g. `/robot/cmd_vel`) |
 | pub | `bridge/mode` | `std_msgs/String`, latched |
 | pub | `bridge/estop_engaged`, `bridge/estop_reason` | `std_msgs/Bool`, `std_msgs/String`, latched |
-| srv | `bridge/set_mode` | `robot_interfaces/SetMode` (`auto` \| `remote`) |
+| srv | `bridge/set_mode` | `dharma_interfaces/SetMode` (`auto` \| `remote`) |
 | srv | `bridge/estop` | `std_srvs/SetBool`: `true` engages, `false` releases |
 
 In `remote` mode navigation is paused (and resumed when switching back). The robot gets one zero
@@ -74,7 +74,7 @@ MediaMTX serves WebRTC (WHEP) to the handheld. MediaMTX, its configuration and t
 
 ```bash
 ros2 launch robot_bridge bridge.launch.py robot_ns:=robot
-ros2 launch robot_navigation navigation.launch.py cmd_vel_topic:=/bridge/nav_cmd_vel ...
+ros2 launch dharma_navigation navigation.launch.py cmd_vel_topic:=/bridge/nav_cmd_vel ...
 ```
 
 Parameters: [config/bridge_params.yaml](config/bridge_params.yaml). For a lighter camera stream

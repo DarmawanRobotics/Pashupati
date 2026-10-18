@@ -11,10 +11,12 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>apriltag_ros</exec_depend>
-  <exec_depend>robot_odometry</exec_depend>
-  <exec_depend>robot_localization</exec_depend>
-  <exec_depend>robot_perception</exec_depend>
-  <exec_depend>robot_navigation</exec_depend>
+  <exec_depend>dharma_odometry</exec_depend>
+  <exec_depend>dharma_localization</exec_depend>
+  <exec_depend>dharma_perception</exec_depend>
+  <exec_depend>pashupati_perception</exec_depend>
+  <exec_depend>dharma_control</exec_depend>
+  <exec_depend>dharma_navigation</exec_depend>
   <exec_depend>robot_bridge</exec_depend>
   <exec_depend>robot_fleet</exec_depend>
   <exec_depend>robot_inspection</exec_depend>

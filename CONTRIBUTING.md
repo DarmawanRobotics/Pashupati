@@ -48,7 +48,7 @@ pure-logic tests also run with plain `pytest` on a laptop.
   `OPENBLAS_NUM_THREADS=1`.
 - **No per-element Python objects at sensor rate.** rclpy builds one object per element of a
   message array (a Livox CustomMsg has ~20k points): read big messages as numpy straight from the
-  buffer (`PointCloud2.data`, or `raw=True` and the CDR bytes, see `robot_perception/livox_cdr.py`).
+  buffer (`PointCloud2.data`, or `raw=True` and the CDR bytes, see `pashupati_perception/livox_cdr.py`).
 - **Subscribe to heavy topics only while someone uses them** (the teleop camera and cloud).
 - **Validate everything from the network** (teleop UDP, NETRA commands, spool files): clamp
   numbers, reject non-finite values, keep file paths inside their directory, never raise in a

@@ -132,11 +132,11 @@ flowchart LR
 
 | Package | Role |
 |---|---|
-| [`robot_interfaces`](src/robot_interfaces) | messages and services |
-| [`robot_odometry`](src/robot_odometry) | LiDAR-inertial odometry (FAST-LIO2 or Leg-KILO), stillness gate, odometry monitor, route recording |
-| [`robot_localization`](src/robot_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
-| [`robot_perception`](src/robot_perception) | LiDAR sectors, AprilTag, person detection (YOLO11n ONNX) |
-| [`robot_navigation`](src/robot_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
+| [`dharma_interfaces`](src/dharma_interfaces) | messages and services |
+| [`dharma_odometry`](src/dharma_odometry) | LiDAR-inertial odometry (FAST-LIO2 or Leg-KILO), stillness gate, odometry monitor, route recording |
+| [`dharma_localization`](src/dharma_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
+| [`pashupati_perception`](src/pashupati_perception) | LiDAR sectors, AprilTag, person detection (YOLO11n ONNX) |
+| [`dharma_navigation`](src/dharma_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
 | [`robot_bridge`](src/robot_bridge) | AUTO / REMOTE control mux, UDP teleop gateway ([protocol](src/robot_bridge/PROTOCOL.md)), WebRTC video |
 | [`robot_fleet`](src/robot_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/robot_fleet/API.md)) |
 | [`robot_inspection`](src/robot_inspection) | VLM inspection (Ollama): continuous, interval queue or stop points, own finding types |
@@ -255,7 +255,7 @@ pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.lau
   **Start**), or by hand:
 
 ```bash
-ros2 service call /navigation/load_path robot_interfaces/srv/LoadPath "{waypoints_file: '/home/robot/dev/Pashupati/map/<date>/<time>_path.csv'}"
+ros2 service call /navigation/load_path dharma_interfaces/srv/LoadPath "{waypoints_file: '/home/robot/dev/Pashupati/map/<date>/<time>_path.csv'}"
 ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: true}"
 ```
 
@@ -312,11 +312,11 @@ the tuned values with **Save YAML**.
 | Service | Type | Node |
 |---|---|---|
 | `/route/record` | `std_srvs/SetBool` | route_recorder_node |
-| `/route/mark_stop_point` | `robot_interfaces/MarkStopPoint` | route_recorder_node |
+| `/route/mark_stop_point` | `dharma_interfaces/MarkStopPoint` | route_recorder_node |
 | `/localization/start`, `/localization/record_tags` | `std_srvs/Trigger` | localization_node |
-| `/navigation/load_path` | `robot_interfaces/LoadPath` | path_loader_node |
+| `/navigation/load_path` | `dharma_interfaces/LoadPath` | path_loader_node |
 | `/navigation/start_nav`, `/navigation/pause` | `std_srvs/SetBool` | path_follower_node |
-| `/bridge/set_mode` | `robot_interfaces/SetMode` | control_mux_node |
+| `/bridge/set_mode` | `dharma_interfaces/SetMode` | control_mux_node |
 | `/bridge/estop` | `std_srvs/SetBool` (`true` engages, `false` releases) | control_mux_node |
 | `/anomaly_detector_node/check_now` | `std_srvs/Trigger` | anomaly_detector_node |
 | `/<robot_ns>/<command>` | `std_srvs/Trigger` | robot driver ([contract](src/xtras/README.md)) |
@@ -337,11 +337,11 @@ the tuned values with **Save YAML**.
 | `/odometry/status` | `std_msgs/String` (latched) | odometry_monitor_node |
 | `/odometry/restarted` | `std_msgs/Empty` | odometry_monitor_node |
 | `/localization/status` | `std_msgs/String` (latched) | localization_node |
-| `/navigation/waypoints` | `robot_interfaces/WaypointPath` (latched) | path_loader_node |
-| `/navigation/status`, `/navigation/mission_status`, `/navigation/stop_point_event` | robot_interfaces | path_follower_node |
+| `/navigation/waypoints` | `dharma_interfaces/WaypointPath` (latched) | path_loader_node |
+| `/navigation/status`, `/navigation/mission_status`, `/navigation/stop_point_event` | dharma_interfaces | path_follower_node |
 | `/navigation/markers`, `/navigation/route_markers`, `/navigation/avoidance_markers` | `MarkerArray` | navigation |
-| `/perception/sector_scan` | `robot_interfaces/SectorScan` | lidar_sector_node |
-| `/perception/safety_scan` | `robot_interfaces/SectorScan` (360°, all blocked when the LiDAR is blind) | lidar_sector_node |
+| `/perception/sector_scan` | `dharma_interfaces/SectorScan` | lidar_sector_node |
+| `/perception/safety_scan` | `dharma_interfaces/SectorScan` (360°, all blocked when the LiDAR is blind) | lidar_sector_node |
 | `/perception/people`, `/perception/people_status` | `geometry_msgs/PoseArray`, `std_msgs/String` (JSON, latched) | person_detector_node |
 | `/anomaly_detector/result`, `/anomaly_detector/status` | `std_msgs/String` (JSON; status latched) | anomaly_detector_node |
 | `/health/status` | `std_msgs/String` (JSON, latched) | health_monitor_node |

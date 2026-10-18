@@ -22,7 +22,7 @@ provide.
 | `robot_ns` | `$ROBOT_NS` or `robot` | robot driver namespace (`/robot/cmd_vel`, `/robot/odom`, ...) |
 | `robot_bringup` | `$ROBOT_BRINGUP` | robot package `<package>[/<file>.launch.py]`, started with `namespace:=<robot_ns>`; empty: the robot runs elsewhere (simulator, vendor service) |
 | `mode` | `$MODE` or `patrol` | `teach` keeps the map (FAST-LIO PCD / Leg-KILO backend, RAM grows); `mapping` still works |
-| `odometry` | `$ODOMETRY` or `fast_lio` | `fast_lio`, `leg_kilo` or `external` (simulator) ([robot_odometry](../robot_odometry)) |
+| `odometry` | `$ODOMETRY` or `fast_lio` | `fast_lio`, `leg_kilo` or `external` (simulator) ([dharma_odometry](../dharma_odometry)) |
 | `route` | `$ROUTE` | route CSV; empty reloads the last route loaded through `navigation/load_path` |
 | `tags` | `$TAGS` | AprilTag map poses (JSON), created by `localization/record_tags` |
 | `cc_url`, `cc_token` | `$CC_URL`, `$CC_TOKEN` | NETRA command center |

@@ -92,8 +92,8 @@ void ControlPanel::setupRos()
   localization_client_ = node_->create_client<std_srvs::srv::Trigger>("localization/start");
   record_client_ = node_->create_client<std_srvs::srv::SetBool>("route/record");
   mark_stop_point_client_ =
-    node_->create_client<robot_interfaces::srv::MarkStopPoint>("route/mark_stop_point");
-  load_path_client_ = node_->create_client<robot_interfaces::srv::LoadPath>("navigation/load_path");
+    node_->create_client<dharma_interfaces::srv::MarkStopPoint>("route/mark_stop_point");
+  load_path_client_ = node_->create_client<dharma_interfaces::srv::LoadPath>("navigation/load_path");
   nav_client_ = node_->create_client<std_srvs::srv::SetBool>("navigation/start_nav");
   pause_client_ = node_->create_client<std_srvs::srv::SetBool>("navigation/pause");
 
@@ -101,10 +101,10 @@ void ControlPanel::setupRos()
   localization_status_sub_ = node_->create_subscription<std_msgs::msg::String>(
     "localization/status", latched,
     std::bind(&ControlPanel::localizationStatusCallback, this, std::placeholders::_1));
-  nav_status_sub_ = node_->create_subscription<robot_interfaces::msg::NavigationStatus>(
+  nav_status_sub_ = node_->create_subscription<dharma_interfaces::msg::NavigationStatus>(
     "navigation/status", 10,
     std::bind(&ControlPanel::navStatusCallback, this, std::placeholders::_1));
-  mission_status_sub_ = node_->create_subscription<robot_interfaces::msg::MissionStatus>(
+  mission_status_sub_ = node_->create_subscription<dharma_interfaces::msg::MissionStatus>(
     "navigation/mission_status", 10,
     std::bind(&ControlPanel::missionStatusCallback, this, std::placeholders::_1));
 }
@@ -151,11 +151,11 @@ void ControlPanel::onMarkStopPoint()
     setStatus(recording_status_label_, "route/mark_stop_point not available", "#ffcc00");
     return;
   }
-  auto request = std::make_shared<robot_interfaces::srv::MarkStopPoint::Request>();
+  auto request = std::make_shared<dharma_interfaces::srv::MarkStopPoint::Request>();
   request->dwell_sec = static_cast<float>(dwell_spinbox_->value());
   mark_stop_point_client_->async_send_request(
     request,
-    [this](rclcpp::Client<robot_interfaces::srv::MarkStopPoint>::SharedFuture future) {
+    [this](rclcpp::Client<dharma_interfaces::srv::MarkStopPoint>::SharedFuture future) {
       auto response = future.get();
       setStatus(
         recording_status_label_, response->message, response->success ? "#88ff88" : "#ff8888");
@@ -177,11 +177,11 @@ void ControlPanel::onLoadPath()
     setStatus(load_status_label_, "navigation/load_path not available", "#ffcc00");
     return;
   }
-  auto request = std::make_shared<robot_interfaces::srv::LoadPath::Request>();
+  auto request = std::make_shared<dharma_interfaces::srv::LoadPath::Request>();
   request->waypoints_file = waypoints_file_edit_->text().toStdString();
   setStatus(load_status_label_, "loading...", "#ffffff");
   load_path_client_->async_send_request(
-    request, [this](rclcpp::Client<robot_interfaces::srv::LoadPath>::SharedFuture future) {
+    request, [this](rclcpp::Client<dharma_interfaces::srv::LoadPath>::SharedFuture future) {
       auto response = future.get();
       setStatus(load_status_label_, response->message, response->success ? "#88ff88" : "#ff8888");
     });
@@ -216,7 +216,7 @@ void ControlPanel::onTogglePause()
     request, [](rclcpp::Client<std_srvs::srv::SetBool>::SharedFuture) {});
 }
 
-void ControlPanel::navStatusCallback(const robot_interfaces::msg::NavigationStatus::SharedPtr msg)
+void ControlPanel::navStatusCallback(const dharma_interfaces::msg::NavigationStatus::SharedPtr msg)
 {
   const std::string & s = msg->state;
   std::string color = "#cccccc";
@@ -243,7 +243,7 @@ void ControlPanel::navStatusCallback(const robot_interfaces::msg::NavigationStat
   setStatus(nav_status_label_, s + ": " + msg->message, color);
 }
 
-void ControlPanel::missionStatusCallback(const robot_interfaces::msg::MissionStatus::SharedPtr msg)
+void ControlPanel::missionStatusCallback(const dharma_interfaces::msg::MissionStatus::SharedPtr msg)
 {
   mission_label_->setText(QString::fromStdString(msg->active_behavior));
 }

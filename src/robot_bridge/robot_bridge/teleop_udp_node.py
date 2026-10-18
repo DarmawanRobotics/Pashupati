@@ -10,6 +10,8 @@ import socket
 import threading
 import time
 
+from dharma_interfaces.msg import MissionStatus, NavigationStatus, WaypointPath
+from dharma_interfaces.srv import LoadPath, MarkStopPoint, SetMode
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import Twist
 import numpy as np
@@ -22,8 +24,6 @@ from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data, QoSDurabilityPolicy, QoSProfile
 from rclpy.time import Time
 from robot_bridge import protocol
-from robot_interfaces.msg import MissionStatus, NavigationStatus, WaypointPath
-from robot_interfaces.srv import LoadPath, MarkStopPoint, SetMode
 from sensor_msgs.msg import BatteryState, CameraInfo, CompressedImage, Image, PointCloud2
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger

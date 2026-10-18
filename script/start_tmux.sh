@@ -63,9 +63,13 @@ else
     tmux send-keys -t "$SESSION:robot.0" "# ROBOT_BRINGUP unset: start the robot driver here" C-m
 fi
 sleep 3
-run robot.1 "ros2 launch robot_odometry odometry.launch.py method:=$ODOMETRY save_map:=$SAVE_MAP \
-localization:=true tags_config_file:=$TAGS leg_odom_topic:=/$ROBOT_NS/odom"
-run robot.2 "ros2 launch robot_perception perception.launch.py people:=$PEOPLE"
+CONFIG="\$(ros2 pkg prefix pashupati)/share/pashupati/config"
+run robot.1 "ros2 launch dharma_odometry odometry.launch.py method:=$ODOMETRY save_map:=$SAVE_MAP \
+localization:=true tags_config_file:=$TAGS leg_odom_topic:=/$ROBOT_NS/odom \
+params_file:=$CONFIG/odometry_params.yaml fast_lio_params_file:=$CONFIG/fast_lio.yaml"
+PERCEPTION="ros2 launch dharma_perception perception.launch.py visitors:=false params_file:=$CONFIG/perception_params.yaml"
+[[ "$PEOPLE" == "true" ]] && PERCEPTION+=" & ros2 launch pashupati_perception people.launch.py"
+run robot.2 "$PERCEPTION"
 if [[ "$RVIZ" == "1" ]]; then
     run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix robot_rviz)/share/robot_rviz/rviz/robot.rviz \
 --ros-args -r battery:=/$ROBOT_NS/battery -r cmd_vel:=/$ROBOT_NS/cmd_vel \
@@ -77,7 +81,7 @@ tmux select-layout -t "$SESSION:robot" tiled
 tmux new-window -t "$SESSION" -n nav
 tmux split-window -v -t "$SESSION:nav"
 if [[ "$MODE" == "patrol" ]]; then
-    run nav.0 "ros2 launch robot_navigation navigation.launch.py waypoints_file:=$ROUTE \
+    run nav.0 "ros2 launch dharma_navigation navigation.launch.py params_file:=$CONFIG/navigation_params.yaml waypoints_file:=$ROUTE \
 cmd_vel_topic:=/bridge/nav_cmd_vel battery_topic:=/$ROBOT_NS/battery"
 fi
 tmux split-window -h -t "$SESSION:nav.0"

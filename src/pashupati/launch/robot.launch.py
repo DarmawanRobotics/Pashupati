@@ -159,8 +159,8 @@ def launch_setup(context):
             **kwargs,
         )
 
-    nav = share('robot_navigation', 'config', 'navigation_params.yaml')
-    perception = share('robot_perception', 'config', 'perception_params.yaml')
+    nav = share('pashupati', 'config', 'navigation_params.yaml')
+    perception = share('pashupati', 'config', 'perception_params.yaml')
     bridge = share('robot_bridge', 'config', 'bridge_params.yaml')
     version = package_version(share('pashupati', 'package.xml'))
     git = os.environ.get('PASHUPATI_GIT', 'unknown')
@@ -185,7 +185,9 @@ def launch_setup(context):
         actions.append(mediamtx)
     actions.append(
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(share('robot_odometry', 'launch', 'odometry.launch.py')),
+            PythonLaunchDescriptionSource(
+                share('dharma_odometry', 'launch', 'odometry.launch.py')
+            ),
             launch_arguments={
                 'method': odometry,
                 'save_map': str(mode == 'teach'),
@@ -193,20 +195,23 @@ def launch_setup(context):
                 'record': 'true',
                 'leg_odom_topic': topic('odom'),
                 'site_config': site[0] if site else '',
+                'params_file': share('pashupati', 'config', 'odometry_params.yaml'),
+                'fast_lio_params_file': share('pashupati', 'config', 'fast_lio.yaml'),
+                'leg_kilo_config_file': share('pashupati', 'config', 'leg_kilo.yaml'),
             }.items(),
         )
     )
     actions += [
         node(
-            'robot_localization',
+            'dharma_localization',
             'localization_node',
-            [share('robot_localization', 'config', 'localization_params.yaml')],
+            [share('pashupati', 'config', 'localization_params.yaml')],
             {'tags_config_file': arg('tags')},
         ),
-        node('robot_perception', 'lidar_sector_node', [perception]),
+        node('dharma_perception', 'lidar_sector_node', [perception]),
         # the tag detector sees the camera at rate_hz only: localization needs a few poses/s
         node(
-            'robot_perception',
+            'dharma_perception',
             'image_throttle_node',
             [perception],
             name='apriltag_throttle',
@@ -231,16 +236,16 @@ def launch_setup(context):
             respawn_delay=3.0,
             output='screen',
         ),
-        node('robot_navigation', 'path_loader_node', [nav], {'waypoints_file': arg('route')}),
-        node('robot_navigation', 'obstacle_avoidance_node', [nav]),
+        node('dharma_navigation', 'path_loader_node', [nav], {'waypoints_file': arg('route')}),
+        node('dharma_navigation', 'obstacle_avoidance_node', [nav]),
         node(
-            'robot_navigation',
+            'dharma_navigation',
             'path_follower_node',
             [nav],
             remappings=[('cmd_vel', '/bridge/nav_cmd_vel'), ('battery', topic('battery'))],
         ),
         node(
-            'robot_bridge',
+            'dharma_control',
             'control_mux_node',
             [bridge],
             remappings=[('cmd_vel', topic('cmd_vel'))],
@@ -277,7 +282,7 @@ def launch_setup(context):
     else:
         actions.append(LogInfo(msg='NETRA uplink off: no cc_url (CC_URL)'))
     if truthy(arg('people')):
-        actions.append(node('robot_perception', 'person_detector_node', [perception]))
+        actions.append(node('pashupati_perception', 'person_detector_node', [perception]))
     if truthy(arg('inspection')):
         actions.append(
             node(
