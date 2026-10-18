@@ -71,7 +71,7 @@ PERCEPTION="ros2 launch dharma_perception perception.launch.py visitors:=false p
 [[ "$PEOPLE" == "true" ]] && PERCEPTION+=" & ros2 launch pashupati_perception people.launch.py"
 run robot.2 "$PERCEPTION"
 if [[ "$RVIZ" == "1" ]]; then
-    run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix robot_rviz)/share/robot_rviz/rviz/robot.rviz \
+    run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix pashupati_rviz)/share/pashupati_rviz/rviz/robot.rviz \
 --ros-args -r battery:=/$ROBOT_NS/battery -r cmd_vel:=/$ROBOT_NS/cmd_vel \
 -r motor_temperature:=/$ROBOT_NS/motor_temperature -r diagnostics:=/$ROBOT_NS/diagnostics"
 fi
@@ -85,21 +85,21 @@ if [[ "$MODE" == "patrol" ]]; then
 cmd_vel_topic:=/bridge/nav_cmd_vel battery_topic:=/$ROBOT_NS/battery"
 fi
 tmux split-window -h -t "$SESSION:nav.0"
-run nav.1 "ros2 launch robot_bridge bridge.launch.py robot_ns:=$ROBOT_NS"
+run nav.1 "ros2 launch pashupati_bridge bridge.launch.py robot_ns:=$ROBOT_NS"
 tmux split-window -v -t "$SESSION:nav.1"
 FLEET_ARGS="robot_ns:=$ROBOT_NS"
 [[ -n "$CC_URL" ]] && FLEET_ARGS+=" server_url:=$CC_URL"
 [[ -n "$CC_TOKEN" ]] && FLEET_ARGS+=" token:=$CC_TOKEN"
-run nav.2 "ros2 launch robot_fleet fleet.launch.py $FLEET_ARGS"
+run nav.2 "ros2 launch pashupati_fleet fleet.launch.py $FLEET_ARGS"
 tmux send-keys -t "$SESSION:nav.3" "$SETUP" C-m
 tmux send-keys -t "$SESSION:nav.3" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
 
 # Window 3: health and, when enabled, on-robot inspection (Moondream)
 tmux new-window -t "$SESSION" -n extra
-run extra.0 "ros2 launch robot_health health.launch.py"
+run extra.0 "ros2 launch pashupati_health health.launch.py"
 if truthy "$INSPECTION"; then
     tmux split-window -h -t "$SESSION:extra"
-    run extra.1 "ros2 launch robot_inspection inspection.launch.py"
+    run extra.1 "ros2 launch pashupati_inspection inspection.launch.py"
 fi
 
 tmux select-window -t "$SESSION:robot"

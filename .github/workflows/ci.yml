@@ -16,8 +16,8 @@ env:
   ROSDEP_SKIP: >-
     livox_ros_driver2 fast_lio legkilo apriltag_draw
   PACKAGES: >-
-    pashupati_perception robot_bridge robot_fleet robot_inspection robot_health robot_rviz
-    pashupati robot_sim
+    pashupati_perception pashupati_bridge pashupati_fleet pashupati_inspection pashupati_health pashupati_rviz
+    pashupati pashupati_sim
 
 jobs:
   scripts:
@@ -128,7 +128,7 @@ jobs:
           source install/setup.bash
           ros2 launch pashupati robot.launch.py --show-args > /dev/null
           ros2 launch dharma_odometry odometry.launch.py --show-args > /dev/null
-          ros2 launch robot_sim sim.launch.py --show-args > /dev/null
+          ros2 launch pashupati_sim sim.launch.py --show-args > /dev/null
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4

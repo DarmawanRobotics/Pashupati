@@ -137,13 +137,13 @@ flowchart LR
 | [`dharma_localization`](src/dharma_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
 | [`pashupati_perception`](src/pashupati_perception) | LiDAR sectors, AprilTag, person detection (YOLO11n ONNX) |
 | [`dharma_navigation`](src/dharma_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
-| [`robot_bridge`](src/robot_bridge) | AUTO / REMOTE control mux, UDP teleop gateway ([protocol](src/robot_bridge/PROTOCOL.md)), WebRTC video |
-| [`robot_fleet`](src/robot_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/robot_fleet/API.md)) |
-| [`robot_inspection`](src/robot_inspection) | VLM inspection (Ollama): continuous, interval queue or stop points, own finding types |
-| [`robot_health`](src/robot_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, CPU, GPU and RAM |
-| [`robot_rviz`](src/robot_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
+| [`pashupati_bridge`](src/pashupati_bridge) | AUTO / REMOTE control mux, UDP teleop gateway ([protocol](src/pashupati_bridge/PROTOCOL.md)), WebRTC video |
+| [`pashupati_fleet`](src/pashupati_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/pashupati_fleet/API.md)) |
+| [`pashupati_inspection`](src/pashupati_inspection) | VLM inspection (Ollama): continuous, interval queue or stop points, own finding types |
+| [`pashupati_health`](src/pashupati_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, CPU, GPU and RAM |
+| [`pashupati_rviz`](src/pashupati_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
 | [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, site configuration |
-| [`robot_sim`](src/robot_sim) | simulated quadruped (driver, LiDAR, FAST-LIO interfaces) for the whole stack, end-to-end test |
+| [`pashupati_sim`](src/pashupati_sim) | simulated quadruped (driver, LiDAR, FAST-LIO interfaces) for the whole stack, end-to-end test |
 
 </details>
 
@@ -206,7 +206,7 @@ nothing, or only the vendor's topics:
 echo "alias pashu='source ~/dev/Pashupati/script/env.sh'" >> ~/.bashrc   # once
 pashu
 ros2 topic hz /perception/safety_scan
-pnode robot_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.launch.py runs it
+pnode pashupati_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.launch.py runs it
 ```
 
 <details>
@@ -304,7 +304,7 @@ the tuned values with **Save YAML**.
 | Inspection | `ros2 topic echo /anomaly_detector/status`: state, model, pace, queue, finding types and the last result |
 | People | `ros2 topic echo /perception/people_status`: state, backend, count and boxes |
 | Logs | `journalctl -fu pashupati`; ROS logs older than 7 days are pruned at start |
-| Debug view | RViz `robot_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
+| Debug view | RViz `pashupati_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
 
 <details>
 <summary><b>Services</b></summary>
@@ -395,10 +395,10 @@ On the robot during development, `script/start_tmux.sh teach|patrol` opens one p
 RViz, with the package default parameters and the env file's settings.
 
 **Simulation.** The whole stack runs against a simulated quadruped
-([robot_sim](src/robot_sim)), with no robot, Gazebo or GPU:
+([pashupati_sim](src/pashupati_sim)), with no robot, Gazebo or GPU:
 
 ```bash
-ros2 launch robot_sim sim.launch.py autostart:=true rviz:=true
+ros2 launch pashupati_sim sim.launch.py autostart:=true rviz:=true
 # a person steps onto the route
 ros2 topic pub --once /sim/obstacles geometry_msgs/msg/PoseArray "{poses: [{position: {x: 2.0, y: -3.0}}]}"
 ```

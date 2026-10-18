@@ -220,7 +220,7 @@ def test_launch_runs_mediamtx_for_the_webrtc_video(tmp_path, monkeypatch):
         config = yaml.safe_load(f)
     assert config['authInternalUsers'][1]['pass'] == password_hash('s3cret')
     command = shlex.split(config['paths']['camera']['runOnDemand'])
-    assert command[0].endswith(os.path.join('robot_bridge', 'video_stream_node'))
+    assert command[0].endswith(os.path.join('pashupati_bridge', 'video_stream_node'))
     assert str(site) in command  # the encoder gets the same site parameters
     assert servers('false') == []
     binary.write_text('#!/bin/sh\necho v1.9.0\n')
