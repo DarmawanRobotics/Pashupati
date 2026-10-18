@@ -132,18 +132,21 @@ flowchart LR
 
 | Package | Role |
 |---|---|
-| [`dharma_interfaces`](src/dharma_interfaces) | messages and services |
-| [`dharma_odometry`](src/dharma_odometry) | LiDAR-inertial odometry (FAST-LIO2 or Leg-KILO), stillness gate, odometry monitor, route recording |
-| [`dharma_localization`](src/dharma_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
-| [`pashupati_inspection`](src/pashupati_inspection) | LiDAR sectors, AprilTag, person detection (YOLO11n ONNX) |
-| [`dharma_navigation`](src/dharma_navigation) | route processing, 5 controllers, 4 avoidance algorithms, final approach, safety |
-| [`pashupati_bridge`](src/pashupati_bridge) | AUTO / REMOTE control mux, UDP teleop gateway ([protocol](src/pashupati_bridge/PROTOCOL.md)), WebRTC video |
+| [`dharma_odometry`](https://github.com/DarmawanRobotics/dharma_odometry) | LiDAR-inertial odometry (FAST-LIO2 or Leg-KILO), stillness gate, odometry monitor, route recording |
+| [`dharma_localization`](https://github.com/DarmawanRobotics/dharma_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
+| [`dharma_perception`](https://github.com/DarmawanRobotics/dharma_perception) | LiDAR sectors and 360° safety scan, camera throttle for the tag detector |
+| [`dharma_navigation`](https://github.com/DarmawanRobotics/dharma_navigation) | route processing, controllers, avoidance, final approach, safety; `dharma_control`: AUTO / REMOTE control mux, protective field, e-stop |
+| [`dharma_health`](https://github.com/DarmawanRobotics/dharma_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, CPU, GPU and RAM |
+| [`dharma_rviz`](https://github.com/DarmawanRobotics/dharma_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
+| [`dharma_sim`](https://github.com/DarmawanRobotics/dharma_sim) | simulated quadruped (driver, LiDAR, FAST-LIO interfaces) |
+| [`dharma_interfaces`](https://github.com/DarmawanRobotics/dharma_interfaces) | messages and services |
+| [`pashupati_bridge`](src/pashupati_bridge) | UDP teleop gateway ([protocol](src/pashupati_bridge/PROTOCOL.md)), WebRTC video |
 | [`pashupati_fleet`](src/pashupati_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/pashupati_fleet/API.md)) |
-| [`pashupati_inspection`](src/pashupati_inspection) | VLM inspection (Ollama): continuous, interval queue or stop points, own finding types |
-| [`pashupati_health`](src/pashupati_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, CPU, GPU and RAM |
-| [`pashupati_rviz`](src/pashupati_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
-| [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, site configuration |
-| [`pashupati_sim`](src/pashupati_sim) | simulated quadruped (driver, LiDAR, FAST-LIO interfaces) for the whole stack, end-to-end test |
+| [`pashupati_inspection`](src/pashupati_inspection) | VLM inspection (Ollama) and person detection (YOLO11n ONNX) |
+| [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, the configs tuned on the robot, the simulation and its end-to-end test |
+
+The `dharma_*` packages come from their own repositories: `script/setup.sh install dharma` (or
+`vcs import src < pashupati.repos`) checks out the versions in [pashupati.repos](pashupati.repos).
 
 </details>
 
@@ -304,7 +307,7 @@ the tuned values with **Save YAML**.
 | Inspection | `ros2 topic echo /anomaly_detector/status`: state, model, pace, queue, finding types and the last result |
 | People | `ros2 topic echo /perception/people_status`: state, backend, count and boxes |
 | Logs | `journalctl -fu pashupati`; ROS logs older than 7 days are pruned at start |
-| Debug view | RViz `pashupati_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
+| Debug view | RViz `dharma_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
 
 <details>
 <summary><b>Services</b></summary>
@@ -395,10 +398,10 @@ On the robot during development, `script/start_tmux.sh teach|patrol` opens one p
 RViz, with the package default parameters and the env file's settings.
 
 **Simulation.** The whole stack runs against a simulated quadruped
-([pashupati_sim](src/pashupati_sim)), with no robot, Gazebo or GPU:
+([dharma_sim](https://github.com/DarmawanRobotics/dharma_sim)), with no robot, Gazebo or GPU:
 
 ```bash
-ros2 launch pashupati_sim sim.launch.py autostart:=true rviz:=true
+ros2 launch pashupati sim.launch.py autostart:=true rviz:=true
 # a person steps onto the route
 ros2 topic pub --once /sim/obstacles geometry_msgs/msg/PoseArray "{poses: [{position: {x: 2.0, y: -3.0}}]}"
 ```
