@@ -1,0 +1,22 @@
+# Dharma packages Pashupati runs on: vcs import src < pashupati.repos
+repositories:
+  dharma/dharma_interfaces:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_interfaces.git
+    version: dev
+  dharma/dharma_odometry:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_odometry.git
+    version: dev
+  dharma/dharma_localization:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_localization.git
+    version: dev
+  dharma/dharma_navigation:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_navigation.git
+    version: dev
+  dharma/dharma_perception:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_perception.git
+    version: dev

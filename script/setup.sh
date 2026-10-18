@@ -7,7 +7,7 @@
 #   script/setup.sh install livox build  # install only these
 #   script/setup.sh install all          # every component, including ros and service
 #
-# Components: ros tools submodules livox robot legkilo rosdep realsense webrtc ollama people_model
+# Components: ros tools submodules dharma livox robot legkilo rosdep realsense webrtc ollama people_model
 #             build config service network
 # Settings come from the environment, then from /etc/pashupati/pashupati.env (ROBOT_SETUP,
 # ROBOT_IP, PEOPLE, INSPECTION, ...): no need to source it first.
@@ -64,9 +64,9 @@ BUILD_STAMP="$ROOT/install/.pashupati_build"
 UVC_BLACKLIST=/etc/modprobe.d/blacklist-uvcvideo-realsense.conf
 REALSENSE_BLACKLIST_UVC="${REALSENSE_BLACKLIST_UVC:-$([[ "$(uname -m)" == aarch64 ]] && echo 1 || echo 0)}"
 
-ALL=(ros tools submodules livox robot legkilo rosdep realsense webrtc ollama people_model build
+ALL=(ros tools submodules dharma livox robot legkilo rosdep realsense webrtc ollama people_model build
      config service network)
-DEFAULT_INSTALL=(tools submodules livox robot legkilo rosdep realsense webrtc ollama build config)
+DEFAULT_INSTALL=(tools submodules dharma livox robot legkilo rosdep realsense webrtc ollama build config)
 
 SUDO=$([[ "$(id -u)" -eq 0 ]] && echo "" || echo "sudo")
 IN_DOCKER=$([[ -f /.dockerenv ]] && echo 1 || echo 0)
@@ -145,6 +145,25 @@ install_submodules() {
     log "SSH clone failed, retrying submodules over HTTPS"
     git -C "$ROOT" -c "url.https://github.com/.insteadOf=git@github.com:" \
         submodule update --init --recursive
+}
+
+check_dharma() {
+    local missing=() name
+    for name in $(awk '/^  dharma\// {sub(":", ""); print $1}' "$ROOT/pashupati.repos"); do
+        [[ -f "$ROOT/src/$name/README.md" ]] || missing+=("$name")
+    done
+    [[ ${#missing[@]} -eq 0 ]] && echo "src/dharma: all checked out" && return 0
+    echo "not checked out: ${missing[*]}"; return 1
+}
+install_dharma() {
+    command -v vcs >/dev/null || apt_install python3-vcstool
+    if ! vcs import --skip-existing "$ROOT/src" < "$ROOT/pashupati.repos"; then
+        log "SSH clone failed, retrying the dharma packages over HTTPS"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf \
+            GIT_CONFIG_VALUE_0=git@github.com: \
+            vcs import --skip-existing "$ROOT/src" < "$ROOT/pashupati.repos"
+    fi
+    vcs pull "$ROOT/src/dharma"
 }
 
 check_livox() {
