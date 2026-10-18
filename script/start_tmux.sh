@@ -71,7 +71,7 @@ PERCEPTION="ros2 launch dharma_perception perception.launch.py visitors:=false p
 [[ "$PEOPLE" == "true" ]] && PERCEPTION+=" & ros2 launch pashupati_inspection people.launch.py"
 run robot.2 "$PERCEPTION"
 if [[ "$RVIZ" == "1" ]]; then
-    run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix pashupati_rviz)/share/pashupati_rviz/rviz/robot.rviz \
+    run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix dharma_rviz)/share/dharma_rviz/rviz/robot.rviz \
 --ros-args -r battery:=/$ROBOT_NS/battery -r cmd_vel:=/$ROBOT_NS/cmd_vel \
 -r motor_temperature:=/$ROBOT_NS/motor_temperature -r diagnostics:=/$ROBOT_NS/diagnostics"
 fi
@@ -96,7 +96,7 @@ tmux send-keys -t "$SESSION:nav.3" "# ros2 service call /localization/start std_
 
 # Window 3: health and, when enabled, on-robot inspection (Moondream)
 tmux new-window -t "$SESSION" -n extra
-run extra.0 "ros2 launch pashupati_health health.launch.py"
+run extra.0 "ros2 launch dharma_health health.launch.py params_file:=$CONFIG/health_params.yaml"
 if truthy "$INSPECTION"; then
     tmux split-window -h -t "$SESSION:extra"
     run extra.1 "ros2 launch pashupati_inspection inspection.launch.py"

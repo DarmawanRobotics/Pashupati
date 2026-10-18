@@ -1,4 +1,4 @@
-# Site configuration for the simulator (pashupati_sim/sim.launch.py): the stack reads the simulated
+# Site configuration for the simulator (pashupati sim.launch.py): the stack reads the simulated
 # body-frame cloud, writes nothing into the real map/ or ~/.pashupati, and asks the simulator
 # instead of the VLM to inspect at stop points.
 control_mux_node:
@@ -12,7 +12,7 @@ lidar_sector_node:
 
 localization_node:
   ros__parameters:
-    auto_localize_on_start: false     # no AprilTags in the sim: pashupati_sim sends /initialpose
+    auto_localize_on_start: false     # no AprilTags in the sim: dharma_sim sends /initialpose
 
 path_loader_node:
   ros__parameters:

@@ -20,3 +20,19 @@ repositories:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_perception.git
     version: dev
+  dharma/dharma_mapping:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_mapping.git
+    version: dev
+  dharma/dharma_health:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_health.git
+    version: dev
+  dharma/dharma_rviz:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_rviz.git
+    version: dev
+  dharma/dharma_sim:
+    type: git
+    url: git@github.com:DarmawanRobotics/dharma_sim.git
+    version: dev

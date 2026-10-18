@@ -37,7 +37,7 @@ PARAMETER_FILES = [
     ('pashupati', 'localization_params.yaml', 'map frame from AprilTags'),
     ('pashupati_inspection', 'inspection_params.yaml', 'AI inspection'),
     ('pashupati', 'odometry_params.yaml', 'odometry start, monitor, route recording'),
-    ('pashupati_health', 'health_params.yaml', 'health monitor'),
+    ('pashupati', 'health_params.yaml', 'health monitor'),
     ('pashupati_fleet', 'fleet_params.yaml', 'NETRA uplink'),
 ]
 

@@ -1,7 +1,7 @@
 """
 End to end: the whole stack patrols the simulated mall.
 
-Starts `ros2 launch pashupati_sim sim.launch.py autostart:=true` (needs the workspace installed, as
+Starts `ros2 launch pashupati sim.launch.py autostart:=true` (needs the workspace installed, as
 in `colcon test`). A person steps onto the route: the robot slides around them without touching
 them or straying far, and completes the inspection stop. A crowd blocks the corridor: it stops
 short and drives on once they are gone. Then the handheld drives straight at a person, where only
@@ -132,7 +132,7 @@ def sim():
     log = tempfile.NamedTemporaryFile('w+', prefix='pashupati_sim_', suffix='.log', delete=False)
     env = dict(os.environ, ROS_DOMAIN_ID=str(DOMAIN))
     proc = subprocess.Popen(
-        ['ros2', 'launch', 'pashupati_sim', 'sim.launch.py', 'autostart:=true'],
+        ['ros2', 'launch', 'pashupati', 'sim.launch.py', 'autostart:=true'],
         env=env,
         stdin=subprocess.DEVNULL,  # non-interactive: launch itself stops every node, like systemd
         stdout=log,

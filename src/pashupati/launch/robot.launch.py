@@ -294,9 +294,9 @@ def launch_setup(context):
     if truthy(arg('health')):
         actions.append(
             node(
-                'pashupati_health',
+                'dharma_health',
                 'health_monitor_node',
-                [share('pashupati_health', 'config', 'health_params.yaml')],
+                [share('pashupati', 'config', 'health_params.yaml')],
                 {'expected_nodes': expected_nodes(started, odometry), 'robot_ns': ns},
             )
         )
