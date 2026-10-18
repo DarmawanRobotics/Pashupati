@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>pashupati</name>
-  <version>0.3.0</version>
+  <version>2.0.0</version>
   <description>The Pashupati patrol robot: one launch for the whole stack on any quadruped (the robot package is pluggable) with respawning nodes and a per-robot site configuration, used by the systemd service.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>

@@ -5,6 +5,26 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-18
+
+Same patrol as 1.0.0, now on the Dharma stack.
+
+### Changed
+- **Breaking:** odometry, localization, navigation, LiDAR perception, the control mux, the health
+  monitor, the RViz panels and the simulator come from the `dharma_*` packages, pinned in
+  `pashupati.repos` (`script/setup.sh install dharma`, or `vcs import src < pashupati.repos`).
+- **Breaking:** the remaining packages are `pashupati`, `pashupati_bridge`, `pashupati_fleet` and
+  `pashupati_inspection`; person detection is part of `pashupati_inspection`.
+- The configs tuned on the robot live in `src/pashupati/config`; the simulation is
+  `ros2 launch pashupati sim.launch.py` and its end-to-end test lives in `pashupati`.
+
+### Added
+- `script/setup.sh` component `dharma`.
+
+## [1.0.0] - 2026-10-18
+
+First stable release, field-tested at Lippo Mall Puri on a Genisom L1W.
+
 ### Added
 - Handheld video over WebRTC: `robot.launch.py` starts MediaMTX (`script/setup.sh install
   webrtc`), which runs the new `video_stream_node` while the handheld watches. H.264 from the

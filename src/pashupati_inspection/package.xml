@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>pashupati_inspection</name>
-  <version>0.1.0</version>
+  <version>2.0.0</version>
   <description>Early anomaly detection on the robot with a local VLM via Ollama, and the camera person detector (YOLO, ONNX) for the handheld and NETRA.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
