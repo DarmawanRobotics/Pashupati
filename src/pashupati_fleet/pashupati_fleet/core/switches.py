@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 
 # command -> (node whose parameters it sets, keys of its status kept in the telemetry)

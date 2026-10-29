@@ -1,0 +1,9 @@
+# pashupati_fleet defaults: only what differs from the configuration dataclasses, plus notes.
+# Every parameter with its unit and range: `ros2 param describe /fleet_uplink_node <name>`.
+fleet_uplink_node:
+  ros__parameters:
+    server_url: "" # NETRA, e.g. https://netra.example.com (empty: spool only); CC_URL
+    token: "" # robot token NETRA issued (Pengaturan -> Robot -> Tambah); CC_TOKEN
+    robot_id: robot-01 # ROBOT_ID
+    spool_dir: ~/.pashupati/spool # anomalies and taught routes wait here until NETRA has them
+    sites_dir: ~/dharma/map # patrol routes from NETRA go to <site>/netra/<route_id>.csv

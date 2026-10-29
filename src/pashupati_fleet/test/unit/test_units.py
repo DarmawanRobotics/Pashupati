@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import json
 
-from pashupati_fleet.anomaly import parse_result
-from pashupati_fleet.crowd import CrowdAggregator
-from pashupati_fleet.routes import summarize_csv
-from pashupati_fleet.spool import Spool
+from pashupati_fleet.core.anomaly import parse_result
+from pashupati_fleet.core.crowd import CrowdAggregator
+from pashupati_fleet.core.routes import summarize_csv
+from pashupati_fleet.core.spool import Spool
 
 
 def test_crowd_keeps_peak_per_cell_and_window():
@@ -60,7 +62,7 @@ def test_spool_quarantines_unreadable_items(tmp_path):
 
 def test_route_ids_cannot_escape_the_routes_dir():
     """Only plain ids are accepted for downloaded routes."""
-    from pashupati_fleet.routes import safe_route_id
+    from pashupati_fleet.core.routes import safe_route_id
 
     for good in ('42', 42, 'route-7', 'a1b2_c3.v2'):
         assert safe_route_id(good)
@@ -70,8 +72,8 @@ def test_route_ids_cannot_escape_the_routes_dir():
 
 def test_live_switches_from_the_command_center():
     """set_inspection / set_people map to the detectors' live parameters; junk is refused."""
+    from pashupati_fleet.core.switches import live_parameters, status_summary
     import pytest
-    from pashupati_fleet.switches import live_parameters, status_summary
 
     assert live_parameters('set_people', {'enabled': False}) == [('enabled', False)]
     assert live_parameters('set_inspection', {'model': ' moondream ', 'interval': -9}) == [
@@ -93,9 +95,9 @@ def test_live_switches_from_the_command_center():
 
 def test_queued_finding_takes_the_pose_of_when_it_was_seen():
     """A frame inspected late is placed where the robot was when the camera took it."""
-    import pytest
 
-    pose_at = pytest.importorskip('pashupati_fleet.fleet_uplink_node').pose_at
+    from pashupati_fleet.core.poses import pose_at
+
     history = [(100.0, {'x': 0.0}), (101.0, {'x': 0.5}), (102.0, {'x': 1.0})]
     assert pose_at(history, 101.3) == {'x': 0.5}
     assert pose_at(history, 107.5) is None  # nothing recorded within 5 s

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 CATEGORY_KEYS = ('category', 'label', 'class', 'type')
