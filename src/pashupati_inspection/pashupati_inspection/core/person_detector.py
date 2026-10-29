@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 
 import numpy as np
@@ -16,12 +18,12 @@ def letterbox(bgr: np.ndarray, size: int):
 
     height, width = bgr.shape[:2]
     scale = min(size / width, size / height)
-    new_w, new_h = int(round(width * scale)), int(round(height * scale))
+    new_w, new_h = round(width * scale), round(height * scale)
     if (new_w, new_h) != (width, height):
         bgr = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
     pad_x, pad_y = (size - new_w) // 2, (size - new_h) // 2
     canvas = np.full((size, size, 3), 114, np.uint8)
-    canvas[pad_y:pad_y + new_h, pad_x:pad_x + new_w] = bgr
+    canvas[pad_y : pad_y + new_h, pad_x : pad_x + new_w] = bgr
     blob = canvas[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255.0
     return np.ascontiguousarray(blob), scale, (pad_x, pad_y)
 

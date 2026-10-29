@@ -2,27 +2,25 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>pashupati_inspection</name>
-  <version>2.0.0</version>
-  <description>Early anomaly detection on the robot with a local VLM via Ollama, and the camera person detector (YOLO, ONNX) for the handheld and NETRA.</description>
+  <version>3.0.0</version>
+  <description>Early anomaly detection on the robot with a local VLM through Ollama (answers the path follower's inspection hook at stop points), and the camera person detector (YOLO, ONNX) for the handheld and NETRA.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>dharma_utils</exec_depend>
+  <exec_depend>pashupati_utils</exec_depend>
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
-  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
-  <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>python3-transforms3d</exec_depend>
-  <exec_depend>tf_transformations</exec_depend>
+  <exec_depend condition="$ROS_DISTRO != foxy">tf2_ros_py</exec_depend>
+  <exec_depend condition="$ROS_DISTRO == foxy">tf2_ros</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>

@@ -1,7 +1,14 @@
 """Person detector pre- and post-processing for Ultralytics YOLO ONNX exports (no model needed)."""
 
+from __future__ import annotations
+
 import numpy as np
-from pashupati_inspection.person_detector import letterbox, nms, OnnxPersonDetector, person_boxes
+from pashupati_inspection.core.person_detector import (
+    OnnxPersonDetector,
+    letterbox,
+    nms,
+    person_boxes,
+)
 import pytest
 
 
@@ -28,10 +35,10 @@ def test_people_are_mapped_back_to_the_frame_and_suppressed_once():
     """Overlaps merge, weak boxes and other classes go, pixels undo the letterbox padding."""
     out = head(
         [
-            (208, 208, 65, 130, 0, 0.9),   # a person in the middle
-            (210, 206, 65, 130, 0, 0.8),   # the same person again
-            (100, 100, 20, 40, 0, 0.2),    # too unsure
-            (300, 300, 50, 50, 2, 0.95),   # a car
+            (208, 208, 65, 130, 0, 0.9),  # a person in the middle
+            (210, 206, 65, 130, 0, 0.8),  # the same person again
+            (100, 100, 20, 40, 0, 0.2),  # too unsure
+            (300, 300, 50, 50, 2, 0.95),  # a car
         ]
     )
     boxes = person_boxes(out, 0.4, 0.65, (0, 52), (480, 640))

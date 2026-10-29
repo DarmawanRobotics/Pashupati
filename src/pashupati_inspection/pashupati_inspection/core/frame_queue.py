@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from collections import deque
+import contextlib
 import json
 import os
 import threading
 import time
 
-import cv2
 import numpy as np
 
 THUMB_SIZE = (32, 24)  # width, height of the picture compared to the last queued one
@@ -12,6 +14,8 @@ THUMB_SIZE = (32, 24)  # width, height of the picture compared to the last queue
 
 def thumbnail(img: np.ndarray) -> np.ndarray:
     """Return a small grey copy of a BGR (or grey) image, for frame_change."""
+    import cv2
+
     grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
     return cv2.resize(grey, THUMB_SIZE, interpolation=cv2.INTER_AREA).astype(np.float32)
 
@@ -78,10 +82,8 @@ class FrameQueue:
     def delete(self, name: str):
         """Remove a frame's files, ignoring missing ones."""
         for ext in ('.jpg', '.json'):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(self.path(name, ext))
-            except OSError:
-                pass
 
     def drop_oldest(self):
         """Forget the oldest frame (lock held)."""

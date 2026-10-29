@@ -1,8 +1,12 @@
 """The inspection queue: first in first out, bounded, kept across restarts."""
 
+from __future__ import annotations
+
 import numpy as np
-from pashupati_inspection.frame_queue import frame_change, FrameQueue, thumbnail
+from pashupati_inspection.core.frame_queue import FrameQueue, frame_change, thumbnail
 import pytest
+
+from dharma_utils.math import default_rng
 
 
 @pytest.fixture(params=['disk', 'memory'])
@@ -57,8 +61,9 @@ def test_frames_survive_a_restart(tmp_path):
 
 def test_change_between_frames():
     """A still scene is no change; something new in a corner is."""
+    pytest.importorskip('cv2')
     floor = np.full((480, 640, 3), 120, np.uint8)
-    noisy = np.clip(floor + np.random.default_rng(1).normal(0, 4, floor.shape), 0, 255)
+    noisy = np.clip(floor + default_rng(1).normal(0, 4, floor.shape), 0, 255)
     trash = floor.copy()
     trash[400:440, 600:640] = 20  # 40 x 40 px near a corner
     assert frame_change(thumbnail(noisy.astype(np.uint8)), thumbnail(floor)) < 3.0

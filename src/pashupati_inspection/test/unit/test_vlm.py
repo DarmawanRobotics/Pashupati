@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import json
 
-from pashupati_inspection.vlm import (
+from pashupati_inspection.core.vlm import (
     build_prompt,
     build_request,
     build_schema,

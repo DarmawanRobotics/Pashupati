@@ -1,4 +1,7 @@
 """Prompt, request and answer parsing for the Ollama vision model (no ROS here)."""
+
+from __future__ import annotations
+
 import base64
 import json
 import re
@@ -71,8 +74,10 @@ def build_prompt(
     """Return the prompt listing every category plus 'none'."""
     lines = [f'- {c}: {describe_category(c, hints or {})}' for c in categories]
     lines.append('- none: the floor is clean with nothing lying on it')
-    ignore = 'furniture, shelves and walls' if 'fallen_person' in categories else (
-        'furniture, shelves, walls and people'
+    ignore = (
+        'furniture, shelves and walls'
+        if 'fallen_person' in categories
+        else ('furniture, shelves, walls and people')
     )
     prompt = (
         'You are inspecting the floor of a public building for cleanliness. '

@@ -1,0 +1,23 @@
+# pashupati_inspection defaults: only what differs from the configuration dataclasses, plus notes.
+# Every parameter with its unit and range: `ros2 param describe /<node> <name>`. The robot
+# (frames, base_height: the floor for placing people) comes from the robot profile (robot.*).
+anomaly_detector_node:
+  ros__parameters:
+    # Live (handheld, NETRA, ros2 param set): enabled, model, interval_sec and the finding types;
+    # kept in state_file once changed there and winning over these files at the next start.
+    model: qwen3-vl:2b-instruct # any Ollama vision model; the handheld offers `models`
+    categories: [trash, spill, stain] # a-z 0-9 _, the model also answers "none"
+    alarm_categories: [trash, spill] # reported to NETRA; stain is only shown (shiny floors)
+    # own text per type, "name: what to look for"; trash, spill, stain, floor_damage and
+    # fallen_person have built-in texts
+    category_descriptions: [""]
+    keep_alive: "-1" # keep the model loaded while the node runs ("-1"), or e.g. "30m"
+    interval_sec: 0.0 # 0 back to back, > 0 every N s through the queue, < 0 stop points only
+    queue_dir: ~/.pashupati/inspection_queue # interval frames kept across restarts
+
+person_detector_node:
+  ros__parameters:
+    # YOLO11n exported to ONNX at 416 px (scripts/setup.sh install people_model): runs without
+    # PyTorch (ONNX Runtime, CUDA when available, else OpenCV); .pt / .engine use Ultralytics.
+    model_path: ~/dev/Pashupati/models/yolo11n-416.onnx
+    rate_hz: 0.0 # live: detections per second; 0 = 5 on the GPU, 2 on the CPU
