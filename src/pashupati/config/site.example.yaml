@@ -53,7 +53,6 @@ fleet_uplink_node:
   ros__parameters:
     robot_id: robot-01 # ROBOT_ID in the env file wins when set
 
-
 # fastlio_mapping_node:
 #   ros__parameters:
 #     point_filter_num: 3             # weaker computer: keep fewer points
