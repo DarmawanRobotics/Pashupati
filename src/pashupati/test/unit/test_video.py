@@ -1,14 +1,17 @@
 """Tests of the MediaMTX setup for the handheld's WebRTC video."""
 
+from __future__ import annotations
+
 import base64
 import hashlib
 import os
 import shlex
 import stat
 
-from pashupati import video
 from pashupati.bringup import node_parameter
 import yaml
+
+from pashupati import video
 
 
 def fake_mediamtx(directory, version='v1.20.1') -> str:
@@ -88,17 +91,16 @@ def test_config_file_is_private(tmp_path):
     assert os.listdir(os.path.dirname(path)) == ['mediamtx.yml']
 
 
-def test_node_parameter_follows_ros_precedence(tmp_path):
-    """Later files win; the node's own section wins over '/**'; missing files are skipped."""
-    defaults = tmp_path / 'defaults.yaml'
-    defaults.write_text('teleop_udp_node:\n  ros__parameters:\n    token: ""\n    port: 9870\n')
-    site = tmp_path / 'site.yaml'
-    site.write_text(
-        'teleop_udp_node:\n  ros__parameters:\n    token: "change-me"\n'
-        '/**:\n  ros__parameters:\n    token: everyone\n'
+def test_node_parameter_of_merged_data():
+    """The token MediaMTX needs comes from the merged parameters."""
+    data = {'teleop_udp_node': {'ros__parameters': {'token': 'change-me', 'port': 9870}}}
+    assert node_parameter(data, 'teleop_udp_node', 'token') == 'change-me'
+    assert node_parameter(data, 'other_node', 'port', 1) == 1
+
+
+def test_the_encoder_reads_the_selected_camera():
+    """The camera topic of the launch reaches video_stream_node."""
+    command = video.node_command(
+        '/x/video_stream_node', ['/p.yaml'], video.rtsp_url(), '/cam/image_raw'
     )
-    files = [str(defaults), str(site), str(tmp_path / 'missing.yaml')]
-    assert node_parameter(files, 'teleop_udp_node', 'token') == 'change-me'
-    assert node_parameter(files, 'teleop_udp_node', 'port') == 9870
-    assert node_parameter(files, 'other_node', 'token') == 'everyone'
-    assert node_parameter(files, 'other_node', 'port', 1) == 1
+    assert shlex.split(command)[-2:] == ['-p', 'image_topic:=/cam/image_raw']

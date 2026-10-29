@@ -9,6 +9,8 @@ the protective field stands in the way. Finally no node may have died or printed
 PASHUPATI_SKIP_SIM=1 to skip it.
 """
 
+from __future__ import annotations
+
 import math
 import os
 import signal
@@ -32,8 +34,8 @@ DOMAIN = 70 + os.getpid() % 30
 PERSON_RADIUS = 0.25
 ROBOT_FRONT = 0.40
 ROBOT_HALF_WIDTH = 0.28
-MAX_OFFSET = 0.8      # path_shift.max_offset
-ROUTE_Y = -3.0        # the bottom corridor of the mall_loop route
+MAX_OFFSET = 0.8  # path_shift.max_offset
+ROUTE_Y = -3.0  # the bottom corridor of the mall_loop route
 
 
 class Recorder:
@@ -47,9 +49,7 @@ class Recorder:
         node.create_subscription(
             StopPointEvent, 'navigation/stop_point_event', self.events.append, 10
         )
-        node.create_subscription(
-            geometry_msgs.PoseStamped, 'sim/ground_truth', self.on_pose, 10
-        )
+        node.create_subscription(geometry_msgs.PoseStamped, 'sim/ground_truth', self.on_pose, 10)
         node.create_subscription(
             std_msgs.String,
             'bridge/protective_field',
@@ -120,7 +120,7 @@ def session_processes(sid: int) -> str:
                 cmd = f.read().replace(b'\0', b' ').decode(errors='replace').strip()
         except OSError:  # gone meanwhile
             continue
-        fields = stat[stat.rfind(')') + 2:].split()  # state ppid pgrp session ...
+        fields = stat[stat.rfind(')') + 2 :].split()  # state ppid pgrp session ...
         if len(fields) > 3 and fields[3] == str(sid):
             rows.append(f'{entry} {fields[0]} {cmd[:160]}')
     return '\n'.join(rows) or '(none)'
@@ -162,7 +162,8 @@ def sim():
         output = log.read()
         log.close()
         problems = [
-            line for line in output.splitlines()
+            line
+            for line in output.splitlines()
             if 'process has died' in line or 'Traceback' in line
         ]
         tail = '\n'.join(output.splitlines()[-40:])
@@ -183,9 +184,9 @@ def test_patrol_slides_around_a_person_and_inspects(sim):
     px, py = -2.0, ROUTE_Y
     sim.place([(px, py)])
     start = len(sim.poses)
-    assert sim.spin_until(
-        lambda: any(e.event == 'departed' for e in sim.events), 90.0
-    ), f'stop point not completed, events: {[(e.index, e.event) for e in sim.events]}'
+    assert sim.spin_until(lambda: any(e.event == 'departed' for e in sim.events), 90.0), (
+        f'stop point not completed, events: {[(e.index, e.event) for e in sim.events]}'
+    )
     track = sim.poses[start:]
     closest = min(math.hypot(p[1] - px, p[2] - py) for p in track)
     assert closest > PERSON_RADIUS + ROBOT_HALF_WIDTH, f'robot came within {closest:.2f} m'
