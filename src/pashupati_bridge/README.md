@@ -1,87 +1,83 @@
 # pashupati_bridge
 
-Who drives the robot, and how the handheld talks to it without ROS.
+How the handheld talks to the robot without ROS, its video, and where the camera comes from.
+The bridge never drives the robot itself: the stick is one operator source of Dharma's control
+mux, which alone publishes the robot's `cmd_vel` after its envelope, protective field and e-stop.
 
-## Nodes
+| Node                | Role                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| `teleop_udp_node`   | UDP gateway of the Pashupati Controller: stick, commands, telemetry, JPEG camera, cloud |
+| `video_stream_node` | H.264 of the camera for the handheld's WebRTC video (MediaMTX starts it while watched)  |
+| `rtsp_camera_node`  | an RTSP camera as the robot's camera (`camera:=rtsp`): image, JPEG and `camera_info`    |
 
-### control_mux_node
+## teleop_udp_node
 
-The single gate between every velocity source and the robot: forwards either navigation or teleop
-velocity, and holds the robot still while the software e-stop is engaged.
+The wire format is [PROTOCOL.md](PROTOCOL.md) (v1, unchanged for the handheld).
 
-| | Name | Type |
-|---|---|---|
-| sub | `bridge/nav_cmd_vel` | `geometry_msgs/Twist` (path follower output) |
-| sub | `bridge/remote_cmd_vel` | `geometry_msgs/Twist` (teleop) |
-| sub | `bridge/estop_request` | `std_msgs/String`: engage the e-stop with this reason, no reply |
-| pub | `cmd_vel` | `geometry_msgs/Twist` (remap to the robot, e.g. `/robot/cmd_vel`) |
-| pub | `bridge/mode` | `std_msgs/String`, latched |
-| pub | `bridge/estop_engaged`, `bridge/estop_reason` | `std_msgs/Bool`, `std_msgs/String`, latched |
-| srv | `bridge/set_mode` | `dharma_interfaces/SetMode` (`auto` \| `remote`) |
-| srv | `bridge/estop` | `std_srvs/SetBool`: `true` engages, `false` releases |
+| Handheld                       | Dharma                                                                                                                      |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| stick (`joy`)                  | `control/remote/handheld/cmd_vel` (`remote_source`), clamped to `max_vx/vy/wz` and `robot.limits`; NaN or text is 0         |
+| `set_mode`                     | `control/set_mode` (`auto`, or `remote` with source `handheld`)                                                             |
+| `estop`                        | `control/estop_request` at once, then `control/estop/engage`; `estop_release`: `control/estop/release`                      |
+| `nav_*`                        | `navigation/start`, `stop`, `pause`, `resume`                                                                               |
+| `record_*`                     | `route/start`, `route/stop`, `route/mark_stop_point` (dharma_mapping)                                                       |
+| `list_routes`, `load_route`    | the taught routes of every site under `sites_dir`, `navigation/load_path`                                                   |
+| `localize`, `record_tags`      | `localization/start`, `localization/record_tags`                                                                            |
+| `dock`, `undock`               | `docking/dock`, `docking/undock`                                                                                            |
+| `nav_speed`                    | `path_follower_node` `speed.cruise`, between `patrol_speed_min` and `patrol_speed_max` (never above `robot.limits.max_vx`)  |
+| `inspection_set`, `people_set` | live parameters of `anomaly_detector_node`, `person_detector_node`                                                          |
+| robot commands                 | `std_srvs/Trigger` `/<robot_ns>/<name>` of the driver (`robot_commands`; `emergency_stop` also latches the software e-stop) |
 
-In `remote` mode navigation is paused (and resumed when switching back). The robot gets one zero
-command as soon as the active source goes silent: teleop after `remote_timeout_sec`, navigation
-after `nav_timeout_sec`.
+Telemetry comes from the typed status: `control/status` (mode, e-stop, field), `navigation/status`,
+`localization/status`, `health/status` with the computer's figures from the health monitor's
+`/diagnostics`, the detectors' status, `navigation/waypoints`, and the driver's `battery`,
+`diagnostics` and `cmd_vel` (remapped to `/<robot_ns>/` by the launch).
 
-**Speed envelope.** No source can command more than `max_vx` / `max_vy` / `max_wz` (1.0 m/s,
-0.5 m/s, 1.5 rad/s): x and y are scaled down together, so the robot keeps its heading. A command
-with a NaN or infinite value, from a controller bug or a bad route, is replaced by zero and logged.
+Set the same `token` in the site file and in the handheld; a wrong one is answered with `denied`.
+Camera, cloud and TF are subscribed only while a handheld is connected and wants them.
 
-**Protective field.** Every forwarded command is limited to a speed the robot can still stop at,
-after `field.reaction_time` and braking at `field.max_decel`, `field.margin` short of the nearest
-obstacle in its swept path (box `field.front` / `field.rear` / `field.half_width`, from the 360°
-`perception/safety_scan`). It works in every direction, so sideways and backward motion during a
-holonomic stop-point approach are protected as well as forward driving. Without a fresh scan
-(`safety_scan_timeout_sec`) navigation stops; a blind LiDAR reports every sector blocked. Rotation
-is not limited. The handheld in REMOTE is not limited by default, the operator watches the robot
-(`field_in_remote: true` protects it too; without a fresh scan it then creeps at
-`stale_remote_speed`). State on `bridge/protective_field` (`clear`, `limited`, `stop`, `stale`,
-`off`), also in the handheld and NETRA telemetry. Robots without the safety scan set
-`field_in_auto` to false.
+## video_stream_node
 
-**Software e-stop.** Engaged from the handheld (`estop`, and also its `emergency_stop` driver
-command), NETRA (`estop`), RViz / CLI (`ros2 service call /bridge/estop std_srvs/srv/SetBool
-"{data: true}"`) or any node via `bridge/estop_request`. While engaged nothing but zero reaches the
-robot (sent at `estop_hold_hz`), navigation is paused and a mode switch cannot resume it. Release
-is explicit (`estop_release`, or the service with `false`); navigation then stays paused until an
-operator resumes it.
+MediaMTX (the `pashupati` bringup, `scripts/setup.sh install webrtc`) runs it while the handheld
+watches the WebRTC video and stops it 10 s after the last viewer. It encodes `image_topic` (raw
+`rgb8`, `bgr8`, `mono8`, `yuv422`, ...) with the first encoder that works (Jetson
+`nvv4l2h264enc`, x264, OpenH264) and publishes over RTSP to MediaMTX on the loopback.
 
-### teleop_udp_node
+## rtsp_camera_node
 
-UDP gateway for the Flutter teleop: joystick, commands (mode, navigation, route recording, stop
-points, routes, localization, robot commands), 10 Hz telemetry, JPEG camera, downsampled lidar and
-the loaded route. The wire format is in [PROTOCOL.md](PROTOCOL.md). With `video_port` set (the
-`pashupati` launch does it when MediaMTX runs) it offers the handheld the WebRTC video instead of
-the JPEG frames.
+An RTSP camera (an IP camera, a gimbal pod, a robot's own camera) in place of a camera driver:
+`camera:=rtsp camera_url:=rtsp://...` of the bringup starts it, remapped onto the camera topics
+every consumer reads (`<camera_topics>/image_raw`, `image_raw/compressed`, `camera_info`). It
+decodes with GStreamer (Jetson hardware decoder, libav, then FFmpeg), reconnects with a backoff
+up to 30 s, and with `calibration_file` publishes the rectified image with a matching
+`camera_info` ([config/calibration.example.yaml](config/calibration.example.yaml)); without one
+`camera_info` assumes `default_hfov_deg` and tag poses are only approximate.
 
-Set the same `token` here (site file) and in the handheld; a wrong one is answered with `denied`.
-`robot_commands` are the driver's `std_srvs/Trigger` services shown in the handheld's action
-menu, in this order. The camera, the cloud and TF are only subscribed while a handheld is connected
-and has that stream on, so an idle gateway costs next to nothing.
+## Layout
 
-### video_stream_node
+| Module                                                 |                                                             |
+| ------------------------------------------------------ | ----------------------------------------------------------- |
+| `teleop_udp_node.py`                                   | messages, commands, the state message                       |
+| `core/protocol.py`                                     | wire format: JSON, chunked streams, point packing           |
+| `core/session.py`                                      | one driver at a time, acknowledgements, `denied` rate limit |
+| `core/commands.py`                                     | which service each command calls, checks of the arguments   |
+| `core/summaries.py`                                    | the inspection, people and health parts of `state`          |
+| `core/routes.py`                                       | taught routes inside the sites directory                    |
+| `core/config.py`                                       | `TeleopConfig`, `VideoConfig`, `CameraConfig`               |
+| `core/video.py`, `core/rtsp.py`, `core/calibration.py` | GStreamer pipelines, the camera calibration                 |
+| `utils/link.py`                                        | the UDP socket with its reader thread                       |
+| `utils/clients.py`                                     | the service clients, the patrol speed                       |
+| `utils/telemetry.py`                                   | the status subscriptions                                    |
+| `utils/streams.py`                                     | camera, cloud and tags, subscribed only while wanted        |
 
-H.264 of the camera for the handheld's WebRTC video. MediaMTX starts it when the handheld opens
-the video and stops it 10 s after the last viewer, so it costs nothing while nobody watches. It
-encodes `image_topic` (raw `rgb8`, `bgr8`, `mono8`, `yuv422`, ...) at `fps`, no wider than
-`max_width`, with the first encoder that works: the Jetson hardware encoder (`nvv4l2h264enc`, not
-on the Orin Nano), x264, OpenH264. Then it publishes over RTSP to MediaMTX on the loopback, and
-MediaMTX serves WebRTC (WHEP) to the handheld. MediaMTX, its configuration and the ports come from
-`pashupati` `robot.launch.py`; GStreamer and MediaMTX from `script/setup.sh install webrtc`.
-
-## Run
+## Launch and test
 
 ```bash
 ros2 launch pashupati_bridge bridge.launch.py robot_ns:=robot
-ros2 launch dharma_navigation navigation.launch.py cmd_vel_topic:=/bridge/nav_cmd_vel ...
-```
-
-Parameters: [config/bridge_params.yaml](config/bridge_params.yaml). For a lighter camera stream
-publish a compressed image (`camera_compressed: true`); raw images are JPEG-encoded with OpenCV.
-
-## Test
-
-```bash
+ros2 launch pashupati_bridge bridge.launch.py camera:=rtsp camera_url:=rtsp://192.168.1.120:8554/test
 colcon test --packages-select pashupati_bridge && colcon test-result --verbose
 ```
+
+Arguments: `params_file`, `robot_params`, `use_sim_time`, `log_level`, `robot_ns`, `teleop`,
+`video_port`, `camera` (`driver` | `rtsp`), `camera_url`, `camera_topics`
+(`/camera/camera/color`). Defaults: [config/bridge.yaml](config/bridge.yaml).

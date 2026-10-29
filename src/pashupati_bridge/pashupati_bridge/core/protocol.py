@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import math
 import struct
@@ -45,7 +47,7 @@ def chunk(stream: int, frame: int, payload: bytes, size: int = CHUNK_PAYLOAD) ->
     count = max(1, -(-len(payload) // size))
     return [
         HEADER.pack(MAGIC, stream, frame & 0xFFFFFFFF, i, count)
-        + payload[i * size:(i + 1) * size]
+        + payload[i * size : (i + 1) * size]
         for i in range(count)
     ]
 
@@ -67,7 +69,7 @@ class Reassembler:
                 return None
             current = (frame, count, {})
             self._frames[stream] = current
-        current[2][index] = datagram[HEADER.size:]
+        current[2][index] = datagram[HEADER.size :]
         if len(current[2]) < current[1]:
             return None
         del self._frames[stream]

@@ -2,11 +2,13 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>pashupati_bridge</name>
-  <version>2.0.0</version>
-  <description>Auto/remote control mux, the UDP teleop gateway (no ROS on the handheld) and its WebRTC video encoder.</description>
+  <version>3.0.0</version>
+  <description>The handheld's UDP gateway (no ROS on the handheld; the stick goes to the control mux as an operator source), its WebRTC video encoder, and an RTSP camera node for a selectable camera source.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>dharma_utils</exec_depend>
+  <exec_depend>pashupati_utils</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
@@ -14,13 +16,16 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
-  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend condition="$ROS_DISTRO != foxy">tf2_ros_py</exec_depend>
+  <exec_depend condition="$ROS_DISTRO == foxy">tf2_ros</exec_depend>
   <exec_depend>dharma_interfaces</exec_depend>
-  <exec_depend>dharma_control</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <exec_depend>apriltag_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
-  <!-- video_stream_node: H.264 over RTSP to MediaMTX (x264enc is the software encoder) -->
+  <!-- video_stream_node (H.264 over RTSP to MediaMTX) and rtsp_camera_node (decoding) -->
   <exec_depend>python3-gi</exec_depend>
   <exec_depend>gstreamer1.0</exec_depend>
   <exec_depend>gstreamer1.0-plugins-base</exec_depend>
@@ -29,9 +34,6 @@
   <exec_depend>gstreamer1.0-plugins-ugly</exec_depend>
   <exec_depend>gstreamer1.0-rtsp</exec_depend>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>
