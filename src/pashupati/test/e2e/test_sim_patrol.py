@@ -179,10 +179,15 @@ def test_a_route_with_three_stop_points_is_taught(world):
     assert operator.call(spinner, 'route/start').success
     for x, y, yaw in STOPS:
         assert operator.go_to(spinner, x, y, yaw), f'did not reach ({x}, {y})'
-        reply = operator.call(
-            spinner, 'route/mark_stop_point', MarkStopPoint.Request(dwell_sec=2.0)
-        )
-        assert reply.success, reply.message
+        request = MarkStopPoint.Request(dwell_sec=2.0)
+        replies = []
+
+        def marked() -> bool:
+            replies.append(operator.call(spinner, 'route/mark_stop_point', request))
+            return replies[-1].success or 'not localized' not in replies[-1].message
+
+        wait_for(marked, 15.0, 0.5)
+        assert replies[-1].success, replies[-1].message
     reply = operator.call(spinner, 'route/stop')
     assert reply.success, reply.message
     assert operator.saved.wait(1, 10.0), 'route/saved never came'
