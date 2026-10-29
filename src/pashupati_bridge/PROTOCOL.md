@@ -104,7 +104,7 @@ camera, the cloud and TF only while a client is connected and has the stream ena
 
 ## WebRTC video
 
-When the robot runs MediaMTX (`pashupati` `robot.launch.py`, `script/setup.sh install webrtc`), the
+When the robot runs MediaMTX (`pashupati` `robot.launch.py`, `scripts/setup.sh install webrtc`), the
 `welcome` carries `video: {port, path}` and the handheld can play the camera as H.264 over WebRTC
 instead of the JPEG stream: smoother, a fraction of the bandwidth, and no lost frames when one
 datagram is lost.

@@ -102,7 +102,7 @@ class OnnxPersonDetector:
     ):
         if not os.path.isfile(model_path):
             raise FileNotFoundError(
-                f'no model at {model_path}: script/setup.sh install people_model'
+                f'no model at {model_path}: scripts/setup.sh install people_model'
             )
         self.confidence = confidence
         self._size = image_size
