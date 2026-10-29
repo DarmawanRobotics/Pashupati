@@ -34,7 +34,9 @@ def nodes(context):
     out = []
     if pl.truthy(arg('anomaly')):
         values = pl.overrides(arg, image_topic=image, ollama_url=arg('ollama_url'))
-        out.append(node('anomaly_detector_node', files, values, arg))
+        # the anomaly detector has no robot geometry: no robot profile for it
+        own = [f for f in files if f != arg('robot_params')]
+        out.append(node('anomaly_detector_node', own, values, arg))
     if pl.truthy(arg('people')):
         values = pl.overrides(arg, image_topic=image, camera_info_topic=arg('camera_info'))
         out.append(node('person_detector_node', files, values, arg))

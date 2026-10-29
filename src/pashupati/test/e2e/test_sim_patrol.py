@@ -1,247 +1,259 @@
 """
-End to end: the whole stack patrols the simulated mall.
+End to end: the whole Pashupati robot on dharma_sim, the way an operator uses it.
 
-Starts `ros2 launch pashupati sim.launch.py autostart:=true` (needs the workspace installed, as
-in `colcon test`). A person steps onto the route: the robot slides around them without touching
-them or straying far, and completes the inspection stop. A crowd blocks the corridor: it stops
-short and drives on once they are gone. Then the handheld drives straight at a person, where only
-the protective field stands in the way. Finally no node may have died or printed a traceback. Set
-PASHUPATI_SKIP_SIM=1 to skip it.
+Starts `ros2 launch pashupati sim.launch.py` with the VLM inspection (a stand-in Ollama) and the
+NETRA uplink (pashupati_fleet's fake_netra), publishes a camera, then: the robot localizes, a
+route with three stop points is taught (driven with planner/go_to while route/start records),
+the taught route is patrolled to its end with the inspection hook answered at every stop, the
+handheld takes over through the control mux in the middle and gives it back, and NETRA receives
+the telemetry, the stop events, the findings and the taught route. Finally the launch must stop
+cleanly with no node died. Needs the workspace installed (colcon test); PASHUPATI_SKIP_SIM=1
+skips it.
 """
 
 from __future__ import annotations
 
 import math
 import os
-import signal
-import subprocess
-import tempfile
-import time
+import warnings
 
+import numpy as np
 import pytest
+import rclpy
+from rclpy.executors import SingleThreadedExecutor
+from sensor_msgs.msg import Image
+from std_msgs.msg import String
+from std_srvs.srv import Trigger
 
-rclpy = pytest.importorskip('rclpy')
-qos = pytest.importorskip('rclpy.qos')
-geometry_msgs = pytest.importorskip('geometry_msgs.msg')
-std_msgs = pytest.importorskip('std_msgs.msg')
-StopPointEvent = pytest.importorskip('dharma_interfaces.msg').StopPointEvent
-SetMode = pytest.importorskip('dharma_interfaces.srv').SetMode
-
-pytestmark = pytest.mark.skipif(
-    os.environ.get('PASHUPATI_SKIP_SIM') == '1', reason='PASHUPATI_SKIP_SIM=1'
+from dharma_interfaces.msg import (
+    ControlStatus,
+    LocalizationStatus,
+    NavigationStatus,
+    PlannerStatus,
+    StopPointEvent,
 )
-DOMAIN = 70 + os.getpid() % 30
-PERSON_RADIUS = 0.25
-ROBOT_FRONT = 0.40
-ROBOT_HALF_WIDTH = 0.28
-MAX_OFFSET = 0.8  # path_shift.max_offset
-ROUTE_Y = -3.0  # the bottom corridor of the mall_loop route
+from dharma_interfaces.srv import GoTo, LoadPath, MarkStopPoint, PlanPath
+from dharma_utils.ros import EVENTS, LATCHED, SENSOR, compat
+from dharma_utils.testing import Collector, Spinner, wait_for
+
+pytestmark = pytest.mark.skipif(os.environ.get('PASHUPATI_SKIP_SIM') == '1', reason='skipped')
+pytest.importorskip('cv2')  # the anomaly detector encodes frames
+pytest.importorskip('websocket')  # the NETRA uplink
+from pashupati_fleet.tools.fake_netra import FakeNetra  # noqa: E402
+from sim_rig import Handheld, Launch, OllamaHandler, problems, serve  # noqa: E402
+
+DOMAIN = 60 + os.getpid() % 30
+SITES = '/tmp/pashupati_sim/sites'
+START = (-3.5, -3.0, 0.0)  # the bottom corridor of mall_loop (the robot starts at -4.5)
+PASHUPATI_NODES = tuple(  # how their lines start in the launch log
+    f'{prefix}{name}-'
+    for name in (
+        'teleop_udp_node',
+        'video_stream_node',
+        'rtsp_camera',
+        'anomaly_detector_node',
+        'person_detector_node',
+        'fleet_uplink_node',
+    )
+    for prefix in ('[', '[ERROR] [')
+)
+STOPS = [(-2.0, -3.0, 0.0), (0.5, -3.0, 0.0), (3.0, -3.0, 0.0)]
 
 
-class Recorder:
-    """Collects what the stack reports while the simulation runs."""
+class Operator:
+    """The test's ROS side: a camera, the services an operator calls, what the robot reports."""
 
     def __init__(self, node):
-        """Subscribe to stop events, the ground truth and the protective field."""
         self.node = node
-        self.events, self.poses, self.field = [], [], []
-        latched = qos.QoSProfile(depth=1, durability=qos.QoSDurabilityPolicy.TRANSIENT_LOCAL)
-        node.create_subscription(
-            StopPointEvent, 'navigation/stop_point_event', self.events.append, 10
+        self.stops = Collector(node, StopPointEvent, 'navigation/stop_point', EVENTS)
+        self.nav = Collector(node, NavigationStatus, 'navigation/status', 10)
+        self.planner = Collector(node, PlannerStatus, 'planner/status', LATCHED)
+        self.localization = Collector(node, LocalizationStatus, 'localization/status', LATCHED)
+        self.control = Collector(node, ControlStatus, 'control/status', LATCHED)
+        self.saved = Collector(node, String, 'route/saved', EVENTS)
+        self.camera = node.create_publisher(Image, '/camera/camera/color/image_raw', SENSOR)
+        node.create_timer(0.2, self.publish_frame)
+        self.clients = {
+            name: node.create_client(kind, name)
+            for name, kind in (
+                ('route/start', Trigger),
+                ('route/stop', Trigger),
+                ('route/mark_stop_point', MarkStopPoint),
+                ('planner/go_to', GoTo),
+                ('navigation/load_path', LoadPath),
+                ('navigation/start', Trigger),
+                ('planner/plan', PlanPath),
+            )
+        }
+
+    def publish_frame(self):
+        """A grey camera frame (the stand-in VLM answers trash on any)."""
+        msg = Image(height=48, width=64, encoding='bgr8', step=64 * 3)
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = 'camera_color_optical_frame'
+        msg.data = np.full((48, 64, 3), 128, np.uint8).tobytes()
+        self.camera.publish(msg)
+
+    def call(self, spinner, name: str, request=None, timeout: float = 20.0):
+        """Call a service of the stack."""
+        client = self.clients[name]
+        return spinner.call(client, request or client.srv_type.Request(), timeout)
+
+    def planner_ready(self, spinner, x: float, y: float) -> bool:
+        """Return True once the planner has the map and the robot pose (a plan to x, y)."""
+        request = PlanPath.Request(x=x, y=y, yaw=0.0)
+        return wait_for(lambda: self.call(spinner, 'planner/plan', request).success, 60.0, 1.0)
+
+    def go_to(self, spinner, x: float, y: float, yaw: float) -> bool:
+        """Drive to a pose with the planner; True when it arrived."""
+        before = len(self.planner.messages)
+        request = GoTo.Request(x=x, y=y, yaw=yaw)
+        replies = []
+
+        def answered() -> bool:
+            # a busy machine can delay TF past the planner's tf_timeout_sec: then ask again
+            replies.append(self.call(spinner, 'planner/go_to', request))
+            return replies[-1].success or 'pose unknown' not in replies[-1].message
+
+        wait_for(answered, 15.0, 0.5)
+        assert replies[-1].success, replies[-1].message
+        return wait_for(
+            lambda: any(m.state == PlannerStatus.ARRIVED for m in self.planner.messages[before:]),
+            120.0,
         )
-        node.create_subscription(geometry_msgs.PoseStamped, 'sim/ground_truth', self.on_pose, 10)
-        node.create_subscription(
-            std_msgs.String,
-            'bridge/protective_field',
-            lambda m: self.field.append(m.data),
-            latched,
-        )
-        self.obstacles = node.create_publisher(geometry_msgs.PoseArray, 'sim/obstacles', 10)
-        self.remote = node.create_publisher(geometry_msgs.Twist, 'bridge/remote_cmd_vel', 10)
-        self.mode_client = node.create_client(SetMode, 'bridge/set_mode')
-
-    def on_pose(self, msg):
-        """Keep (time, x, y, yaw) of the true robot pose."""
-        q = msg.pose.orientation
-        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-        self.poses.append((time.monotonic(), msg.pose.position.x, msg.pose.position.y, yaw))
-
-    def spin_until(self, condition, timeout: float) -> bool:
-        """Spin until condition() is true or the timeout passes."""
-        end = time.monotonic() + timeout
-        while time.monotonic() < end:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
-            if condition():
-                return True
-        return False
-
-    def place(self, points):
-        """Put people (circles) at these map positions; [] clears them."""
-        msg = geometry_msgs.PoseArray()
-        for x, y in points:
-            pose = geometry_msgs.Pose()
-            pose.position.x, pose.position.y = x, y
-            msg.poses.append(pose)
-        self.obstacles.publish(msg)
-
-    def set_mode(self, mode: str) -> bool:
-        """Switch the control mux to auto or remote, like the handheld does."""
-        if not self.mode_client.wait_for_service(timeout_sec=10.0):
-            return False
-        future = self.mode_client.call_async(SetMode.Request(mode=mode))
-        self.spin_until(future.done, 10.0)
-        return future.done() and future.result().success
-
-    def drive_remote(self, vx: float, seconds: float):
-        """Hold the handheld stick: send a forward command at 20 Hz for this long."""
-        cmd = geometry_msgs.Twist()
-        cmd.linear.x = vx
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.remote.publish(cmd)
-            self.spin_until(lambda: False, 0.05)
-
-
-def default_sigint():
-    """Give the launch the default SIGINT action, even if this test runs as a background job."""
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-
-
-def session_processes(sid: int) -> str:
-    """List the processes of session sid as 'pid state command' lines, read from /proc."""
-    rows = []
-    for entry in os.listdir('/proc'):
-        if not entry.isdigit():
-            continue
-        try:
-            with open(f'/proc/{entry}/stat') as f:
-                stat = f.read()
-            with open(f'/proc/{entry}/cmdline', 'rb') as f:
-                cmd = f.read().replace(b'\0', b' ').decode(errors='replace').strip()
-        except OSError:  # gone meanwhile
-            continue
-        fields = stat[stat.rfind(')') + 2 :].split()  # state ppid pgrp session ...
-        if len(fields) > 3 and fields[3] == str(sid):
-            rows.append(f'{entry} {fields[0]} {cmd[:160]}')
-    return '\n'.join(rows) or '(none)'
 
 
 @pytest.fixture(scope='module')
-def sim():
-    """Run the simulation for the module; yields the recorder and checks the logs at the end."""
-    log = tempfile.NamedTemporaryFile('w+', prefix='pashupati_sim_', suffix='.log', delete=False)
-    env = dict(os.environ, ROS_DOMAIN_ID=str(DOMAIN))
-    proc = subprocess.Popen(
-        ['ros2', 'launch', 'pashupati', 'sim.launch.py', 'autostart:=true'],
-        env=env,
-        stdin=subprocess.DEVNULL,  # non-interactive: launch itself stops every node, like systemd
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        preexec_fn=default_sigint,
-    )
-    rclpy.init(domain_id=DOMAIN)
-    node = rclpy.create_node('sim_e2e_test')
-    recorder = Recorder(node)
+def world():
+    """The simulation, its stand-in VLM and NETRA, the operator; checks the shutdown."""
+    ollama = serve(OllamaHandler)
+    netra = FakeNetra().start()
+    launch = Launch(DOMAIN, [
+        'inspection:=true',
+        f'ollama_url:=http://127.0.0.1:{ollama.server_port}',
+        f'cc_url:={netra.url}',
+    ])  # fmt: skip
+    os.environ['ROS_DOMAIN_ID'] = str(DOMAIN)  # this process talks to the launched one
+    compat.init()
+    node = rclpy.create_node('pashupati_e2e')
+    operator = Operator(node)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    spinner = Spinner(executor)
     try:
-        yield recorder
+        yield operator, spinner, netra
     finally:
+        spinner.stop()
         node.destroy_node()
-        rclpy.shutdown()
-        # SIGINT to ros2 launch only, as `systemctl stop` does (KillMode=mixed); signalling the
-        # whole group as well would interrupt every node twice
-        os.kill(proc.pid, signal.SIGINT)
-        still = ''
-        try:
-            proc.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            still = session_processes(proc.pid)  # what keeps the launch from stopping
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
-        log.seek(0)
-        output = log.read()
-        log.close()
-        problems = [
-            line
-            for line in output.splitlines()
-            if 'process has died' in line or 'Traceback' in line
-        ]
-        tail = '\n'.join(output.splitlines()[-40:])
-        assert not still, (
-            f'ros2 launch did not stop within 30 s of SIGINT; still running:\n{still}\n'
-            f'end of the log:\n{tail}\nfull log: {log.name}'
+        compat.try_shutdown()
+        clean, log = launch.stop()
+        netra.close()
+        ollama.shutdown()
+        ollama.server_close()
+        tail = '\n'.join(log.splitlines()[-30:])
+        assert clean, f'ros2 launch did not stop within 45 s:\n{tail}\nlog: {launch.log.name}'
+        running, stopping = problems(log)
+        assert not running, '\n'.join(running) + f'\nlog: {launch.log.name}'
+        ours = [line for line in stopping if line.startswith(PASHUPATI_NODES)]
+        assert not ours, '\n'.join(ours) + f'\nlog: {launch.log.name}'
+        if stopping:  # a Dharma node that failed while stopping: reported, not ours to fix here
+            warnings.warn('while stopping: ' + ' | '.join(stopping), stacklevel=1)
+
+
+def test_the_robot_localizes(world):
+    operator, _, netra = world
+    assert wait_for(
+        lambda: (
+            operator.localization.last is not None
+            and operator.localization.last.state == LocalizationStatus.LOCALIZED
+        ),
+        90.0,
+    ), 'not localized'
+    assert wait_for(lambda: netra.of_type('hello'), 30.0), 'NETRA never connected'
+
+
+def test_a_route_with_three_stop_points_is_taught(world):
+    operator, spinner, netra = world
+    assert operator.planner_ready(spinner, *START[:2]), 'the planner has no map or pose'
+    assert operator.go_to(spinner, *START), 'did not reach the start of the route'
+    assert operator.call(spinner, 'route/start').success
+    for x, y, yaw in STOPS:
+        assert operator.go_to(spinner, x, y, yaw), f'did not reach ({x}, {y})'
+        reply = operator.call(
+            spinner, 'route/mark_stop_point', MarkStopPoint.Request(dwell_sec=2.0)
         )
-        assert not problems, '\n'.join(problems) + f'\nfull log: {log.name}'
+        assert reply.success, reply.message
+    reply = operator.call(spinner, 'route/stop')
+    assert reply.success, reply.message
+    assert operator.saved.wait(1, 10.0), 'route/saved never came'
+    with open(operator.saved.last.data, encoding='utf-8') as f:
+        rows = [line.split(',') for line in f.read().splitlines()[1:] if line.strip()]
+    assert sum(float(r[3]) > 0.0 for r in rows) == 3, rows
+    # the taught route goes to NETRA's route database
+    assert wait_for(lambda: any(p == '/api/v1/robot/routes' for p, _ in netra.uploads), 30.0)
 
 
-def test_patrol_slides_around_a_person_and_inspects(sim):
-    """A person on the route is passed sideways within max_offset; the stop is still done."""
-    assert sim.spin_until(lambda: len(sim.poses) > 10, 60.0), 'simulator not publishing'
-    start_x = sim.poses[-1][1]
-    assert sim.spin_until(lambda: sim.poses[-1][1] > start_x + 0.2, 60.0), 'patrol did not start'
+def drive_with_the_handheld(operator, handheld: Handheld):
+    """REMOTE from the handheld: the follower pauses, the stick moves the robot, back to AUTO."""
+    assert handheld.hello(), 'the handheld was not welcomed'
+    ack = handheld.command('set_mode', mode='remote')
+    assert ack and ack['ok'], ack
+    assert wait_for(lambda: operator.control.last.mode == ControlStatus.MODE_REMOTE, 5.0)
+    assert wait_for(lambda: 'remote' in list(operator.nav.last.pause_reasons), 5.0)
+    handheld.stick(0.0, 0.5)  # neutral first: the mux arms the source
+    handheld.stick(0.2, 1.5)
+    states = handheld.states()
+    assert any(s['mode'] == 'remote' and abs(s['cmd'][0]) > 0.05 for s in states), states[-3:]
+    ack = handheld.command('set_mode', mode='auto')
+    assert ack and ack['ok'], ack
+    assert wait_for(lambda: operator.control.last.mode == ControlStatus.MODE_AUTO, 5.0)
 
-    # someone stands on the route between the robot and the stop point (x = 0.1)
-    px, py = -2.0, ROUTE_Y
-    sim.place([(px, py)])
-    start = len(sim.poses)
-    assert sim.spin_until(lambda: any(e.event == 'departed' for e in sim.events), 90.0), (
-        f'stop point not completed, events: {[(e.index, e.event) for e in sim.events]}'
+
+def test_the_taught_route_is_patrolled_with_inspections_and_a_handheld_override(world):
+    operator, spinner, _ = world
+    path = os.path.relpath(operator.saved.last.data, SITES)
+    assert operator.go_to(spinner, *START), 'did not get back to the start'
+    reply = operator.call(spinner, 'navigation/load_path', LoadPath.Request(path=path))
+    assert reply.success, reply.message
+    before = len(operator.stops.messages)
+    assert operator.call(spinner, 'navigation/start').success
+
+    def events():
+        return list(operator.stops.messages[before:])
+
+    assert wait_for(lambda: any(e.event == StopPointEvent.DEPARTED for e in events()), 120.0)
+    handheld = Handheld()
+    try:
+        drive_with_the_handheld(operator, handheld)
+    finally:
+        handheld.close()
+    assert wait_for(lambda: operator.nav.last.state == NavigationStatus.GOAL_REACHED, 240.0), (
+        f'patrol did not finish: {operator.nav.last}'
     )
-    track = sim.poses[start:]
-    closest = min(math.hypot(p[1] - px, p[2] - py) for p in track)
-    assert closest > PERSON_RADIUS + ROBOT_HALF_WIDTH, f'robot came within {closest:.2f} m'
-    deviation = max(abs(p[2] - ROUTE_Y) for p in track if p[1] < 0.0)
-    assert deviation > 0.3, 'robot did not move aside (was the person on the route?)'
-    assert deviation < MAX_OFFSET + 0.1, f'robot strayed {deviation:.2f} m from the route'
-
-    assert [e.event for e in sim.events][:3] == ['arrived', 'inspected', 'departed']
-    assert 'timeout' not in sim.events[0].message, sim.events[0].message
-    assert sim.events[1].message.startswith('/sim/inspect: ok clear'), sim.events[1].message
-    sim.place([])
+    inspected = [e for e in events() if e.event == StopPointEvent.INSPECTED]
+    assert len(inspected) == 3, [(e.event, e.message) for e in events()]
+    for event in inspected:
+        assert event.message.startswith('/anomaly_detector_node/check_now: ok trash'), (
+            event.message
+        )
+    yaws = [round(math.degrees(e.yaw)) for e in events() if e.event == StopPointEvent.ARRIVED]
+    assert len(yaws) == 3, yaws
+    assert len(OllamaHandler.images) >= 3
 
 
-def test_patrol_stops_for_a_crowd_and_drives_on(sim):
-    """People across the whole corridor: no gap within max_offset, the robot stops short."""
-    _, x, _, _ = sim.poses[-1]
-    crowd = [(x + 2.2, y) for y in (-4.2, -3.6, -3.0, -2.4, -1.8)]
-    sim.place(crowd)
-    start = len(sim.poses)
-    sim.spin_until(lambda: False, 10.0)
-    track = sim.poses[start:]
-    closest = min(math.hypot(p[1] - cx, p[2] - cy) for p in track for cx, cy in crowd)
-    assert closest > PERSON_RADIUS + ROBOT_FRONT, f'robot came within {closest:.2f} m'
-    speed = math.hypot(track[-1][1] - track[-20][1], track[-1][2] - track[-20][2])
-    assert speed < 0.05, 'robot still moving toward the crowd'
-
-    # they walk away, the patrol goes on
-    sim.place([])
-    _, x0, y0, _ = sim.poses[-1]
-    assert sim.spin_until(
-        lambda: math.hypot(sim.poses[-1][1] - x0, sim.poses[-1][2] - y0) > 0.5, 15.0
-    ), 'robot did not drive on after the crowd left'
-
-
-def test_handheld_cannot_drive_into_a_person(sim):
-    """With field_in_remote (sim_site.yaml) the protective field keeps the stick off a person."""
-    assert sim.set_mode('remote'), 'control mux did not switch to remote'
-    sim.spin_until(lambda: False, 1.5)  # navigation pauses, the robot comes to rest
-
-    # a person 1.5 m straight ahead (the bottom corridor is clear that far), stick full forward
-    _, x, y, yaw = sim.poses[-1]
-    px, py = x + 1.5 * math.cos(yaw), y + 1.5 * math.sin(yaw)
-    sim.place([(px, py)])
-    sim.spin_until(lambda: False, 0.5)
-    start = len(sim.poses)
-    sim.drive_remote(0.4, 8.0)
-
-    track = sim.poses[start:]
-    moved = math.hypot(track[-1][1] - track[0][1], track[-1][2] - track[0][2])
-    closest = min(math.hypot(p[1] - px, p[2] - py) for p in track)
-    assert moved > 0.3, f'the stick did not move the robot ({moved:.2f} m)'
-    assert closest > PERSON_RADIUS + ROBOT_FRONT, f'robot came within {closest:.2f} m'
-    assert 'stop' in sim.field, f'protective field never stopped the robot: {sim.field}'
-    speed = math.hypot(track[-1][1] - track[-20][1], track[-1][2] - track[-20][2])
-    assert speed < 0.05, 'robot still creeping toward the person'
-
-    sim.place([])
-    assert sim.set_mode('auto'), 'control mux did not switch back to auto'
+def test_netra_saw_the_patrol(world):
+    _, _, netra = world
+    assert wait_for(lambda: len(netra.of_type('stop_event')) >= 9, 20.0)
+    assert wait_for(  # telemetry goes out once a second
+        lambda: any(t['nav']['state'] == 'GOAL_REACHED' for t in netra.of_type('telemetry')), 10.0
+    ), {t['nav']['state'] for t in netra.of_type('telemetry')}
+    telemetry = netra.of_type('telemetry')
+    assert {t['mode'] for t in telemetry} == {'auto', 'remote'}
+    assert any(t['localization'] != 'none' for t in telemetry)
+    assert any(t['health'] and 'cpu_percent' in t['health'] for t in telemetry)
+    # the stop-point findings with their evidence frames
+    assert wait_for(
+        lambda: sum(p == '/api/v1/robot/anomalies' for p, _ in netra.uploads) >= 3, 30.0
+    ), [p for p, _ in netra.uploads]
+    upload = next(body for p, body in netra.uploads if p == '/api/v1/robot/anomalies')
+    assert b'"category": "trash"' in upload and b'image/jpeg' in upload

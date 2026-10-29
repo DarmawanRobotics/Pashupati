@@ -15,6 +15,10 @@ path_loader_node:
   ros__parameters:
     remember_file: /tmp/pashupati_sim/last_route
 
+planner_node:
+  ros__parameters:
+    # the simulator shares a busy machine (CI): a slower TF than on the robot is still the pose
+    tf_timeout_sec: 1.5
 path_follower_node:
   ros__parameters:
     approach:
