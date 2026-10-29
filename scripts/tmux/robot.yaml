@@ -1,0 +1,25 @@
+# scripts/start_tmux.sh robot: the robot as the service runs it, plus views, in tmux.
+# Settings come from /etc/pashupati/pashupati.env (scripts/env.sh) unless set in the environment.
+session_name: pashupati
+environment:
+  ROBOT_NS: robot
+setup: source ${WS}/scripts/env.sh > /dev/null
+windows:
+  - window_name: robot
+    panes:
+      - shell_command: ros2 launch pashupati robot.launch.py
+  - window_name: status
+    layout: even-vertical
+    panes:
+      - shell_command: sleep 10 && ros2 topic echo /navigation/status
+      - shell_command: sleep 10 && ros2 topic echo /health/status
+  - window_name: rviz
+    panes:
+      - when: RVIZ
+        shell_command: >-
+          ros2 run rviz2 rviz2 -d $(ros2 pkg prefix dharma_rviz)/share/dharma_rviz/rviz/robot.rviz
+          --ros-args -r battery:=/${ROBOT_NS}/battery -r cmd_vel:=/${ROBOT_NS}/cmd_vel
+        otherwise: "RVIZ=1 opens RViz here (needs a display)"
+  - window_name: shell
+    panes:
+      - shell_command: "# ros2 service call /localization/start std_srvs/srv/Trigger"

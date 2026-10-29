@@ -1,108 +1,87 @@
-#!/bin/bash
-# Usage: script/start_tmux.sh [teach|patrol]   (development; production: pashupati.service)
-#   teach:  odometry keeps the map, record a route with the RViz panel or the handheld
-#   patrol: map off, route loaded, navigation ready (start it from the panel)
-# One pane per subsystem with the package default parameters (no site file); for exactly what the
-# service runs use `ros2 launch pashupati robot.launch.py`. Settings come from
-# /etc/pashupati/pashupati.env (script/env.sh) unless set in the environment:
-# Env: MODE, ODOMETRY (fast_lio | leg_kilo), ROUTE, TAGS, ROBOT_NS, ROBOT_BRINGUP (robot package,
-#      <package>[/<file>.launch.py], empty: started elsewhere), ROBOT_PRESTART, PEOPLE, INSPECTION,
-#      CC_URL + CC_TOKEN (command center), RVIZ=0 (headless), DETACH=1 (do not attach)
+#!/usr/bin/env bash
+# Development session: one tmux window per subsystem, from a yaml layout (tmuxp style).
+#
+#   scripts/start_tmux.sh [robot|sim|<layout.yaml>]    (default: robot)
+#   (production runs as pashupati.service; this is for development)
+#
+# Layouts live in scripts/tmux/: session_name, environment (defaults, the caller's environment
+# wins), setup (run in every pane first), windows -> panes -> shell_command; a pane with
+# `when: VAR` runs only when VAR is set, otherwise it shows its `otherwise` hint. ${VAR} is
+# replaced from the environment. The robot layout runs `ros2 launch pashupati robot.launch.py`
+# with the service's environment (scripts/env.sh). Env: RVIZ=1, SCENARIO (sim), DETACH=1 (do
+# not attach), ROS_DISTRO (the one in /opt/ros, else humble).
 set -euo pipefail
 
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-set +u
-# shellcheck source=script/env.sh
-source "$WS/script/env.sh" >/dev/null
-set -u
-MODE="${1:-${MODE:-patrol}}"
-[[ "$MODE" == "mapping" ]] && MODE=teach   # old name
-ODOMETRY="${ODOMETRY:-fast_lio}"
-ROUTE="${ROUTE:-$WS/map/example/example_waypoint.csv}"
-TAGS="${TAGS:-$WS/map/example/tag_config.json}"
-ROBOT_NS="${ROBOT_NS:-robot}"
-ROBOT_BRINGUP="${ROBOT_BRINGUP:-}"
-CC_URL="${CC_URL:-}"
-CC_TOKEN="${CC_TOKEN:-}"
-PEOPLE="${PEOPLE:-true}"
-INSPECTION="${INSPECTION:-true}"
-RVIZ="${RVIZ:-1}"
-DETACH="${DETACH:-0}"
-SESSION=pashupati
-
-if [[ "$MODE" != "teach" && "$MODE" != "patrol" ]]; then
-    echo "usage: $0 [teach|patrol]" >&2
+installed=$(find /opt/ros -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2> /dev/null | sort | tail -n1)
+export WS ROS_DISTRO="${ROS_DISTRO:-${installed:-humble}}"
+LAYOUT="${1:-robot}"
+[[ -f "$LAYOUT" ]] || LAYOUT="$WS/scripts/tmux/$LAYOUT.yaml"
+if [[ ! -f "$LAYOUT" ]]; then
+    layouts=("$WS"/scripts/tmux/*.yaml)
+    layouts=("${layouts[@]##*/}")
+    echo "no layout $LAYOUT (scripts/tmux: ${layouts[*]%.yaml})" >&2
     exit 1
 fi
-SAVE_MAP=$([[ "$MODE" == "teach" ]] && echo true || echo false)
-truthy() { [[ "${1,,}" =~ ^(1|true|yes|on)$ ]]; }
+command -v tmux > /dev/null || { echo "tmux not found (scripts/setup.sh install tools)" >&2; exit 1; }
 
-# Robot-specific preparation, e.g. stopping a vendor autostart that would fight for the robot
-if [[ -n "${ROBOT_PRESTART:-}" ]]; then
-    bash -c "$ROBOT_PRESTART" || true
-fi
-tmux kill-session -t "$SESSION" 2>/dev/null || true
+SESSION=$(
+    python3 - "$LAYOUT" << 'PY'
+"""Build the tmux session of a layout file; print its name."""
 
-SETUP="source $WS/script/env.sh && cd $WS"
+import os
+import string
+import subprocess
+import sys
 
-run() {  # run <pane> <command>
-    tmux send-keys -t "$SESSION:$1" "$SETUP && $2" C-m
-}
+import yaml
 
-# Window 1: robot, odometry, perception
-tmux new-session -d -s "$SESSION" -n robot
-tmux split-window -v -t "$SESSION:robot"
-tmux split-window -h -t "$SESSION:robot.0"
-tmux split-window -h -t "$SESSION:robot.2"
-if [[ -n "$ROBOT_BRINGUP" ]]; then
-    ROBOT_PKG="${ROBOT_BRINGUP%%/*}"
-    ROBOT_LAUNCH="bringup.launch.py"
-    [[ "$ROBOT_BRINGUP" == */* ]] && ROBOT_LAUNCH="${ROBOT_BRINGUP#*/}"
-    run robot.0 "ros2 launch $ROBOT_PKG $ROBOT_LAUNCH namespace:=$ROBOT_NS"
-else
-    tmux send-keys -t "$SESSION:robot.0" "# ROBOT_BRINGUP unset: start the robot driver here" C-m
-fi
-sleep 3
-CONFIG="\$(ros2 pkg prefix pashupati)/share/pashupati/config"
-run robot.1 "ros2 launch dharma_odometry odometry.launch.py method:=$ODOMETRY save_map:=$SAVE_MAP \
-localization:=true tags_config_file:=$TAGS leg_odom_topic:=/$ROBOT_NS/odom \
-params_file:=$CONFIG/odometry_params.yaml fast_lio_params_file:=$CONFIG/fast_lio.yaml"
-PERCEPTION="ros2 launch dharma_perception perception.launch.py visitors:=false params_file:=$CONFIG/perception_params.yaml"
-[[ "$PEOPLE" == "true" ]] && PERCEPTION+=" & ros2 launch pashupati_inspection people.launch.py"
-run robot.2 "$PERCEPTION"
-if [[ "$RVIZ" == "1" ]]; then
-    run robot.3 "ros2 run rviz2 rviz2 -d \$(ros2 pkg prefix dharma_rviz)/share/dharma_rviz/rviz/robot.rviz \
---ros-args -r battery:=/$ROBOT_NS/battery -r cmd_vel:=/$ROBOT_NS/cmd_vel \
--r motor_temperature:=/$ROBOT_NS/motor_temperature -r diagnostics:=/$ROBOT_NS/diagnostics"
-fi
-tmux select-layout -t "$SESSION:robot" tiled
 
-# Window 2: navigation + command pane
-tmux new-window -t "$SESSION" -n nav
-tmux split-window -v -t "$SESSION:nav"
-if [[ "$MODE" == "patrol" ]]; then
-    run nav.0 "ros2 launch dharma_navigation navigation.launch.py params_file:=$CONFIG/navigation_params.yaml waypoints_file:=$ROUTE \
-cmd_vel_topic:=/bridge/nav_cmd_vel battery_topic:=/$ROBOT_NS/battery"
-fi
-tmux split-window -h -t "$SESSION:nav.0"
-run nav.1 "ros2 launch pashupati_bridge bridge.launch.py robot_ns:=$ROBOT_NS"
-tmux split-window -v -t "$SESSION:nav.1"
-FLEET_ARGS="robot_ns:=$ROBOT_NS"
-[[ -n "$CC_URL" ]] && FLEET_ARGS+=" server_url:=$CC_URL"
-[[ -n "$CC_TOKEN" ]] && FLEET_ARGS+=" token:=$CC_TOKEN"
-run nav.2 "ros2 launch pashupati_fleet fleet.launch.py $FLEET_ARGS"
-tmux send-keys -t "$SESSION:nav.3" "$SETUP" C-m
-tmux send-keys -t "$SESSION:nav.3" "# ros2 service call /localization/start std_srvs/srv/Trigger" C-m
+def tmux(*args: str) -> str:
+    return subprocess.run(['tmux', *args], check=True, capture_output=True, text=True).stdout.strip()
 
-# Window 3: health and, when enabled, on-robot inspection (Moondream)
-tmux new-window -t "$SESSION" -n extra
-run extra.0 "ros2 launch dharma_health health.launch.py params_file:=$CONFIG/health_params.yaml"
-if truthy "$INSPECTION"; then
-    tmux split-window -h -t "$SESSION:extra"
-    run extra.1 "ros2 launch pashupati_inspection inspection.launch.py"
-fi
 
-tmux select-window -t "$SESSION:robot"
-if [[ "$DETACH" != "1" ]]; then
-    tmux attach-session -t "$SESSION"
+with open(sys.argv[1], encoding='utf-8') as f:
+    layout = yaml.safe_load(f)
+env = {k: str(v) for k, v in (layout.get('environment') or {}).items()}
+env.update(os.environ)
+
+
+def expand(text) -> str:
+    return string.Template(str(text)).safe_substitute(env)
+
+
+session = expand(layout['session_name'])
+root = expand(layout.get('start_directory', env['WS']))
+setup = expand(layout.get('setup', ''))
+subprocess.run(['tmux', 'kill-session', '-t', session], capture_output=True, check=False)
+for index, window in enumerate(layout['windows']):
+    name = expand(window['window_name'])
+    if index == 0:
+        first = ['new-session', '-d', '-s', session, '-n', name, '-c', root]
+    else:
+        first = ['new-window', '-t', f'{session}:', '-n', name, '-c', root]
+    pane = tmux(*first, '-P', '-F', '#{pane_id}')
+    for number, spec in enumerate(window.get('panes') or [{}]):
+        if number:
+            pane = tmux('split-window', '-t', pane, '-c', root, '-P', '-F', '#{pane_id}')
+            tmux('select-layout', '-t', pane, 'tiled')
+        commands = spec.get('shell_command') or []
+        commands = [commands] if isinstance(commands, str) else commands
+        if spec.get('when') and not env.get(spec['when']):
+            commands = [f'# {spec.get("otherwise", spec["when"] + " is not set")}']
+        commands = [expand(c) for c in commands]
+        notes = [c for c in commands if c.lstrip().startswith('#')]  # shown, not run
+        run = ' && '.join(c for c in [setup, *(c for c in commands if c not in notes)] if c)
+        for keys in [run, *notes] if run else notes:
+            tmux('send-keys', '-t', pane, keys, 'C-m')
+    tmux('select-layout', '-t', f'{session}:{name}', window.get('layout', 'tiled'))
+tmux('select-window', '-t', f'{session}:{expand(layout["windows"][0]["window_name"])}')
+print(session)
+PY
+)
+
+echo "tmux session $SESSION ($LAYOUT)"
+if [[ "${DETACH:-0}" != "1" ]]; then
+    if [[ -n "${TMUX:-}" ]]; then tmux switch-client -t "$SESSION"; else tmux attach-session -t "$SESSION"; fi
 fi

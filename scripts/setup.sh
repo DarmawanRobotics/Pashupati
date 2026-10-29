@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Check or install everything the Pashupati stack needs on a robot (or in the dev container).
 #
-#   script/setup.sh                      # same as: check
-#   script/setup.sh check                # status of every component
-#   script/setup.sh install              # install the default components that are missing
-#   script/setup.sh install livox build  # install only these
-#   script/setup.sh install all          # every component, including ros and service
+#   scripts/setup.sh                      # same as: check
+#   scripts/setup.sh check                # status of every component
+#   scripts/setup.sh install              # install the default components that are missing
+#   scripts/setup.sh install livox build  # install only these
+#   scripts/setup.sh install all          # every component, including ros and service
 #
 # Components: ros tools submodules dharma livox robot legkilo rosdep realsense webrtc ollama people_model
 #             build config service network
@@ -23,7 +23,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${PASHUPATI_ENV:-/etc/pashupati/pashupati.env}"
-ENV_EXAMPLE="$ROOT/script/pashupati.env.example"
+ENV_EXAMPLE="$ROOT/scripts/pashupati.env.example"
 SITE_EXAMPLE="$ROOT/src/pashupati/config/site.example.yaml"
 
 # Fill what the caller did not set from the robot's env file (read by bash, like the service).
@@ -363,7 +363,7 @@ install_build() {
 OLLAMA_DROPIN=/etc/systemd/system/ollama.service.d/pashupati.conf
 ollama_dropin() {
     printf '%s\n' \
-        '# Pashupati (script/setup.sh install ollama): no prompt cache in RAM (up to 8 GiB per model)' \
+        '# Pashupati (scripts/setup.sh install ollama): no prompt cache in RAM (up to 8 GiB per model)' \
         '[Service]' \
         'Environment="OLLAMA_CACHE_RAM=0"' \
         'Environment="LLAMA_ARG_CACHE_RAM=0"'
@@ -505,7 +505,7 @@ EnvironmentFile=-$ENV_FILE
 Environment=WS=$ROOT
 Environment=PYTHONUNBUFFERED=1
 Environment=RCUTILS_COLORIZED_OUTPUT=0
-ExecStart=$ROOT/script/run_robot.sh
+ExecStart=$ROOT/scripts/run_robot.sh
 Restart=always
 RestartSec=5
 # SIGINT to ros2 launch only, which stops every node once; leftovers get SIGKILL after the timeout
@@ -569,7 +569,7 @@ do_check() {
         check_one "$name" || failed=$((failed + 1))
     done
     [[ $failed -eq 0 ]] && echo "${GREEN}everything is ready${RESET}" \
-        || echo "${YELLOW}$failed component(s) need attention: script/setup.sh install <component>${RESET}"
+        || echo "${YELLOW}$failed component(s) need attention: scripts/setup.sh install <component>${RESET}"
 }
 
 do_install() {

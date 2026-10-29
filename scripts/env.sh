@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # The environment of pashupati.service in an interactive shell (same RMW, domain, robot settings):
 #
-#   source ~/dev/Pashupati/script/env.sh      # e.g. alias pashu='source ~/dev/Pashupati/script/env.sh'
+#   source ~/dev/Pashupati/scripts/env.sh      # e.g. alias pashu='source ~/dev/Pashupati/scripts/env.sh'
 #   ros2 topic list                            # sees the stack, not a vendor stack on another RMW
 #   pnode pashupati_bridge teleop_udp_node bridge_params.yaml [ros args]
 #
@@ -31,7 +31,7 @@ if [[ -f "$PASHUPATI_WS/install/setup.bash" ]]; then
     # shellcheck disable=SC1091
     source "$PASHUPATI_WS/install/setup.bash"
 else
-    echo "workspace not built yet: $PASHUPATI_WS/script/setup.sh install build" >&2
+    echo "workspace not built yet: $PASHUPATI_WS/scripts/setup.sh install build" >&2
 fi
 # Same library order as run_robot.sh
 if [[ -n "${LD_LIBRARY_PATH_FIRST:-}" ]]; then
