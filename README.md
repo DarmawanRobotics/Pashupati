@@ -4,148 +4,124 @@
 
 # Pashupati
 
-**Autonomous patrol and inspection stack for quadruped robots, legged or wheel-legged, of any
-brand with a ROS 2 driver: LiDAR-inertial teach and repeat, obstacle avoidance by path shift,
-on-robot AI inspection, crowd sensing, a handheld controller and the NETRA command center.**
+**Autonomous patrol and inspection robot for quadrupeds, legged or wheel-legged, of any brand
+with a ROS 2 driver: teach and repeat on mapped sites, VLM inspection at stop points, crowd
+sensing, a handheld controller and the NETRA command center. Built on the Dharma stack.**
 
 [![CI](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml)
-[![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
-[![Dharma](https://img.shields.io/badge/stack-Dharma-4A78C2)](pashupati.repos)
-[![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
-![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)
-![Jetson](https://img.shields.io/badge/Jetson-Orin%20NX-76B900?logo=nvidia&logoColor=white)
-![Ollama](https://img.shields.io/badge/AI-Ollama%20VLM-000000?logo=ollama&logoColor=white)
-![Video](https://img.shields.io/badge/video-WebRTC-333333?logo=webrtc&logoColor=white)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-manual%20%26%20tuning%20guide-1F9E93)](docs/README.md)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
+[![Dharma](https://img.shields.io/badge/stack-Dharma%200.2-4A78C2)](pashupati.repos)
+[![Docker](https://img.shields.io/badge/dev-Docker%20%2B%20VNC-2496ED?logo=docker&logoColor=white)](compose.yaml)
+![Jetson](https://img.shields.io/badge/Jetson-Orin%20NX-76B900?logo=nvidia&logoColor=white)
+![Ollama](https://img.shields.io/badge/VLM-Ollama-000000?logo=ollama&logoColor=white)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-[Features](#features) · [System](#system) · [Install](#install) · [Workflow](#workflow) ·
-[Operations](#operations) · [Develop](#develop) · [Docs](docs/README.md)
+[Packages](#packages) · [Architecture](#architecture) · [Quick start](#quick-start) ·
+[Simulation](#simulation) · [Install on the robot](#install-on-the-robot) ·
+[Operate](#operate) · [Develop](#develop) · [Docs](docs/README.md)
 
 </div>
 
 ---
 
-Mall corridors are patrolled on fixed routes every shift. Pashupati therefore uses **teach and
-repeat** instead of a global planner: drive a route once, and the robot repeats it on schedule,
-inspecting the floor and counting people along the way. Everything runs on the robot as one
-supervised service. The [Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController)
-handheld and NETRA connect to it over the network.
+Mall corridors are patrolled on fixed routes every shift. Pashupati therefore works by **teach
+and repeat**: map a site once, drive a route with its stop points, and the robot repeats it on
+schedule, inspecting the floor with a vision-language model and counting people along the way.
+Everything runs on the robot as one supervised service; the
+[Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController) handheld and NETRA
+connect to it over the network.
 
-Pashupati runs on **Dharma**, the shared autonomy stack: odometry, localization, perception,
-navigation and the control mux come from the `dharma_*` repositories, at the versions pinned in
-[pashupati.repos](pashupati.repos). This repository adds what makes it a patrol robot: the AI
-inspection, the NETRA uplink, the handheld gateway, and the bringup with the configs tuned on the
-robot.
+Pashupati runs on **Dharma** 0.2, the shared autonomy stack: odometry, localization, perception,
+mapping and sites, the planner, path following, docking, the control mux and health come from
+the `dharma_*` repositories, pinned in [pashupati.repos](pashupati.repos). This repository adds
+what makes it a patrol robot (VLM inspection, people, the NETRA uplink, the handheld gateway) and
+the bringup with the values tuned on the robot.
 
-**Guides:** the [User Manual](docs/Pashupati-User-Manual.pdf) for operators and the
-[Tuning Guide](docs/Pashupati-Tuning-Guide.pdf) for technicians, as PDFs that read well on a
-phone. More in [docs](docs/README.md).
+**Guides:** the [User Manual](docs/manual/user-manual.md) for operators and the
+[Tuning Guide](docs/tuning/tuning-guide.md) for technicians. More in [docs](docs/README.md).
 
-## Features
+## Packages
 
-**Teach**
-- Drive the robot once, from the handheld or RViz, while FAST-LIO2 (or Leg-KILO) tracks it.
-- Mark inspection stops along the way.
-- Record the AprilTags that anchor the map, so a route lines up again wherever the robot is
-  started.
-- When recording ends, the route is uploaded to NETRA.
+| Package                                            | Role                                                                                                            |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [`pashupati`](src/pashupati)                       | the robot: profile, stack config, `robot.launch.py`, `sim.launch.py`, the end-to-end test                       |
+| [`pashupati_inspection`](src/pashupati_inspection) | VLM inspection through Ollama (`anomaly_detector_node`), person detection with YOLO11n ONNX                     |
+| [`pashupati_bridge`](src/pashupati_bridge)         | handheld gateway over UDP ([protocol](src/pashupati_bridge/PROTOCOL.md)), WebRTC video, RTSP camera source      |
+| [`pashupati_fleet`](src/pashupati_fleet)           | NETRA uplink: telemetry, stop events, findings, crowd, routes ([API](src/pashupati_fleet/API.md)), `fake_netra` |
+| [`pashupati_utils`](src/pashupati_utils)           | what the Pashupati packages share: typed status to protocol names, health figures, launch helpers               |
+| `dharma_*` ([pashupati.repos](pashupati.repos))    | utils, interfaces, odometry, localization, perception, mapping, navigation, health, rviz, sim                   |
 
-**Repeat**
-- Routes are resampled and smoothed, then followed with a curvature-aware speed profile.
-- The default controller uses all three axes of a legged robot: it closes errors sideways,
-  strafes or backs up, and keeps its heading along the route.
-- The robot can join a route from beside it. A route loaded again starts over.
-- At every stop the robot converges to 5 cm and 3°, inspects, then moves on.
-- Looping patrols end their lap on low battery.
+The robot's driver, URDF and sensors come from a robot package under `src/xtras/robots/`
+([contract](src/xtras/README.md)); FAST-LIO2 and the Livox driver are submodules in `src/xtras/`.
 
-**Stay safe**
-- Obstacles are passed by sliding sideways within a bounded offset from the route (path shift).
-  When there is no gap, the robot stops short.
-- A 360° protective field caps every command at a speed the robot can still stop at.
-- The software e-stop is latched in the control mux.
-- Navigation stops when odometry or the safety scan goes stale.
-
-**Inspect**
-- A local vision-language model runs through Ollama: qwen3-vl by default, moondream or any other
-  vision model, switched live.
-- Three paces:
-  - *continuous*: frames back to back;
-  - *interval*: a frame every 0.1 s to 5 min, waiting in a first-in-first-out queue that survives
-    restarts;
-  - *stop points only*.
-- Own finding types, each with a description of what to look for, are added from the handheld.
-  Each type is either reported or only shown.
-- Findings go to NETRA with their evidence frame and the pose where the frame was taken.
-
-**Count people**
-- YOLO11n (ONNX, no PyTorch) runs on the GPU when available, 5 times a second; on the CPU it runs
-  twice a second.
-- People are boxed on the handheld video, placed on the floor plan, and aggregated into per-minute
-  crowd heatmaps for NETRA.
-
-**Operate**
-- [Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController) on a Retroid
-  Pocket: drive, WebRTC video, map and routes, patrol control, inspection settings, and the
-  robot's CPU, GPU and RAM.
-- NETRA: schedules, live telemetry, alerts and Telegram.
-- On the robot: one systemd service with respawning nodes, health monitoring, and uploads spooled
-  while offline.
-
-## System
+## Architecture
 
 ![Pashupati system: Dharma and Pashupati packages on the Jetson, the robot package and hardware below, the handheld and NETRA off the robot](docs/diagrams/system.drawio.svg)
 
-<sub>The diagram is [docs/diagrams/system.drawio.svg](docs/diagrams/system.drawio.svg): open it in
-draw.io (desktop app, [app.diagrams.net](https://app.diagrams.net) or the VS Code Draw.io
-extension), edit and save, and this picture changes with it.</sub>
+<sub>[docs/diagrams/system.drawio.svg](docs/diagrams/system.drawio.svg): open it in draw.io, edit
+and save, and this picture changes with it.</sub>
 
-| Repository | |
-|---|---|
-| **Pashupati** (this) | the robot workspace: bringup, inspection, NETRA uplink, handheld gateway |
-| Dharma | the shared autonomy stack, one repository per part (`dharma_odometry`, `dharma_navigation`, ...), pinned in [pashupati.repos](pashupati.repos) and checked out into `src/dharma/` |
-| [PashupatiController](https://github.com/DarmawanRobotics/PashupatiController) | handheld app (Retroid Pocket / Android) |
-| robot package | the robot's driver, URDF and sensor launch, under `src/xtras/robots/` ([contract](src/xtras/README.md)) |
-| Leg-KILO | optional odometry (`odometry:=leg_kilo`): the `pashupati` branch of the DarmawanRobotics fork, cloned into `src/xtras/slam/leg_kilo` |
-| NETRA | command center: backend, dashboard, deployment |
+- **Motion has one way out.** `control_mux_node` is the only publisher of `/<robot_ns>/cmd_vel`.
+  In AUTO it passes the follower and the planner; in REMOTE the handheld
+  (`control/remote/handheld/cmd_vel`) or NETRA's dashboard. The protective field, the health speed
+  limit and the latched e-stop apply to every source.
+- **Patrol** is Dharma's path follower on a taught route of the active site. At each stop point
+  it converges, calls the inspection hook (`/anomaly_detector_node/check_now`), dwells and moves
+  on; a disabled or missing inspection never blocks the patrol.
+- **Status is typed:** the Pashupati nodes read `ControlStatus`, `NavigationStatus`,
+  `LocalizationStatus`, `HealthStatus`, `SiteStatus`, `StopPointEvent` and `DockingStatus`, and
+  translate them for the handheld protocol v1 and the NETRA API, which keep their wire format.
+- **Configuration** is layered: the robot profile ([robot.yaml](src/pashupati/config/robot.yaml)),
+  the stack as tuned on the robot ([stack.yaml](src/pashupati/config/stack.yaml)), this robot's
+  site file (`/etc/pashupati/site.yaml`), then launch arguments from `/etc/pashupati/pashupati.env`.
 
 <details>
 <summary><b>Hardware</b></summary>
 
-| Component | Model | Role |
-|---|---|---|
-| Robot base | any quadruped (legged or wheel-legged) with a ROS 2 driver | robot package, [contract](src/xtras/README.md) |
-| LiDAR | Livox **MID-360** | FAST-LIO2 odometry, obstacle sectors, handheld lidar view |
-| Camera | Intel RealSense **D435i** | AprilTags, VLM inspection, people, handheld video |
-| Compute | NVIDIA **Jetson Orin NX** (JetPack 6) | ROS 2 Humble, Ollama, ONNX Runtime, hardware H.264 |
+| Component  | Model                                                      | Role                                               |
+| ---------- | ---------------------------------------------------------- | -------------------------------------------------- |
+| Robot base | any quadruped (legged or wheel-legged) with a ROS 2 driver | robot package, [contract](src/xtras/README.md)     |
+| LiDAR      | Livox **MID-360**                                          | FAST-LIO2 odometry, mapping, sectors, safety scan  |
+| Camera     | Intel RealSense **D435i**, or an RTSP camera               | AprilTags, VLM inspection, people, handheld video  |
+| Compute    | NVIDIA **Jetson Orin NX** (JetPack 6)                      | ROS 2 Humble, Ollama, ONNX Runtime, hardware H.264 |
 
 </details>
 
-<details>
-<summary><b>Packages</b></summary>
+## Quick start
 
-| Package | Role |
-|---|---|
-| [`dharma_odometry`](https://github.com/DarmawanRobotics/dharma_odometry) | LiDAR-inertial odometry (FAST-LIO2 or Leg-KILO), stillness gate, odometry monitor, route recording |
-| [`dharma_localization`](https://github.com/DarmawanRobotics/dharma_localization) | FAST-LIO frame bridge, `map→odom` from AprilTags / RViz, tag recording |
-| [`dharma_perception`](https://github.com/DarmawanRobotics/dharma_perception) | LiDAR sectors and 360° safety scan, camera throttle for the tag detector |
-| [`dharma_navigation`](https://github.com/DarmawanRobotics/dharma_navigation) | route processing, controllers, avoidance, final approach, safety; `dharma_control`: AUTO / REMOTE control mux, protective field, e-stop |
-| [`dharma_health`](https://github.com/DarmawanRobotics/dharma_health) | node liveness, odometry / safety scan / e-stop state, sensor rates, CPU, GPU and RAM |
-| [`dharma_rviz`](https://github.com/DarmawanRobotics/dharma_rviz) | RViz panels: Mission, Status, Tuning, AprilTags |
-| [`dharma_sim`](https://github.com/DarmawanRobotics/dharma_sim) | simulated quadruped (driver, LiDAR, FAST-LIO interfaces) |
-| [`dharma_interfaces`](https://github.com/DarmawanRobotics/dharma_interfaces) | messages and services |
-| [`pashupati_bridge`](src/pashupati_bridge) | UDP teleop gateway ([protocol](src/pashupati_bridge/PROTOCOL.md)), WebRTC video |
-| [`pashupati_fleet`](src/pashupati_fleet) | NETRA uplink: telemetry, events, crowd, anomalies, routes ([API](src/pashupati_fleet/API.md)) |
-| [`pashupati_inspection`](src/pashupati_inspection) | VLM inspection (Ollama) and person detection (YOLO11n ONNX) |
-| [`pashupati`](src/pashupati) | the robot: one launch with respawning nodes, the configs tuned on the robot, the simulation and its end-to-end test |
+The dev container has ROS 2 Humble, every dependency and an XFCE desktop over VNC:
 
-The `dharma_*` packages come from their own repositories: `script/setup.sh install dharma` (or
-`vcs import src < pashupati.repos`) checks them out into `src/dharma/` at the versions in
-[pashupati.repos](pashupati.repos).
+```bash
+git clone --recursive git@github.com:DarmawanRobotics/Pashupati.git && cd Pashupati
+scripts/dev.sh up      # build the image, import pashupati.repos into src/dharma, start
+scripts/dev.sh build   # colcon build
+scripts/dev.sh test    # colcon test
+scripts/dev.sh vnc     # TigerVNC localhost:5901 or http://localhost:6080/vnc.html
+```
 
-</details>
+Without Docker: Ubuntu 22.04 with ROS 2 Humble, then
+`vcs import src < pashupati.repos`, `rosdep install --from-paths src --ignore-src -y` and
+`colcon build`.
 
-## Install
+## Simulation
+
+The whole robot runs on [dharma_sim](https://github.com/DarmawanRobotics/dharma_sim), with no
+robot, Gazebo or GPU:
+
+```bash
+ros2 launch pashupati sim.launch.py rviz:=true
+ros2 run pashupati_fleet fake_netra --port 8765 &       # a local NETRA
+ros2 launch pashupati sim.launch.py cc_url:=http://127.0.0.1:8765 inspection:=true
+scripts/start_tmux.sh sim                                  # both, plus a status pane
+```
+
+The simulated robot starts on the `mall_loop` site (in `/tmp/pashupati_sim/sites`) and
+localizes itself; teach a route and patrol it with the commands under [Operate](#operate). The
+handheld connects with the token `sim`.
+
+## Install on the robot
 
 You need Ubuntu 22.04 with ROS 2 Humble (JetPack 6 on a Jetson), internet access, and the robot's
 SSH key added to GitHub with read access to the `dharma_*` repositories.
@@ -154,296 +130,96 @@ SSH key added to GitHub with read access to the `dharma_*` repositories.
 git clone --recursive git@github.com:DarmawanRobotics/Pashupati.git ~/dev/Pashupati
 cd ~/dev/Pashupati
 git clone <robot package repo> src/xtras/robots/<name>   # driver + URDF + sensors, src/xtras/README.md
-script/setup.sh install config          # creates /etc/pashupati/pashupati.env and site.yaml
-sudoedit /etc/pashupati/pashupati.env   # ROBOT_BRINGUP, ROBOT_NS, ROBOT_SETUP, ROBOT_PRESTART, ROUTE, TAGS
-sudoedit /etc/pashupati/site.yaml       # this robot: footprint, speeds, teleop token, robot_commands
-script/setup.sh install                 # everything missing: Dharma, SDKs, apt, then the build
-script/setup.sh install service         # systemd unit, enabled at boot
+scripts/setup.sh install config          # creates /etc/pashupati/pashupati.env and site.yaml
+sudoedit /etc/pashupati/pashupati.env    # ROBOT_ID, ROBOT_DRIVER, ROBOT_NS, SITE, CAMERA, CC_URL
+sudoedit /etc/pashupati/site.yaml        # this robot: teleop token, robot.* overrides, tuning
+scripts/setup.sh install                 # everything missing: Dharma, SDKs, apt, then the build
+scripts/setup.sh install service         # systemd unit, enabled at boot
 sudo systemctl start pashupati && journalctl -fu pashupati
-script/setup.sh                         # every line ok?
+scripts/setup.sh                         # every line ok?
 ```
 
-**Dharma** is checked out with vcstool into `src/dharma/` (git-ignored), at the commits pinned in
-[pashupati.repos](pashupati.repos). `script/setup.sh` reports a checkout that is missing or not at
-its pin, and `script/setup.sh install dharma` moves it back.
+**Update:** `git pull && git submodule update --init --recursive && scripts/setup.sh install
+dharma build config service && sudo systemctl restart pashupati`.
 
-**Update.** Pull, rebuild and restart:
+| Extra          | `pashupati.env`                  | Install                                 | Gives                                                                           |
+| -------------- | -------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------- |
+| Handheld video | `WEBRTC=true`                    | `scripts/setup.sh install webrtc`       | H.264 over WebRTC through MediaMTX, encoded only while watched; JPEG without it |
+| VLM inspection | `INSPECTION=true`, `OLLAMA_URL`  | `scripts/setup.sh install ollama`       | findings at stop points, continuous or on an interval                           |
+| People         | `PEOPLE=true`                    | `scripts/setup.sh install people_model` | YOLO11n ONNX and ONNX Runtime, no PyTorch                                       |
+| RTSP camera    | `CAMERA=rtsp`, `CAMERA_URL`      | —                                       | an IP camera instead of the robot package's camera                              |
+| NETRA          | `CC_URL`, `CC_TOKEN`, `ROBOT_ID` | —                                       | telemetry, findings, routes, remote commands                                    |
 
-```bash
-git pull && git submodule update --init --recursive \
-  && script/setup.sh install dharma build config service && sudo systemctl restart pashupati
-```
-
-`install dharma` follows the pins when a new Dharma release is pinned, `install build` rebuilds
-whenever the checkout has moved, `install config` adds env keys that are new in the example, and
-`install service` rewrites an outdated unit.
-
-### Configuration
-
-- **`/etc/pashupati/pashupati.env`** describes the deployment: robot package, namespace, mode,
-  route, NETRA. systemd, bash and `script/setup.sh` all read it. Quote any value with spaces
-  (`ROBOT_PRESTART="robot-launch stop x"`), and never put a comment after a value.
-- **`/etc/pashupati/site.yaml`** sets the parameters of this robot and site, on top of every
-  package default ([example](src/pashupati/config/site.example.yaml)). It only needs a restart,
-  not a rebuild. Set the same teleop `token` in the handheld. The
-  [Tuning Guide](docs/Pashupati-Tuning-Guide.pdf) explains every parameter.
-- **Vendor stacks.** Pashupati runs on `rmw_fastrtps_cpp`, domain 0. A vendor autostart that also
-  drives the robot or its LiDAR is stopped by `ROBOT_PRESTART` before every start.
-- **ROS stays on the robot** (`ROS_LOCALHOST_ONLY=1`), so nothing on the Wi-Fi can bypass the
-  control mux. Set it to 0 only to debug with RViz on a laptop.
-
-| Extra | `pashupati.env` | Install | Gives |
-|---|---|---|---|
-| Handheld video | `WEBRTC=true` | `script/setup.sh install webrtc` | H.264 over WebRTC through MediaMTX (TCP 8890, UDP 8190), encoded only while watched; JPEG without it |
-| AI inspection | `INSPECTION=true` | `script/setup.sh install ollama` | VLM inspection; also turns off Ollama's prompt cache, which would otherwise hold up to 8 GiB of RAM |
-| People | `PEOPLE=true` | `script/setup.sh install people_model` | YOLO11n ONNX model and ONNX Runtime, no PyTorch |
-| NETRA | `CC_URL`, `CC_TOKEN`, `ROBOT_ID` | — | telemetry, findings, routes, remote commands |
-
-You can also switch inspection and people detection on and off live from the handheld. The robot
-remembers the choice across restarts.
-
-**A shell on the robot** needs the service's environment; otherwise `ros2 topic list` shows
-nothing, or only the vendor's topics:
+Pashupati runs on `rmw_fastrtps_cpp`, domain 0, with `ROS_LOCALHOST_ONLY=1`, so nothing on the
+Wi-Fi can bypass the control mux. A shell with the service's environment:
 
 ```bash
-echo "alias pashu='source ~/dev/Pashupati/script/env.sh'" >> ~/.bashrc   # once
+echo "alias pashu='source ~/dev/Pashupati/scripts/env.sh'" >> ~/.bashrc   # once
 pashu
-ros2 topic hz /perception/safety_scan
-pnode pashupati_bridge teleop_udp_node bridge_params.yaml   # one node, as robot.launch.py runs it
+pnode pashupati_bridge teleop_udp_node bridge.yaml   # one node, as robot.launch.py runs it
 ```
 
-<details>
-<summary><b>Troubleshooting</b></summary>
+## Operate
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `-bash: stop: command not found` when loading the env | value with spaces not quoted | quote it; `script/setup.sh` shows the line |
-| `ros2 topic list` empty or only vendor topics | shell on another RMW, domain or `ROS_LOCALHOST_ONLY` | `pashu` (`script/env.sh`, it also restarts the ros2 daemon) |
-| RViz on a laptop sees no topics | `ROS_LOCALHOST_ONLY=1` | set 0 in the env file while debugging, restart the service |
-| robot or LiDAR also driven by the vendor stack | vendor autostart | `ROBOT_PRESTART` |
-| camera drops out, udev and journal flooded every second | kernel `uvcvideo` and librealsense both bind the camera | `script/setup.sh install realsense` (blacklists `uvcvideo` on Jetson), reboot |
-| camera works with `ros2 run`, but the service logs "No RealSense devices were found!" | the shell has a source-built librealsense first in `LD_LIBRARY_PATH`, the service uses the apt one | `LD_LIBRARY_PATH_FIRST=/usr/local/lib` in `pashupati.env`, restart |
-| odometry fails or TF is stale right after boot; NETRA says the robot clock is off | no battery-backed clock: NTP steps the time minutes after the stack started | `timedatectl` must say synchronized; the stack waits `TIME_SYNC_WAIT` s for it |
-| RAM nearly full with inspection on, `llama-server` at ~9 GB | Ollama's prompt cache in RAM | `script/setup.sh install ollama` |
-| a Python node at 100-200 % CPU | numpy OpenBLAS threads busy-wait | `OPENBLAS_NUM_THREADS=1` (env file) |
-| handheld: "wrong token" | app token differs from `teleop_udp_node.token` | same token in both |
-| handheld connected, robot does not walk | mode AUTO, or the e-stop is latched | REMOTE on the handheld, release the e-stop |
-| handheld video choppy, `WebRTC video off` in the journal | MediaMTX missing or older than v1.11 | `script/setup.sh install webrtc`, restart the service |
-| `model ... is not installed in Ollama` | model pulled into `~/.ollama`, not into the service | `script/setup.sh install ollama` |
-| `malformed launch argument 'route:='` | empty launch argument | leave it out; `robot.launch.py` reads the env |
-| build killed (out of memory) | too many parallel compile jobs | `BUILD_WORKERS=1 BUILD_JOBS=2 script/setup.sh install build` |
-| `apt-get update`: "no longer has a Release file" | a dead apt mirror (vendor images often use `mirrors.tuna.tsinghua.edu.cn`) | point `/etc/apt/sources.list*` at `ports.ubuntu.com/ubuntu-ports` (`archive.ubuntu.com/ubuntu` on x86) and `packages.ros.org/ros2/ubuntu` |
-
-</details>
-
-## Workflow
-
-**Teach**
-
-1. Start in teach mode (`MODE=teach` in the env file, or `script/start_tmux.sh teach`). Keep the
-   robot still until odometry starts (`odometry/status` leaves `initializing`).
-2. On the handheld, switch to **REMOTE**, tap **Record** and drive the route. Tap **Point**
-   wherever the robot should stop and inspect. The RViz Mission panel, `route/record` and
-   `route/mark_stop_point` work as well.
-3. Stand still in view of each AprilTag and **Record Tag Poses** (AprilTags panel or
-   `localization/record_tags`). Tags recorded in the same session anchor the same map frame.
-4. Stop recording. The route is saved under `map/<date>/` and uploaded to NETRA. End near the
-   start for a looping patrol.
-
-**Repeat**
-
-- **Localize** from a tag (handheld, panel or `localization/start`). Navigation refuses to start
-  until `localization/status` reports a source.
-- **Start** from NETRA (now, or on a weekly schedule), from the handheld (**Routes** → load →
-  **Start**), or by hand:
+**Teach.** Map the site and teach a route (the handheld's **Record** and **Point** do the same):
 
 ```bash
-ros2 service call /navigation/load_path dharma_interfaces/srv/LoadPath "{waypoints_file: '/home/robot/dev/Pashupati/map/<date>/<time>_path.csv'}"
-ros2 service call /navigation/start_nav std_srvs/srv/SetBool "{data: true}"
+ros2 launch pashupati robot.launch.py mode:=teach site:=mall   # or MODE=teach SITE=mall
+ros2 service call /localization/record_tags std_srvs/srv/Trigger           # each tag in view
+ros2 service call /route/start std_srvs/srv/Trigger
+ros2 service call /route/mark_stop_point dharma_interfaces/srv/MarkStopPoint "{dwell_sec: 10.0}"
+ros2 service call /route/stop std_srvs/srv/Trigger    # saved in <site>/routes/, uploaded to NETRA
+ros2 service call /mapping/save std_srvs/srv/Trigger
 ```
 
-- At every stop the robot converges, calls `/anomaly_detector_node/check_now`, dwells, and moves
-  on. Anomalies, crowd windows and stop events flow to NETRA.
+**Repeat.** Localize (a tag in view: `/localization/start`), then start from NETRA, from the
+handheld (**Routes** → load → **Start**), or by hand:
 
-**Emergency stop.** The software e-stop is latched in the control mux. It can be engaged from:
-- the handheld **STOP** (screen or gamepad B);
-- NETRA;
-- `ros2 service call /bridge/estop std_srvs/srv/SetBool "{data: true}"`.
-
-While it is engaged, only zero velocity reaches the robot and navigation is paused. Releasing it
-is explicit: `estop_release` from the handheld or NETRA, or `{data: false}`. Navigation then
-stays paused until an operator resumes it. The driver's own stop is
-`ros2 service call /<robot_ns>/emergency_stop std_srvs/srv/Trigger`.
-
-<details>
-<summary><b>Patrol behaviour</b></summary>
-
-| Feature | What it does | Key parameters |
-|---|---|---|
-| Route processing | dedup, resample, gradient smoothing between stop points; stops never move | `resample_spacing`, `smooth_weight_*` |
-| Controllers | `holonomic` (default: x, y and yaw, strafes and reverses, heading kept along the route), `pure_pursuit`, `pid`, `mppi`, `lqr`, `stanley`, switchable live | `controller`, `<controller>.*` |
-| Speed profile | curvature speed cap, braking into stops and the route end | `max_lateral_accel`, `approach_speed` |
-| Avoidance | path shift (default): slide sideways around obstacles on the 360° safety scan, never more than `max_offset` from the route, stop short without a gap; or reactive `braitenberg`, `vfh`, `potential_field`, `follow_gap` | `avoidance_mode`, `path_shift.*`, `algorithm` |
-| Joining | starts from beside the route: walks onto it first, refuses when too far | `join_max_distance`, `join_timeout_sec` |
-| Final approach | x / y / yaw convergence (strafing) to 5 cm / 3° | `holonomic`, `approach.*` |
-| Inspection | VLM check at each stop, waits for the result, then dwells | `inspection_services`, `inspection_timeout_sec` |
-| Loop patrol | restarts closed routes, ends the lap on low battery | `loop_route`, `low_battery_percentage` |
-| Safety | stops on stale avoidance / odometry, e-stop hysteresis, `BLOCKED`, `OFF_PATH`, teleop watchdog | `*_timeout_sec`, `off_path_*` |
-| Protective field | speed and separation monitoring in the mux, in every direction: v·t + v²/2a ≤ clearance − margin; no fresh 360° scan, no autonomous motion | `field.*`, `safety_scan_timeout_sec` |
-| Control mux | AUTO (navigation) or REMOTE (handheld); REMOTE pauses navigation; zero when the active source goes silent; speed envelope, non-finite commands dropped | `bridge/set_mode`, `max_v*` |
-| Software e-stop | latched in the mux: only zero reaches the robot until an explicit release, navigation stays paused | `bridge/estop` |
-| Resilience | respawning nodes, supervised service, route remembered, uploads spooled offline | — |
-
-Every navigation and avoidance parameter applies live (**Tuning** panel or `ros2 param set`); save
-the tuned values with **Save YAML**.
-
-</details>
-
-## Operations
-
-| | |
-|---|---|
-| Health | `ros2 topic echo /health/status`: `level` is ok, warn or error. It is error for a missing node, lost odometry, a stale safety scan or an engaged e-stop. It also reports sensor rates, CPU, GPU, RAM, temperature and disk, and is shown on the handheld and in NETRA |
-| Inspection | `ros2 topic echo /anomaly_detector/status`: state, model, pace, queue, finding types and the last result |
-| People | `ros2 topic echo /perception/people_status`: state, backend, count and boxes |
-| Logs | `journalctl -fu pashupati`; ROS logs older than 7 days are pruned at start |
-| Debug view | RViz `dharma_rviz/rviz/robot.rviz`: route coloured by speed, lookahead, cross-track, avoidance cone, approach target, tags |
-
-<details>
-<summary><b>Services</b></summary>
-
-| Service | Type | Node |
-|---|---|---|
-| `/route/record` | `std_srvs/SetBool` | route_recorder_node |
-| `/route/mark_stop_point` | `dharma_interfaces/MarkStopPoint` | route_recorder_node |
-| `/localization/start`, `/localization/record_tags` | `std_srvs/Trigger` | localization_node |
-| `/navigation/load_path` | `dharma_interfaces/LoadPath` | path_loader_node |
-| `/navigation/start_nav`, `/navigation/pause` | `std_srvs/SetBool` | path_follower_node |
-| `/bridge/set_mode` | `dharma_interfaces/SetMode` | control_mux_node |
-| `/bridge/estop` | `std_srvs/SetBool` (`true` engages, `false` releases) | control_mux_node |
-| `/anomaly_detector_node/check_now` | `std_srvs/Trigger` | anomaly_detector_node |
-| `/<robot_ns>/<command>` | `std_srvs/Trigger` | robot driver ([contract](src/xtras/README.md)) |
-
-</details>
-
-<details>
-<summary><b>Topics</b></summary>
-
-| Topic | Type | Publisher |
-|---|---|---|
-| `/<robot_ns>/cmd_vel` | `geometry_msgs/Twist` | control_mux_node |
-| `/bridge/nav_cmd_vel`, `/bridge/remote_cmd_vel` | `geometry_msgs/Twist` | path_follower_node, teleop_udp_node |
-| `/bridge/mode` | `std_msgs/String` (latched) | control_mux_node |
-| `/bridge/estop_engaged`, `/bridge/estop_reason` | `std_msgs/Bool`, `std_msgs/String` (latched) | control_mux_node |
-| `/bridge/estop_request` | `std_msgs/String` (reason) | any node: engages the e-stop |
-| `/bridge/protective_field` | `std_msgs/String` (latched): `clear`, `limited`, `stop`, `stale`, `off` | control_mux_node |
-| `/odometry/status` | `std_msgs/String` (latched) | odometry_monitor_node |
-| `/odometry/restarted` | `std_msgs/Empty` | odometry_monitor_node |
-| `/localization/status` | `std_msgs/String` (latched) | localization_node |
-| `/navigation/waypoints` | `dharma_interfaces/WaypointPath` (latched) | path_loader_node |
-| `/navigation/status`, `/navigation/mission_status`, `/navigation/stop_point_event` | dharma_interfaces | path_follower_node |
-| `/navigation/markers`, `/navigation/route_markers`, `/navigation/avoidance_markers` | `MarkerArray` | navigation |
-| `/perception/sector_scan` | `dharma_interfaces/SectorScan` | lidar_sector_node |
-| `/perception/safety_scan` | `dharma_interfaces/SectorScan` (360°, all blocked when the LiDAR is blind) | lidar_sector_node |
-| `/perception/people`, `/perception/people_status` | `geometry_msgs/PoseArray`, `std_msgs/String` (JSON, latched) | person_detector_node |
-| `/anomaly_detector/result`, `/anomaly_detector/status` | `std_msgs/String` (JSON; status latched) | anomaly_detector_node |
-| `/health/status` | `std_msgs/String` (JSON, latched) | health_monitor_node |
-| `/route/saved` | `std_msgs/String` | route_recorder_node |
-
-</details>
-
-<details>
-<summary><b>TF tree</b></summary>
-
-```
-map → odom → camera_init → body → base_link ─┬─ livox_frame → livox_imu_frame
- (localization_node)  (FAST-LIO2)  (bridge)   └─ camera_link → camera_*_optical_frame
+```bash
+ros2 service call /navigation/load_path dharma_interfaces/srv/LoadPath "{path: mall/routes/<date>_<time>.csv}"
+ros2 service call /navigation/start std_srvs/srv/Trigger
+ros2 service call /navigation/pause std_srvs/srv/Trigger     # resume: /navigation/resume
 ```
 
-`camera_init → body` comes from FAST-LIO2 or Leg-KILO (`odometry:=leg_kilo`), same frame names.
+**Drive.** REMOTE from the handheld, or
+`ros2 service call /control/set_mode dharma_interfaces/srv/SetMode "{mode: remote, source: handheld}"`;
+REMOTE pauses the patrol, AUTO resumes it.
 
-</details>
+**Emergency stop.** Latched in the control mux: the handheld **STOP**, NETRA, or
+`ros2 service call /control/estop/engage std_srvs/srv/Trigger`. Only zero velocity reaches the
+robot until an explicit `/control/estop/release`; the patrol then stays paused until resumed.
 
-<details>
-<summary><b>File formats</b></summary>
+| Check      |                                                                                                 |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| Health     | `ros2 topic echo /health/status`: level, issues, speed limit, sensor rates, CPU, GPU, RAM, disk |
+| Patrol     | `ros2 topic echo /navigation/status`, `/navigation/stop_point`                                  |
+| Inspection | `ros2 topic echo /anomaly_detector/status`: state, model, pace, queue and the last result       |
+| People     | `ros2 topic echo /perception/people_status`                                                     |
+| Logs       | `journalctl -fu pashupati`; ROS logs older than 7 days are pruned at start                      |
 
-**Route CSV**: `x, y, yaw_deg, dwell_sec` in the `map` frame; `dwell_sec > 0` is an inspection stop.
-
-```csv
-# x,y,yaw_deg,dwell_sec
-0.0,0.0,0,0
-2.0,0.5,45,10.0
-```
-
-**Tag config JSON**: map pose per AprilTag TF frame (written by `localization/record_tags`).
-
-```json
-{ "base_map": { "x": 0.0, "y": 0.0, "z": 0.8, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0 } }
-```
-
-</details>
+Every Dharma topic and service: the hub's
+[Topics and Services](https://github.com/DarmawanRobotics/Dharma/blob/main/docs/guide/Topics-and-Services.md).
 
 ## Develop
 
-**Dev container** (macOS / Linux). Check out Dharma first: `vcs import src < pashupati.repos`
-(vcstool: `pip install vcstool`).
-
-```bash
-script/dev.sh up      # Docker: ROS 2 Humble + all deps + XFCE desktop over VNC
-script/dev.sh build   # colcon build (symlink-install, Release)
-script/dev.sh test
-script/dev.sh vnc     # TigerVNC localhost:5901 or http://localhost:6080/vnc.html
-```
-
-On the robot during development, `script/start_tmux.sh teach|patrol` opens one pane per part plus
-RViz, with the package default parameters and the env file's settings.
-
-**Simulation.** The whole stack runs against a simulated quadruped
-([dharma_sim](https://github.com/DarmawanRobotics/dharma_sim)), with no robot, Gazebo or GPU:
-
-```bash
-ros2 launch pashupati sim.launch.py autostart:=true rviz:=true
-# a person steps onto the route
-ros2 topic pub --once /sim/obstacles geometry_msgs/msg/PoseArray "{poses: [{position: {x: 2.0, y: -3.0}}]}"
-```
-
-The simulated robot localizes itself and patrols a loop with an inspection stop. It stops for the
-person and drives on once they are gone. The handheld (token `sim`) and NETRA (`cc_url:=`)
-connect to it as they would to a real robot.
-
-**Tests.**
-
-```bash
-colcon test --executor sequential && colcon test-result --verbose
-```
-
-Every package runs flake8 and pep257 plus its own tests:
-- Navigation simulations drive every controller around a noisy loop and an out-and-back corridor.
-- In-process ROS tests drive the real teleop gateway over UDP, the inspection node against a fake
-  Ollama, and the odometry and navigation nodes with fake sensors.
-- An end-to-end test runs the whole stack in the simulator. The robot slides around a person on
-  the route and still does the stop, stops for a crowd, and cannot be driven into a person from
-  the handheld.
-
-CI runs all of it on every push and pull request
-([ci.yml](.github/workflows/ci.yml)), and failing tests show up as annotations. The people model
-is exported and checked by its own workflow
-([people-model.yml](.github/workflows/people-model.yml)). CI also builds the PDF guides
-([docs](docs/README.md)). Branch and commit rules are in
-[CONTRIBUTING.md](CONTRIBUTING.md), and changes are listed in [CHANGELOG.md](CHANGELOG.md).
-
 ```
 Pashupati/
-├── .github/workflows/            # ci.yml (build, tests, lint), people-model.yml
-├── docker/ docker-compose.yaml   # dev container (VNC desktop, shared workspace)
-├── docs/                         # User Manual and Tuning Guide (PDF + sources), diagrams, logo
-├── map/                          # recorded routes + example/
-├── pashupati.repos               # the Dharma versions (vcstool)
-├── script/                       # setup.sh, run_robot.sh (service), env.sh (shell), start_tmux.sh, dev.sh
+├── .github/workflows/      ci.yml (lint, scripts, docs, whole stack on Humble), people-model.yml
+├── .devcontainer/ compose.yaml docker/   dev container (Humble, VNC)
+├── docs/                   User Manual, Tuning Guide (Markdown, PDFs built from them), diagrams
+├── pashupati.repos         the Dharma versions (vcstool)
+├── scripts/                setup.sh, run_robot.sh (service), env.sh, dev.sh, start_tmux.sh
 └── src/
-    ├── pashupati pashupati_*     # first-party packages
-    ├── dharma/                   # Dharma repositories, checked out from pashupati.repos (git-ignored)
-    └── xtras/                    # submodules: livox_ros_driver2, FAST_LIO; robots/<your robot>, slam/leg_kilo
+    ├── pashupati pashupati_*   the product packages
+    ├── dharma/                 imported from pashupati.repos (git-ignored)
+    └── xtras/                  submodules: livox_ros_driver2, FAST_LIO; robots/<robot>, slam/leg_kilo
 ```
+
+`colcon test` runs the style check and the unit and in-process ROS tests of every package, and
+`src/pashupati/test/e2e` the whole robot on the simulator: it localizes, teaches a route with
+three stop points, patrols it with a stand-in VLM answering every inspection, hands over to the
+handheld and back through the mux, and reports to a local NETRA. CI runs all of it on every push
+and pull request. Branch, commit and code rules are in [CONTRIBUTING.md](CONTRIBUTING.md), changes
+in [CHANGELOG.md](CHANGELOG.md).
 
 Pashupati is released under the [Apache License 2.0](LICENSE).

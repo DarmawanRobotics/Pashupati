@@ -5,11 +5,66 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-29
+
+The same patrol robot on Dharma 0.2 (`main 2026-10-28`, pinned in `pashupati.repos`).
+
+### Changed
+
+- **Breaking:** the Dharma 0.2 interfaces: `control_mux_node` is the only publisher of
+  `/<robot_ns>/cmd_vel`; the handheld drives through `control/remote/handheld/cmd_vel`;
+  services are `control/set_mode` (mode and source), `control/estop/engage|release`,
+  `navigation/start|stop|pause|resume`, `navigation/load_path` (`path` inside the sites dir),
+  `route/start|stop|mark_stop_point`, `planner/go_to`; status topics are typed messages
+  (`ControlStatus`, `NavigationStatus`, `LocalizationStatus`, `HealthStatus`, `SiteStatus`,
+  `StopPointEvent`, `DockingStatus`). The old `bridge/*` services and the string status topics
+  are gone.
+- **Breaking:** sites replace `map/`: a site holds its occupancy map, tags and taught routes
+  under `SITES_DIR` (`~/.pashupati/sites`). `ROUTE` and `TAGS` are gone from `pashupati.env`;
+  `SITE` and `SITES_DIR` replace them. `mode:=teach` maps the site from the start.
+- **Breaking:** `ROBOT_BRINGUP` is `ROBOT_DRIVER`; the robot's footprint, speed limits and base
+  height are the robot profile (`robot.*`, `src/pashupati/config/robot.yaml`, `ROBOT_PARAMS`)
+  instead of `field.*` and per-node limits.
+- **Breaking:** the configs are `config/robot.yaml` and `config/stack.yaml` (one file for the
+  whole stack, the values tuned on the robot carried over) and `bridge.yaml`, `inspection.yaml`,
+  `fleet.yaml` in their packages; the old `*_params.yaml` names are gone. A site file keyed by
+  node name still goes on top of everything.
+- **Breaking:** `script/` is `scripts/`.
+- Every Pashupati node is a `DharmaNode` with a typed config (`declare_config`), a pure `core/`
+  and its ROS helpers in `utils/`; lint is the hub's (ruff, prettier, clang-format, pre-commit).
+- The inspection after a stop point is Dharma's follower hook (`hooks.inspection`); a disabled
+  inspection answers at once and never holds the patrol. The back-up after an inspection is
+  `inspection.reverse_distance_m` (0: off).
+- Handheld protocol v1 and the NETRA API v1 keep their wire format; the differences are listed
+  at the top of [PROTOCOL.md](src/pashupati_bridge/PROTOCOL.md) and
+  [API.md](src/pashupati_fleet/API.md) (`TF_UNAVAILABLE` and `AVOIDANCE_STALE` alerts are now in
+  `nav.message`).
+
+### Added
+
+- `pashupati_utils`: typed status to protocol names, health figures, launch helpers.
+- Camera source: `CAMERA=rtsp` and `CAMERA_URL` start `rtsp_camera_node` for an IP camera.
+- Docking: `dock` and `undock` from the handheld and NETRA (Dharma's `docking_node`, the robot
+  driver's dock services).
+- Patrol goals with the planner (`planner/go_to`) on the site's map.
+- Dev container from the hub template (Humble, VNC): `compose.yaml`, `.devcontainer/`,
+  `scripts/dev.sh`, `scripts/start_tmux.sh robot|sim`.
+- `fake_netra` (`ros2 run pashupati_fleet fake_netra`): a local NETRA for the simulator and tests.
+- End-to-end test on the simulator: localize, teach a route with three stop points, patrol it
+  with the VLM inspection (stand-in Ollama), hand over to the handheld and back, report to NETRA.
+- CI: pre-commit lint and the whole stack from `pashupati.repos` on Humble.
+
+### Removed
+
+- `docker-compose.yaml` and `docker/README.md` (now `compose.yaml` and the README).
+- `map/example` (routes and tags belong to a site now).
+
 ## [2.0.0] - 2026-10-18
 
 Same patrol as 1.0.0, now on the Dharma stack.
 
 ### Changed
+
 - **Breaking:** odometry, localization, navigation, LiDAR perception, the control mux, the health
   monitor, the RViz panels and the simulator come from the `dharma_*` packages, pinned in
   `pashupati.repos` (`script/setup.sh install dharma`, or `vcs import src < pashupati.repos`).
@@ -19,6 +74,7 @@ Same patrol as 1.0.0, now on the Dharma stack.
   `ros2 launch pashupati sim.launch.py` and its end-to-end test lives in `pashupati`.
 
 ### Added
+
 - `script/setup.sh` component `dharma`.
 
 ## [1.0.0] - 2026-10-18
@@ -26,8 +82,9 @@ Same patrol as 1.0.0, now on the Dharma stack.
 First stable release, field-tested at Lippo Mall Puri on a Genisom L1W.
 
 ### Added
+
 - Handheld video over WebRTC: `robot.launch.py` starts MediaMTX (`script/setup.sh install
-  webrtc`), which runs the new `video_stream_node` while the handheld watches. H.264 from the
+webrtc`), which runs the new `video_stream_node` while the handheld watches. H.264 from the
   Jetson hardware encoder (x264 or OpenH264 where there is none), read with the teleop token. The
   `welcome` offers it as `video: {port, path}` (WHEP); apps without WebRTC and robots without
   MediaMTX keep the JPEG frames.
@@ -49,10 +106,12 @@ First stable release, field-tested at Lippo Mall Puri on a Genisom L1W.
   generated from the config files). `docs/pdf/build.py` rebuilds them; CI builds them too.
 
 ### Changed
+
 - REMOTE drives without the protective field (`field_in_remote: false`): the operator watches the
   robot; the software e-stop and the speed envelope still apply. The simulator keeps it on.
 
 ### Fixed
+
 - The robot ran out of RAM with inspection on (15.1 of 15.3 GB used, swapping): Ollama's
   llama-server kept up to 8 GiB of earlier prompts in RAM, useless when every prompt has a new
   image. `script/setup.sh install ollama` turns that cache off for the Ollama service. The
@@ -123,6 +182,7 @@ First stable release, field-tested at Lippo Mall Puri on a Genisom L1W.
   `ros2 launch` (`KillMode=mixed`); re-run `script/setup.sh install service` to update the unit.
 
 ### Added
+
 - `script/env.sh`: the service's environment in a shell (same RMW, domain and robot settings), and
   `pnode` to run one node with the package defaults and the site file.
 - `script/setup.sh` reads `/etc/pashupati/pashupati.env` itself and has a `config` component that
@@ -154,6 +214,7 @@ First stable release, field-tested at Lippo Mall Puri on a Genisom L1W.
   person, clean shutdown.
 
 ### Changed
+
 - Person detection and VLM inspection are off in the env example (`PEOPLE=false`,
   `INSPECTION=false`), which also sets `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` and
   `ROS_LOCALHOST_ONLY=1` (nothing on the robot's Wi-Fi can publish to the driver; 0 for RViz on
