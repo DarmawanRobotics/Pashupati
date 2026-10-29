@@ -2,14 +2,14 @@ name: people-model
 
 # The person detector's model: YOLO11n (the smallest YOLO) exported to ONNX at 416 px, checked
 # with the detector's own pre- and post-processing on ONNX Runtime and on the OpenCV versions a
-# robot may have, then published as a release asset that `script/setup.sh install people_model`
+# robot may have, then published as a release asset that `scripts/setup.sh install people_model`
 # downloads (no PyTorch on the robot).
 
 on:
   push:
     branches: [dev]
     paths:
-      - src/pashupati_inspection/pashupati_inspection/person_detector.py
+      - src/pashupati_inspection/pashupati_inspection/core/person_detector.py
       - .github/scripts/check_people_model.py
       - .github/workflows/people-model.yml
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
       - name: Export YOLO11n to ONNX (416 px)
         run: |
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
@@ -45,15 +45,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - opencv: '4.5.4.60'   # Ubuntu 22.04 apt (ROS Humble)
+          - opencv: "4.5.4.60" # Ubuntu 22.04 apt (ROS Humble)
             optional: false
-          - opencv: '4.8.0.76'   # JetPack 6
+          - opencv: "4.8.0.76" # JetPack 6
             optional: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
       - uses: actions/download-artifact@v4
         with:
           name: people-model
@@ -80,5 +80,5 @@ jobs:
         run: |
           gh release view people-model >/dev/null 2>&1 || gh release create people-model \
             --target "$GITHUB_SHA" --title 'People detection model' \
-            --notes 'YOLO11n exported to ONNX at 416 px for person_detector_node (script/setup.sh install people_model).'
+            --notes 'YOLO11n exported to ONNX at 416 px for person_detector_node (scripts/setup.sh install people_model).'
           gh release upload people-model out/yolo11n-416.onnx --clobber

@@ -472,7 +472,7 @@ install_config() {
     group=$(id -gn)
     if [[ ! -f "$ENV_FILE" ]]; then
         $SUDO install -D -m 640 -o root -g "$group" "$ENV_EXAMPLE" "$ENV_FILE"
-        log "created $ENV_FILE: set ROBOT_ID, ROBOT_BRINGUP, ROBOT_NS, ROUTE, TAGS"
+        log "created $ENV_FILE: set ROBOT_ID, ROBOT_DRIVER, ROBOT_NS, SITE, CC_URL"
     else
         for key in $(env_keys "$ENV_EXAMPLE"); do
             has_key "$key" && continue

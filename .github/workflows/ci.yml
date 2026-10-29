@@ -11,20 +11,39 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Vendor packages that live in src/xtras (submodules) or need hardware SDKs; CI builds and
-  # tests the Pashupati packages only.
+  # FAST-LIO and the Livox driver live in src/xtras (submodules, vendor SDK); CI builds the whole
+  # Dharma stack from pashupati.repos and the Pashupati packages, and tests the Pashupati packages.
   ROSDEP_SKIP: >-
-    livox_ros_driver2 fast_lio legkilo apriltag_draw
+    livox_ros_driver2 fast_lio legkilo
   PACKAGES: >-
-    pashupati pashupati_bridge pashupati_fleet pashupati_inspection
+    pashupati_utils pashupati_inspection pashupati_bridge pashupati_fleet pashupati
 
 jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pre-commit
+      - run: |
+          pre-commit run --all-files --show-diff-on-failure > lint.log 2>&1 || {
+            cat lint.log
+            msg=$(tail -c 20000 lint.log | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
+            echo "::error title=Lint failed::$msg"
+            exit 1
+          }
+          cat lint.log
+
   scripts:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S warning script/*.sh docker/entrypoint.sh
+        run: shellcheck -S warning scripts/*.sh docker/entrypoint.sh
+      - name: Compose file
+        run: docker compose config -q
       - name: YAML parses
         run: |
           python3 - <<'PY'
@@ -46,10 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # the age check compares the commits of the PDFs and their sources
+          fetch-depth: 0 # the age check compares the commits of the PDFs and their sources
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Build the PDF guides
         run: |
           sudo apt-get update
@@ -77,15 +96,15 @@ jobs:
 
   build-test:
     runs-on: ubuntu-22.04
-    container: ros:humble-ros-base-jammy
+    container: ros:humble-ros-base
     env:
-      ROS_LOCALHOST_ONLY: '1'
-      PYTHONUNBUFFERED: '1'
+      ROS_LOCALHOST_ONLY: "1"
+      PYTHONUNBUFFERED: "1"
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4   # no submodules: they need SSH keys and vendor SDKs
+      - uses: actions/checkout@v4 # no submodules: they need SSH keys and vendor SDKs
       - name: Dharma packages
         env:
           # the dharma repos are private: a fine-grained token with read access to them
@@ -104,7 +123,7 @@ jobs:
       - name: Build
         run: |
           source /opt/ros/humble/setup.bash
-          colcon build --packages-up-to $PACKAGES --event-handlers console_cohesion+
+          colcon build --event-handlers console_cohesion+
       - name: Test
         run: |
           source /opt/ros/humble/setup.bash
@@ -126,7 +145,6 @@ jobs:
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           ros2 launch pashupati robot.launch.py --show-args > /dev/null
-          ros2 launch dharma_odometry odometry.launch.py --show-args > /dev/null
           ros2 launch pashupati sim.launch.py --show-args > /dev/null
       - name: Test reports
         if: always()
