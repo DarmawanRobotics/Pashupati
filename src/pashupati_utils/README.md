@@ -9,6 +9,7 @@ Helpers the other Pashupati packages share. No node.
 | `utils/status.py`         | `ControlStatus`, `NavigationStatus`, `LocalizationStatus`, `StopPointEvent`, `HealthStatus` as the values of the handheld protocol (`PROTOCOL.md`) and the NETRA API |
 | `utils/params.py`         | `SetParameters` requests for another node, `(ok, message)` of any service answer                                                                                        |
 | `utils/calls.py`          | an asynchronous service call that reports `(ok, message)`                                                                                                               |
+| `utils/launch.py`         | the launch contract of every package launch: `params_file`, `robot_params`, `use_sim_time`, `log_level`; only set values override |
 
 ```bash
 colcon test --packages-select pashupati_utils && colcon test-result --verbose
