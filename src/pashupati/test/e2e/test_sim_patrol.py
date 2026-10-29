@@ -182,7 +182,7 @@ def test_a_route_with_three_stop_points_is_taught(world):
         request = MarkStopPoint.Request(dwell_sec=2.0)
         replies = []
 
-        def marked() -> bool:
+        def marked(replies=replies, request=request) -> bool:
             replies.append(operator.call(spinner, 'route/mark_stop_point', request))
             return replies[-1].success or 'not localized' not in replies[-1].message
 
