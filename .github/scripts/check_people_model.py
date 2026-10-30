@@ -19,7 +19,7 @@ def main(model: str, image: str, backends: list[str]) -> int:
         import cv2
 
         sys.path.insert(0, 'src/pashupati_inspection')
-        from pashupati_inspection.person_detector import OnnxPersonDetector
+        from pashupati_inspection.core.person_detector import OnnxPersonDetector
     except Exception:
         annotate('error', 'imports', traceback.format_exc()[-1500:])
         return 1
