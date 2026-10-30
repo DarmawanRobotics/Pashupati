@@ -58,6 +58,10 @@ PASHUPATI_NODES = tuple(  # how their lines start in the launch log
     for prefix in ('[', '[ERROR] [')
 )
 STOPS = [(-2.0, -3.0, 0.0), (0.5, -3.0, 0.0), (3.0, -3.0, 0.0)]
+NAVIGATION_NODES = tuple(
+    f'[{name}-'
+    for name in ('path_follower_node', 'path_loader_node', 'control_mux_node', 'planner_node')
+)
 
 
 class Operator:
@@ -130,6 +134,7 @@ def world():
     compat.init()
     node = rclpy.create_node('pashupati_e2e')
     operator = Operator(node)
+    operator.launch_log = launch.log.name
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     spinner = Spinner(executor)
@@ -191,6 +196,14 @@ def test_a_route_with_three_stop_points_is_taught(world):
     assert wait_for(lambda: any(p == '/api/v1/robot/routes' for p, _ in netra.uploads), 30.0)
 
 
+def patrol_report(operator, events) -> str:
+    """The stop point events and the navigation lines of the launch log, for a failed patrol."""
+    seen = [(e.event, e.index, round(e.x, 2), round(e.y, 2), e.message) for e in events]
+    with open(operator.launch_log, encoding='utf-8', errors='replace') as f:
+        lines = [ln for ln in f.read().splitlines() if ln.startswith(NAVIGATION_NODES)]
+    return f'{seen}\n' + '\n'.join(lines[-60:])
+
+
 def drive_with_the_handheld(operator, handheld: Handheld):
     """REMOTE from the handheld: the follower pauses, the stick moves the robot, back to AUTO."""
     assert handheld.hello(), 'the handheld was not welcomed'
@@ -229,7 +242,7 @@ def test_the_taught_route_is_patrolled_with_inspections_and_a_handheld_override(
         f'patrol did not finish: {operator.nav.last}'
     )
     inspected = [e for e in events() if e.event == StopPointEvent.INSPECTED]
-    assert len(inspected) == 3, [(e.event, e.message) for e in events()]
+    assert len(inspected) == 3, patrol_report(operator, events())
     for event in inspected:
         assert event.message.startswith('/anomaly_detector_node/check_now: ok trash'), (
             event.message
