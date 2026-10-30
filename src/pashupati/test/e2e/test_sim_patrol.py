@@ -172,7 +172,8 @@ def test_the_robot_localizes(world):
         ),
         90.0,
     ), 'not localized'
-    assert wait_for(lambda: netra.of_type('hello'), 30.0), 'NETRA never connected'
+    connected = wait_for(lambda: netra.of_type('hello'), 30.0)
+    assert connected, 'NETRA never connected\n' + launch_lines(operator, ('[fleet_uplink_node-',))
 
 
 def test_a_route_with_three_stop_points_is_taught(world):
@@ -204,9 +205,14 @@ def test_a_route_with_three_stop_points_is_taught(world):
 def patrol_report(operator, events) -> str:
     """The stop point events and the navigation lines of the launch log, for a failed patrol."""
     seen = [(e.event, e.index, round(e.x, 2), round(e.y, 2), e.message) for e in events]
+    return f'{seen}\n' + launch_lines(operator, NAVIGATION_NODES)
+
+
+def launch_lines(operator, prefixes: tuple, last: int = 60) -> str:
+    """Return the last lines of the launch log from the nodes with these prefixes."""
     with open(operator.launch_log, encoding='utf-8', errors='replace') as f:
-        lines = [ln for ln in f.read().splitlines() if ln.startswith(NAVIGATION_NODES)]
-    return f'{seen}\n' + '\n'.join(lines[-60:])
+        lines = [ln for ln in f.read().splitlines() if ln.startswith(prefixes)]
+    return '\n'.join(lines[-last:])
 
 
 def drive_with_the_handheld(operator, handheld: Handheld):
