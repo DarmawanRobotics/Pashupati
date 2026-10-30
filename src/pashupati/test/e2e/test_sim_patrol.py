@@ -114,10 +114,15 @@ class Operator:
         # the planner waits up to pose_wait_sec for the robot pose before it answers
         reply = self.call(spinner, 'planner/go_to', GoTo.Request(x=x, y=y, yaw=yaw))
         assert reply.success, reply.message
-        return wait_for(
-            lambda: any(m.state == PlannerStatus.ARRIVED for m in self.planner.messages[before:]),
-            120.0,
-        )
+
+        def arrived() -> bool:
+            # this goal's ARRIVED: the previous goal's can still come in late on a busy machine
+            return any(
+                m.state == PlannerStatus.ARRIVED and math.hypot(m.goal_x - x, m.goal_y - y) < 0.01
+                for m in self.planner.messages[before:]
+            )
+
+        return wait_for(arrived, 120.0)
 
 
 @pytest.fixture(scope='module')
