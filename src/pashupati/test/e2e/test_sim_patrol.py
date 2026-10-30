@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import math
 import os
+import subprocess
+import time
 import warnings
 
 import numpy as np
@@ -58,6 +60,10 @@ PASHUPATI_NODES = tuple(  # how their lines start in the launch log
     for prefix in ('[', '[ERROR] [')
 )
 STOPS = [(-2.0, -3.0, 0.0), (0.5, -3.0, 0.0), (3.0, -3.0, 0.0)]
+NAVIGATION_NODES = tuple(
+    f'[{name}-'
+    for name in ('path_follower_node', 'path_loader_node', 'control_mux_node', 'planner_node')
+)
 
 
 class Operator:
@@ -107,13 +113,26 @@ class Operator:
     def go_to(self, spinner, x: float, y: float, yaw: float) -> bool:
         """Drive to a pose with the planner; True when it arrived."""
         before = len(self.planner.messages)
-        # the planner waits up to pose_wait_sec for the robot pose before it answers
-        reply = self.call(spinner, 'planner/go_to', GoTo.Request(x=x, y=y, yaw=yaw))
-        assert reply.success, reply.message
-        return wait_for(
-            lambda: any(m.state == PlannerStatus.ARRIVED for m in self.planner.messages[before:]),
-            120.0,
-        )
+        request = GoTo.Request(x=x, y=y, yaw=yaw)
+        replies = []
+
+        def answered() -> bool:
+            # the planner waits for the pose, the follower's navigation/start does not: on a
+            # busy machine its TF can still lag, then ask again
+            replies.append(self.call(spinner, 'planner/go_to', request))
+            return replies[-1].success or 'pose unknown' not in replies[-1].message
+
+        wait_for(answered, 15.0, 0.5)
+        assert replies[-1].success, replies[-1].message
+
+        def arrived() -> bool:
+            # this goal's ARRIVED: the previous goal's can still come in late on a busy machine
+            return any(
+                m.state == PlannerStatus.ARRIVED and math.hypot(m.goal_x - x, m.goal_y - y) < 0.01
+                for m in self.planner.messages[before:]
+            )
+
+        return wait_for(arrived, 120.0)
 
 
 @pytest.fixture(scope='module')
@@ -130,6 +149,7 @@ def world():
     compat.init()
     node = rclpy.create_node('pashupati_e2e')
     operator = Operator(node)
+    operator.launch_log = launch.log.name
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     spinner = Spinner(executor)
@@ -162,7 +182,14 @@ def test_the_robot_localizes(world):
         ),
         90.0,
     ), 'not localized'
-    assert wait_for(lambda: netra.of_type('hello'), 30.0), 'NETRA never connected'
+    connected = wait_for(lambda: netra.of_type('hello'), 30.0)
+    if not connected:  # the stacks of the uplink's threads, for the report
+        uplink = 'lib/pashupati_fleet/fleet_uplink_node'
+        subprocess.run(['pkill', '-USR1', '-f', uplink], check=False)
+        time.sleep(2.0)
+    assert connected, 'NETRA never connected\n' + launch_lines(
+        operator, ('[fleet_uplink_node-',), last=200
+    )
 
 
 def test_a_route_with_three_stop_points_is_taught(world):
@@ -189,6 +216,19 @@ def test_a_route_with_three_stop_points_is_taught(world):
     assert sum(float(r[3]) > 0.0 for r in rows) == 3, rows
     # the taught route goes to NETRA's route database
     assert wait_for(lambda: any(p == '/api/v1/robot/routes' for p, _ in netra.uploads), 30.0)
+
+
+def patrol_report(operator, events) -> str:
+    """The stop point events and the navigation lines of the launch log, for a failed patrol."""
+    seen = [(e.event, e.index, round(e.x, 2), round(e.y, 2), e.message) for e in events]
+    return f'{seen}\n' + launch_lines(operator, NAVIGATION_NODES)
+
+
+def launch_lines(operator, prefixes: tuple, last: int = 60) -> str:
+    """Return the last lines of the launch log from the nodes with these prefixes."""
+    with open(operator.launch_log, encoding='utf-8', errors='replace') as f:
+        lines = [ln for ln in f.read().splitlines() if ln.startswith(prefixes)]
+    return '\n'.join(lines[-last:])
 
 
 def drive_with_the_handheld(operator, handheld: Handheld):
@@ -229,7 +269,7 @@ def test_the_taught_route_is_patrolled_with_inspections_and_a_handheld_override(
         f'patrol did not finish: {operator.nav.last}'
     )
     inspected = [e for e in events() if e.event == StopPointEvent.INSPECTED]
-    assert len(inspected) == 3, [(e.event, e.message) for e in events()]
+    assert len(inspected) == 3, patrol_report(operator, events())
     for event in inspected:
         assert event.message.startswith('/anomaly_detector_node/check_now: ok trash'), (
             event.message

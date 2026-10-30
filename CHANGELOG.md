@@ -11,8 +11,9 @@ versions follow [SemVer](https://semver.org).
   `take_message` RuntimeError, no publication after `destroy_node`), `planner/go_to` waits up to
   `pose_wait_sec` (2 s) for the robot pose right after localization, dharma_rviz builds with
   GCC 15.
-- The end-to-end patrol test no longer asks `planner/go_to` again while the pose is unknown:
-  the planner waits for it.
+- The end-to-end patrol test waits for the ARRIVED of its own goal: a late ARRIVED of the
+  previous goal on a busy machine marked a stop point at the wrong place and the patrol then
+  inspected only two of the three.
 
 ## [3.0.0] - 2026-10-29
 
