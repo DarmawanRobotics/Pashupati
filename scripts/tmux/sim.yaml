@@ -1,0 +1,26 @@
+# scripts/start_tmux.sh sim: the robot on dharma_sim with a stand-in NETRA, in tmux.
+session_name: pashupati-sim
+environment:
+  SCENARIO: ""
+setup: source /opt/ros/${ROS_DISTRO}/setup.bash && source ${WS}/install/setup.bash
+windows:
+  - window_name: netra
+    panes:
+      - shell_command: ros2 run pashupati_fleet fake_netra --port 8765 --log /tmp/netra.jsonl
+  - window_name: sim
+    panes:
+      - shell_command: >-
+          ros2 launch pashupati sim.launch.py cc_url:=http://127.0.0.1:8765
+          scenario:=${SCENARIO} rviz:=${RVIZ:-false}
+  - window_name: status
+    layout: even-vertical
+    panes:
+      - shell_command: sleep 10 && ros2 topic echo /navigation/status
+      - shell_command: sleep 10 && ros2 topic echo /control/status
+  - window_name: shell
+    layout: even-horizontal
+    panes:
+      - shell_command: >-
+          # ros2 service call /navigation/load_path dharma_interfaces/srv/LoadPath
+          "{path: mall_loop/routes/mall_loop.csv}"
+      - shell_command: watch -n 2 ros2 node list

@@ -1,0 +1,27 @@
+# The robot profile: the one description of the robot every Dharma and Pashupati node reads
+# (robot.*). Validated by the bringup at start (unknown names and out-of-range values stop the
+# launch) and by every node (`ros2 param describe /<node> robot.limits.max_vx`).
+# These are the values field-tested on a ~0.8 x 0.56 m quadruped (Genisom L1W). A robot package
+# ships its own profile: robot_params:= (ROBOT_PARAMS in pashupati.env).
+/**:
+  ros__parameters:
+    robot:
+      name: quadruped # model, for logs
+      kinematics: omni # legged: vx, vy, wz; diff for a robot that cannot strafe (max_vy 0)
+      base_height: 0.35 # m, base_link above the floor when standing
+      footprint: # m, base_link to the edges (x forward, y left): body and legs
+        front: 0.40
+        rear: 0.40
+        half_width: 0.28
+      limits:
+        max_vx: 1.0 # m/s, nothing may command more
+        max_vy: 0.5 # m/s
+        max_wz: 1.5 # rad/s
+        max_accel: 0.5 # m/s^2
+        max_decel: 0.6 # m/s^2, MEASURE: braking from full speed on the site's floor
+        max_yaw_accel: 1.5 # rad/s^2
+        reaction_time: 0.25 # s, command to the robot actually braking (sensing + transport)
+      frames:
+        map: map
+        odom: odom
+        base: base_link

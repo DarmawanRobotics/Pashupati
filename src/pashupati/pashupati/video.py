@@ -9,6 +9,8 @@ teleop token (HTTP basic auth, user 'teleop'), publishing is only allowed from t
 No launch or ROS imports, so everything here is unit-tested without a robot.
 """
 
+from __future__ import annotations
+
 import base64
 import hashlib
 from importlib.util import find_spec
@@ -26,7 +28,7 @@ WEBRTC_PORT = 8890  # TCP, WHEP signalling
 ICE_PORT = 8190  # UDP, the WebRTC media
 RTSP_PORT = 8654  # video_stream_node -> MediaMTX, loopback only
 # Ports differ from the MediaMTX defaults, so a MediaMTX the robot already runs can stay.
-INSTALL_DIR = '/opt/pashupati/mediamtx'  # script/setup.sh install webrtc
+INSTALL_DIR = '/opt/pashupati/mediamtx'  # scripts/setup.sh install webrtc
 MIN_VERSION = (1, 11, 0)  # rtspTransports
 MOQ_VERSION = (1, 19, 0)  # MoQ server, on by default from here: turned off
 
@@ -73,12 +75,14 @@ def password_hash(token: str) -> str:
     return 'sha256:' + base64.b64encode(digest).decode()
 
 
-def node_command(executable: str, params_files: list, rtsp_url: str) -> str:
+def node_command(executable: str, params_files: list, rtsp_url: str, image_topic: str = '') -> str:
     """Return the runOnDemand command line of video_stream_node (MediaMTX splits it like sh)."""
     args = [executable, '--ros-args']
     for path in params_files:
         args += ['--params-file', path]
     args += ['-p', f'rtsp_url:={rtsp_url}']
+    if image_topic:
+        args += ['-p', f'image_topic:={image_topic}']
     return shlex.join(args)
 
 

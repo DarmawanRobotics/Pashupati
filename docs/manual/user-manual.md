@@ -245,6 +245,11 @@ Tap the gear at the top right. Changes apply at once.
 
 ## Record the route
 
+A route belongs to a **site**: the map of one place with its AprilTags and its routes. Your
+technician creates the site once by starting the robot in teach mode and driving it through the
+place; after that, routes are recorded on it at any time. The robot records only while it knows
+where it is (localized).
+
 1. Stand the robot at the start of the route and switch to **REMOTE**.
 2. Tap **Record**. The app shows *Recording a route* and the button changes to **Finish**.
 3. Drive the route slowly and smoothly. The robot remembers its path.
@@ -530,8 +535,7 @@ ros2 topic echo --once /health/status
 |---|---|
 | `/etc/pashupati/pashupati.env` | the deployment: robot package, NETRA address and token, extras |
 | `/etc/pashupati/site.yaml` | parameters of this robot and site, see the Tuning Guide |
-| `~/dev/Pashupati/map/<date>/` | recorded routes |
-| `~/dev/Pashupati/map/tag_config.json` | AprilTag positions on the map |
+| `~/.pashupati/sites/<site>/` | one site: its map, AprilTag positions (`tags.json`) and recorded routes (`routes/`) |
 
 Restart the service after changing either file in `/etc/pashupati`.
 
@@ -539,7 +543,7 @@ Restart the service after changing either file in `/etc/pashupati`.
 
 ```bash
 cd ~/dev/Pashupati && git pull && git submodule update --init --recursive
-script/setup.sh install build config service && sudo systemctl restart pashupati
+scripts/setup.sh install dharma build config service && sudo systemctl restart pashupati
 ```
 
 The handheld app is updated by installing a new APK from the PashupatiController repository.

@@ -1,5 +1,7 @@
 """Run the people model on a test image with each backend; results become CI annotations."""
 
+from __future__ import annotations
+
 import sys
 import time
 import traceback
@@ -18,7 +20,7 @@ def main(model: str, image: str, backends: list[str]) -> int:
 
         sys.path.insert(0, 'src/pashupati_inspection')
         from pashupati_inspection.person_detector import OnnxPersonDetector
-    except Exception:  # noqa: B902  the environment itself is broken: say how
+    except Exception:
         annotate('error', 'imports', traceback.format_exc()[-1500:])
         return 1
     bgr = cv2.imread(image)
@@ -34,7 +36,7 @@ def main(model: str, image: str, backends: list[str]) -> int:
             start = time.monotonic()
             boxes = detector.detect(bgr)
             ms = (time.monotonic() - start) * 1000
-        except Exception as error:  # noqa: B902  report what this backend cannot do
+        except Exception as error:
             annotate('warning', title, f'{type(error).__name__}: {error}')
             failed |= backend == 'onnxruntime'
             continue

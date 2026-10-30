@@ -1,0 +1,64 @@
+# Overrides for the simulator (sim.launch.py), on top of stack.yaml: dharma_sim publishes the
+# registered cloud as PointCloud2, /Odometry and /livox/imu, no Livox CustomMsg and no camera.
+
+lidar_sector_node:
+  ros__parameters:
+    input:
+      type: pointcloud2
+
+control_mux_node:
+  ros__parameters:
+    field:
+      in_remote: true # the simulator tests the handheld against the protective field
+
+path_loader_node:
+  ros__parameters:
+    remember_file: /tmp/pashupati_sim/last_route
+
+planner_node:
+  ros__parameters:
+    # the simulator shares a busy machine (CI): a slower TF than on the robot is still the pose
+    tf_timeout_sec: 1.5
+path_follower_node:
+  ros__parameters:
+    approach:
+      timeout_sec: 10.0
+
+health_monitor_node:
+  ros__parameters:
+    sensors:
+      topics:
+        - /cloud_registered_body:5.0
+        - /perception/sector_scan:5.0
+        - /perception/safety_scan:5.0
+        - /{robot_ns}/odom:10.0
+        - /Odometry:8.0
+    degradation:
+      rules: ["sensor:/cloud_registered_body=0.5", "sensor:/Odometry=0.5", "tf:*=0.5"]
+
+docking_node:
+  ros__parameters:
+    # dharma_sim's dock station (mall_loop: charging_dock on the west wall); its tag camera
+    # publishes base_link -> charging_dock on TF.
+    goal.distance: 0.75
+    hooks.sit: [/sim/sit]
+    hooks.charge: [/sim/charge/start]
+    hooks.stop_charge: [/sim/charge/stop]
+    hooks.stand: [/sim/stand]
+
+teleop_udp_node:
+  ros__parameters:
+    token: sim
+
+fleet_uplink_node:
+  ros__parameters:
+    spool_dir: /tmp/pashupati_sim/spool
+
+anomaly_detector_node:
+  ros__parameters:
+    state_file: "" # the simulator keeps no live choice
+    queue_dir: ""
+
+person_detector_node:
+  ros__parameters:
+    state_file: ""

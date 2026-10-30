@@ -1,0 +1,88 @@
+# Per-node overrides of the package defaults for a Pashupati patrol robot (only what differs).
+# Merged with the site file (params_file:=, /etc/pashupati/site.yaml; later wins) and passed to
+# every package launch. A section that matches no started node is reported at launch (typo).
+# Parameters per package: their READMEs, `ros2 param describe /<node> <name>`.
+
+# ---------------------------------------------------------------- Dharma
+
+fastlio_mapping_node: # on top of dharma_odometry's fast_lio.yaml
+  ros__parameters:
+    mapping:
+      extrinsic_est_en: true # field-tested on the robot (Pashupati 2.0); Dharma's default: false
+
+odometry_gate:
+  ros__parameters:
+    max_tilt_deg: 8.0 # a standing quadruped leans a little; catches a sitting robot
+
+lidar_sector_node:
+  ros__parameters:
+    front:
+      # 360 deg so the avoidance also sees behind: needed by the back-up after an inspection
+      # (path_follower_node inspection.reverse_distance_m > 0)
+      num_sectors: 64
+      fov_deg: 360.0
+    filter:
+      height_max: 1.55 # m above the floor (base_link + 1.20 m)
+
+localization_node:
+  ros__parameters:
+    tag:
+      frames: [base_map, charging_dock] # the AprilTag frames (dharma_perception tag.frames)
+
+path_loader_node:
+  ros__parameters:
+    remember_file: ~/.pashupati/last_route # the route loaded last comes back after a restart
+
+path_follower_node:
+  ros__parameters:
+    loop_route: true # patrol: a closed route starts its next lap (not on low battery)
+    speed:
+      accel: 0.5 # m/s^2 (Pashupati 2.0 linear_accel_limit)
+      smoothing: 0.4
+    safety:
+      blocked_timeout_sec: 30.0 # s standing in front of an obstacle before BLOCKED
+    hooks:
+      # Inspection at every stop point: the VLM check answers (or, switched off, says so at
+      # once); a hook whose node does not run is skipped, so INSPECTION=false never blocks.
+      inspection: [/anomaly_detector_node/check_now]
+      inspection_timeout_sec: 20.0 # VLM inference on the Jetson takes a few seconds
+    inspection:
+      reverse_distance_m: 0.0 # > 0: back up this far after the inspection (360 deg scan)
+
+control_mux_node:
+  ros__parameters:
+    use_health_limit: true # scale commands by health/status speed_scale
+    remote_sources: [handheld, dashboard] # control/remote/<source>/cmd_vel
+    # REMOTE without the protective field: the operator watches the robot (field-tested
+    # decision of Pashupati 1.0); the envelope and the e-stop still apply. sim.yaml keeps it on.
+    field:
+      in_remote: false
+
+docking_node:
+  ros__parameters:
+    # Docking onto the charger: the robot driver's std_srvs/Trigger services, set them in the
+    # site file for a robot that has a dock (empty: skipped). See dharma_sim's dock contract.
+    hooks.sit: [""] # e.g. /robot/sit
+    hooks.charge: [""] # e.g. /robot/charge/start
+    hooks.stop_charge: [""]
+    hooks.stand: [""]
+
+health_monitor_node:
+  ros__parameters:
+    sensors:
+      # "topic:min_hz[:max_age_sec]"; {robot_ns} is the driver namespace. The camera on
+      # camera_info: subscribing the JPEG topic would make the driver encode every frame.
+      topics:
+        - /livox/lidar:5.0
+        - /Odometry:8.0
+        - /perception/sector_scan:5.0
+        - /camera/camera/color/camera_info:5.0:0
+        - /{robot_ns}/odom:10.0
+    degradation:
+      rules: ["sensor:/livox/lidar=0.5", "sensor:/Odometry=0.5", "tf:*=0.5"]
+
+# ---------------------------------------------------------------- Pashupati
+
+teleop_udp_node:
+  ros__parameters:
+    token: "" # set it in the site file, and the same in the handheld

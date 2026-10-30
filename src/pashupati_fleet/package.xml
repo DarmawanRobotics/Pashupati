@@ -2,11 +2,14 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>pashupati_fleet</name>
-  <version>2.0.0</version>
-  <description>Robot side of the NETRA command center: telemetry, events, crowd, anomalies, routes.</description>
+  <version>3.0.0</version>
+  <description>Robot side of the NETRA command center: telemetry, patrol and stop-point events, alerts, crowd heatmaps, anomaly and route uploads, commands; and a stand-in NETRA for the simulator.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>dharma_utils</exec_depend>
+  <exec_depend>dharma_interfaces</exec_depend>
+  <exec_depend>pashupati_utils</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
@@ -14,14 +17,13 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
-  <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>dharma_interfaces</exec_depend>
+  <exec_depend condition="$ROS_DISTRO != foxy">tf2_ros_py</exec_depend>
+  <exec_depend condition="$ROS_DISTRO == foxy">tf2_ros</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-websocket</exec_depend>
   <exec_depend>python3-requests</exec_depend>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>

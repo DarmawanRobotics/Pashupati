@@ -12,6 +12,8 @@ revisions) and may contain `{{ parameter_reference }}`, replaced by tables of ev
 the packages' config files, read with their comments.
 """
 
+from __future__ import annotations
+
 import html
 from pathlib import Path
 import re
@@ -31,17 +33,14 @@ GUIDES = {
 
 # Config files of the parameter reference, in reading order: (package, file, what it covers)
 PARAMETER_FILES = [
-    ('pashupati', 'navigation_params.yaml', 'route following, avoidance, stops'),
-    ('pashupati_bridge', 'bridge_params.yaml', 'control mux, protective field, handheld, video'),
-    ('pashupati', 'perception_params.yaml', 'LiDAR sectors, people, AprilTags'),
-    ('pashupati', 'localization_params.yaml', 'map frame from AprilTags'),
-    ('pashupati_inspection', 'inspection_params.yaml', 'AI inspection'),
-    ('pashupati', 'odometry_params.yaml', 'odometry start, monitor, route recording'),
-    ('pashupati', 'health_params.yaml', 'health monitor'),
-    ('pashupati_fleet', 'fleet_params.yaml', 'NETRA uplink'),
+    ('pashupati', 'robot.yaml', 'robot profile: footprint, limits, base height'),
+    ('pashupati', 'stack.yaml', 'the Dharma stack as tuned for Pashupati'),
+    ('pashupati_bridge', 'bridge.yaml', 'handheld link, video, RTSP camera'),
+    ('pashupati_inspection', 'inspection.yaml', 'VLM inspection, people'),
+    ('pashupati_fleet', 'fleet.yaml', 'NETRA uplink'),
 ]
 
-KEY_LINE = re.compile(r'^(?P<indent> *)(?P<key>[A-Za-z0-9_./]+):\s*(?P<rest>.*)$')
+KEY_LINE = re.compile(r'^(?P<indent> *)(?P<key>[A-Za-z0-9_./*]+):\s*(?P<rest>.*)$')
 
 # Meanings of avoidance parameters without a comment, by the last part of their name
 AVOIDANCE = {
@@ -145,8 +144,21 @@ def split_comment(text: str) -> tuple:
         if char in '"\'' and quote in (None, char):
             quote = None if quote else char
         elif char == '#' and quote is None and (i == 0 or text[i - 1] in ' \t'):
-            return text[:i].strip(), text[i + 1:].strip()
+            return text[:i].strip(), text[i + 1 :].strip()
     return text.strip(), ''
+
+
+def take_comment(stripped: str, indent: int, last, node, pending: str) -> str:
+    """Add a comment line to the parameter above (a run-on) or to the pending description."""
+    text = ' '.join(stripped.lstrip('#').split())
+    if last is not None and indent > last['indent'] + 4 and last['description']:
+        last['description'] += ' ' + text  # a comment running on from the line above
+        return pending
+    if node is None:
+        return pending
+    if pending and re.match(r'[a-z_]+:\s', text) and pending[-1] not in ':;,.':
+        pending += ';'  # the next item of a list like "path_shift: …  reactive: …"
+    return f'{pending} {text}'.strip()
 
 
 def read_parameters(path: Path) -> dict:
@@ -161,13 +173,7 @@ def read_parameters(path: Path) -> dict:
             continue
         indent = len(line) - len(line.lstrip(' '))
         if stripped.startswith('#'):
-            text = ' '.join(stripped.lstrip('#').split())
-            if last is not None and indent > last['indent'] + 4 and last['description']:
-                last['description'] += ' ' + text  # a comment running on from the line above
-            elif node is not None:
-                if pending and re.match(r'[a-z_]+:\s', text) and pending[-1] not in ':;,.':
-                    pending += ';'  # the next item of a list like "path_shift: …  reactive: …"
-                pending = f'{pending} {text}'.strip()
+            pending = take_comment(stripped, indent, last, node, pending)
             continue
         if stripped.startswith('- '):
             if last is not None and last['list']:
@@ -263,7 +269,7 @@ def front_matter(text: str) -> tuple:
     if not text.startswith('---\n'):
         return {}, text
     end = text.index('\n---\n', 4)
-    return yaml.safe_load(text[4:end]) or {}, text[end + 5:]
+    return yaml.safe_load(text[4:end]) or {}, text[end + 5 :]
 
 
 def number_headings(body: str) -> tuple:
@@ -310,8 +316,15 @@ def build(name: str):
     text = text.replace('{{ parameter_reference }}', parameter_reference())
     body = markdown.markdown(
         text,
-        extensions=['tables', 'attr_list', 'admonition', 'toc', 'fenced_code', 'md_in_html',
-                    'sane_lists'],
+        extensions=[
+            'tables',
+            'attr_list',
+            'admonition',
+            'toc',
+            'fenced_code',
+            'md_in_html',
+            'sane_lists',
+        ],
         extension_configs={'toc': {'permalink': False}},
     )
     body, entries = number_headings(figures(body))
@@ -349,8 +362,10 @@ def build(name: str):
 </section>
 <main>{body}</main>
 </body></html>"""
-    css = (Path(__file__).parent / 'style.css').read_text().replace(
-        '%HEADER%', meta.get('header', meta.get('title', ''))
+    css = (
+        (Path(__file__).parent / 'style.css')
+        .read_text()
+        .replace('%HEADER%', meta.get('header', meta.get('title', '')))
     )
     fonts = FontConfiguration()  # loads the @font-face fonts of the stylesheet
     HTML(string=page, base_url=str(source.parent)).write_pdf(

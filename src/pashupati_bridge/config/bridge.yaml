@@ -1,0 +1,25 @@
+# pashupati_bridge defaults: only what differs from the configuration dataclasses, plus notes.
+# Every parameter with its unit and range: `ros2 param describe /<node> <name>`. Frames and the
+# speed limits come from the robot profile (robot.*): the stick never exceeds robot.limits.
+teleop_udp_node:
+  ros__parameters:
+    token: "" # shared secret: set it in the site file and the same in the handheld app
+    # Commands shown on the handheld, each a std_srvs/Trigger <robot_command_prefix><name> of the
+    # robot driver (the bringup sets the prefix to /<robot_ns>/); add the robot's own in the
+    # site file (gait, speed modes, ...).
+    robot_commands: [stand_up, sit_down, emergency_stop]
+    sites_dir: ~/dharma/map # the handheld lists and loads the taught routes of every site here
+
+# H.264 for the handheld's WebRTC video: MediaMTX (the bringup) starts this node while the
+# handheld watches and stops it after; it publishes to MediaMTX over RTSP on the loopback.
+video_stream_node:
+  ros__parameters:
+    fps: 15.0
+    bitrate_kbps: 1500 # weak Wi-Fi: lower it
+
+# camera:=rtsp: an RTSP camera published on the camera topics every consumer reads.
+rtsp_camera:
+  ros__parameters:
+    url: "" # the bringup sets camera_url:=; e.g. rtsp://192.168.1.120:8554/test
+    calibration_file: "" # camera_calibration YAML (config/calibration.example.yaml): rectified
+    default_hfov_deg: 90.0 # camera_info without a calibration (tag poses approximate)

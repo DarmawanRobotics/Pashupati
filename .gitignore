@@ -1,44 +1,27 @@
-# ---- env / secrets ----
+/build/
+/install/
+/log/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# stack checkouts (vcs import src < pashupati.repos, scripts/setup.sh install dharma)
+/src/dharma/
+
+# rosbag recordings
+*.bag
+*.db3
+rosbag2_*/
+
+# local settings and secrets
 .env
 *.pem
 *.key
-
-# ---- ROS2 / colcon build artifacts ----
-build/
-install/
-log/
-**/COLCON_IGNORE
-
-# ---- rosbag recordings ----
-*.bag
-*.db3
-*_bag/
-rosbag2_*/
-
-# ---- python ----
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-
-# ---- editors ----
+.vscode/settings.json
 .idea/
 *.swp
-*.swo
-# NOTE: .vscode/ is intentionally tracked (shared workspace settings) — do not ignore it
-
-# ---- OS junk ----
 .DS_Store
-Thumbs.db
-desktop.ini
-
-# ---- misc ----
-*.log
-.cache/
-__MACOSX/
-
-.vscode/settings.json
-
-# ---- dharma packages (vcs import src < pashupati.repos) ----
-src/dharma/
+/docs/build/
+/models/

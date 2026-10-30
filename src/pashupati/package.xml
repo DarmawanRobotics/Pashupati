@@ -2,29 +2,28 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>pashupati</name>
-  <version>2.0.0</version>
-  <description>The Pashupati patrol robot: one launch for the whole stack on any quadruped (the robot package is pluggable) with respawning nodes and a per-robot site configuration, used by the systemd service.</description>
+  <version>3.0.0</version>
+  <description>The Pashupati patrol robot on the Dharma stack: the robot profile, per-node overrides tuned on the robot, one launch for the whole robot (any quadruped, the driver from its own package) and the same robot on the simulator.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>dharma_utils</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <exec_depend>apriltag_ros</exec_depend>
   <exec_depend>dharma_odometry</exec_depend>
   <exec_depend>dharma_localization</exec_depend>
   <exec_depend>dharma_perception</exec_depend>
-  <exec_depend>pashupati_inspection</exec_depend>
-  <exec_depend>dharma_sim</exec_depend>
-  <exec_depend>dharma_control</exec_depend>
+  <exec_depend>dharma_mapping</exec_depend>
   <exec_depend>dharma_navigation</exec_depend>
+  <exec_depend>dharma_control</exec_depend>
+  <exec_depend>dharma_health</exec_depend>
+  <exec_depend>dharma_sim</exec_depend>
   <exec_depend>pashupati_bridge</exec_depend>
   <exec_depend>pashupati_fleet</exec_depend>
-  <exec_depend>dharma_health</exec_depend>
+  <exec_depend>pashupati_inspection</exec_depend>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>
