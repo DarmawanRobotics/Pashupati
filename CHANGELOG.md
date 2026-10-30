@@ -5,6 +5,15 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- Dharma pinned to `main 2026-10-30` (`pashupati.repos`): nodes stop cleanly on Ctrl-C (no
+  `take_message` RuntimeError, no publication after `destroy_node`), `planner/go_to` waits up to
+  `pose_wait_sec` (2 s) for the robot pose right after localization, dharma_rviz builds with
+  GCC 15.
+- The end-to-end patrol test no longer asks `planner/go_to` again while the pose is unknown:
+  the planner waits for it.
+
 ## [3.0.0] - 2026-10-29
 
 The same patrol robot on Dharma 0.2 (`main 2026-10-28`, pinned in `pashupati.repos`).
