@@ -7,6 +7,10 @@ versions follow [SemVer](https://semver.org).
 
 ### Fixed
 
+- `fleet_uplink_node` could hang right after start and never reach NETRA: its WebSocket and
+  upload threads imported `websocket` and `requests` at the same time, which can deadlock in
+  the import system (six.moves on Ubuntu 22.04's Python 3.10). Both are imported before the
+  threads start.
 - Dharma pinned to `main 2026-10-30` (`pashupati.repos`): nodes stop cleanly on Ctrl-C (no
   `take_message` RuntimeError, no publication after `destroy_node`), `planner/go_to` waits up to
   `pose_wait_sec` (2 s) for the robot pose right after localization, dharma_rviz builds with

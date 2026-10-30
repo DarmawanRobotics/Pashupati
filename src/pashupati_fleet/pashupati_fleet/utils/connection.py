@@ -48,6 +48,11 @@ class NetraLink:
 
     def start(self, upload_period: float):
         """Start the WebSocket and upload threads."""
+        # Import their libraries here, before the threads: importing requests and websocket on
+        # two threads at once can deadlock in the import system (six.moves on Python 3.10).
+        import requests  # noqa: F401
+        import websocket  # noqa: F401
+
         self.running = True
         threading.Thread(target=self.ws_loop, daemon=True).start()
         threading.Thread(target=self.upload_loop, args=(upload_period,), daemon=True).start()
