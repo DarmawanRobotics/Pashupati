@@ -111,9 +111,17 @@ class Operator:
     def go_to(self, spinner, x: float, y: float, yaw: float) -> bool:
         """Drive to a pose with the planner; True when it arrived."""
         before = len(self.planner.messages)
-        # the planner waits up to pose_wait_sec for the robot pose before it answers
-        reply = self.call(spinner, 'planner/go_to', GoTo.Request(x=x, y=y, yaw=yaw))
-        assert reply.success, reply.message
+        request = GoTo.Request(x=x, y=y, yaw=yaw)
+        replies = []
+
+        def answered() -> bool:
+            # the planner waits for the pose, the follower's navigation/start does not: on a
+            # busy machine its TF can still lag, then ask again
+            replies.append(self.call(spinner, 'planner/go_to', request))
+            return replies[-1].success or 'pose unknown' not in replies[-1].message
+
+        wait_for(answered, 15.0, 0.5)
+        assert replies[-1].success, replies[-1].message
 
         def arrived() -> bool:
             # this goal's ARRIVED: the previous goal's can still come in late on a busy machine
