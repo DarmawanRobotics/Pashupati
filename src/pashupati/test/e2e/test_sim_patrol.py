@@ -117,8 +117,8 @@ class Operator:
         replies = []
 
         def answered() -> bool:
-            # the planner waits for the pose, the follower's navigation/start does not: on a
-            # busy machine its TF can still lag, then ask again
+            # planner and follower wait pose_wait_sec for the robot pose; on a very busy
+            # machine TF can lag longer: then ask again
             replies.append(self.call(spinner, 'planner/go_to', request))
             return replies[-1].success or 'pose unknown' not in replies[-1].message
 

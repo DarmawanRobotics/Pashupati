@@ -22,6 +22,7 @@ planner_node:
     pose_wait_sec: 5.0
 path_follower_node:
   ros__parameters:
+    pose_wait_sec: 5.0 # a busy simulator machine (CI): TF reaches the follower late
     approach:
       timeout_sec: 10.0
 
