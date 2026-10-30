@@ -46,8 +46,11 @@ jobs:
       matrix:
         include:
           - opencv: "4.5.4.60" # Ubuntu 22.04 apt (ROS Humble)
+            numpy: "1.21.6"
             optional: false
-          - opencv: "4.8.0.76" # JetPack 6
+          # JetPack 6; the cv2.typing of the 4.8 wheels needs numpy >= 1.22
+          - opencv: "4.8.0.76"
+            numpy: "1.22.4"
             optional: true
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +62,7 @@ jobs:
           name: people-model
           path: out
       - name: Same versions as the robot gets
-        run: pip install numpy==1.21.6 onnxruntime==1.18.1 "opencv-python-headless==${{ matrix.opencv }}"
+        run: pip install "numpy==${{ matrix.numpy }}" onnxruntime==1.18.1 "opencv-python-headless==${{ matrix.opencv }}"
       - name: Find the people in the test image
         run: python .github/scripts/check_people_model.py out/yolo11n-416.onnx out/bus.jpg onnxruntime,opencv
 
