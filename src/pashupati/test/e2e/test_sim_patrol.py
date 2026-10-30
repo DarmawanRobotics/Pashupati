@@ -107,16 +107,9 @@ class Operator:
     def go_to(self, spinner, x: float, y: float, yaw: float) -> bool:
         """Drive to a pose with the planner; True when it arrived."""
         before = len(self.planner.messages)
-        request = GoTo.Request(x=x, y=y, yaw=yaw)
-        replies = []
-
-        def answered() -> bool:
-            # a busy machine can delay TF past the planner's tf_timeout_sec: then ask again
-            replies.append(self.call(spinner, 'planner/go_to', request))
-            return replies[-1].success or 'pose unknown' not in replies[-1].message
-
-        wait_for(answered, 15.0, 0.5)
-        assert replies[-1].success, replies[-1].message
+        # the planner waits up to pose_wait_sec for the robot pose before it answers
+        reply = self.call(spinner, 'planner/go_to', GoTo.Request(x=x, y=y, yaw=yaw))
+        assert reply.success, reply.message
         return wait_for(
             lambda: any(m.state == PlannerStatus.ARRIVED for m in self.planner.messages[before:]),
             120.0,
