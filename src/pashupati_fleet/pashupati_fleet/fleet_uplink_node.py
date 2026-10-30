@@ -8,7 +8,9 @@ through an on-disk spool uploaded over HTTP; NETRA's commands become the stack's
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import faulthandler
 import os
+import signal
 import time
 
 from geometry_msgs.msg import PoseArray
@@ -255,7 +257,8 @@ class FleetUplinkNode(DharmaNode):
 
 
 def main(args=None):
-    """Run the NETRA uplink."""
+    """Run the NETRA uplink (SIGUSR1 prints the stack of every thread to stderr)."""
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
     run(FleetUplinkNode, args=args)
 
 

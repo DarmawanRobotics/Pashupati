@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import math
 import os
+import subprocess
+import time
 import warnings
 
 import numpy as np
@@ -181,7 +183,13 @@ def test_the_robot_localizes(world):
         90.0,
     ), 'not localized'
     connected = wait_for(lambda: netra.of_type('hello'), 30.0)
-    assert connected, 'NETRA never connected\n' + launch_lines(operator, ('[fleet_uplink_node-',))
+    if not connected:  # the stacks of the uplink's threads, for the report
+        uplink = 'lib/pashupati_fleet/fleet_uplink_node'
+        subprocess.run(['pkill', '-USR1', '-f', uplink], check=False)
+        time.sleep(2.0)
+    assert connected, 'NETRA never connected\n' + launch_lines(
+        operator, ('[fleet_uplink_node-',), last=200
+    )
 
 
 def test_a_route_with_three_stop_points_is_taught(world):
