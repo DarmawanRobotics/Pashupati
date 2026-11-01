@@ -19,6 +19,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import struct
 import threading
+import time
+
+from pashupati_fleet.core.clock import answer
 
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 WS_PATH = '/api/v1/robot/ws'
@@ -62,13 +65,15 @@ def read_frame(stream) -> tuple[int, bytes] | None:
 class FakeNetra:
     """The server: received messages, uploads, routes to serve, commands to send."""
 
-    def __init__(self, port: int = 0, log_path: str = ''):
+    def __init__(self, port: int = 0, log_path: str = '', clock_offset: float = 0.0):
+        self.clock_offset = clock_offset  # this server's clock minus the computer's (s)
         self.messages: list[dict] = []
         self.uploads: list[tuple[str, bytes]] = []
         self.routes: dict[str, bytes] = {}
         self.headers: dict = {}
         self.log_path = log_path
         self.lock = threading.Lock()
+        self.write_lock = threading.Lock()  # one frame at a time to the robot
         self.client = None  # the robot's socket file while connected
         self.server = ThreadingHTTPServer(('127.0.0.1', port), self.handler())
         self.server.daemon_threads = True
@@ -106,11 +111,19 @@ class FakeNetra:
             client = self.client
         if client is None:
             return False
-        with contextlib.suppress(OSError):
-            client.write(encode_frame(message))
+        return self.write(client, message)
+
+    def write(self, client, text: str) -> bool:
+        """Send one text frame to the robot."""
+        with self.write_lock, contextlib.suppress(OSError):
+            client.write(encode_frame(text))
             client.flush()
             return True
         return False
+
+    def now(self) -> float:
+        """Return this server's clock."""
+        return time.time() + self.clock_offset
 
     def handler(self):
         """Return the request handler class bound to this server."""
@@ -179,8 +192,13 @@ class NetraHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b'\x8a\x00')
                 self.wfile.flush()
             elif frame[0] == 0x1:
+                received = self.fake.now()
                 with contextlib.suppress(ValueError):
-                    self.fake.record(json.loads(frame[1].decode()))
+                    message = json.loads(frame[1].decode())
+                    self.fake.record(message)
+                    if isinstance(message, dict) and message.get('type') == 'time_sync':
+                        reply = answer(message, received, self.fake.now())
+                        self.fake.write(self.wfile, json.dumps(reply))
 
 
 def main(args=None):
@@ -188,8 +206,9 @@ def main(args=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--log', default='', help='append every message as a JSON line')
+    parser.add_argument('--clock-offset', type=float, default=0.0, help='server clock skew (s)')
     options, _ = parser.parse_known_args(args)
-    server = FakeNetra(options.port, options.log)
+    server = FakeNetra(options.port, options.log, options.clock_offset)
     with contextlib.suppress(KeyboardInterrupt):
         server.server.serve_forever()
     server.server.server_close()

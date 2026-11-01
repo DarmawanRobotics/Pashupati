@@ -5,6 +5,20 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- One clock for every stamp: `scripts/setup.sh install timesync ptp` (`scripts/timesync.sh`, from
+  the Dharma template). chrony makes the clock follow `TIME_SERVERS` (e.g. NETRA's host) and
+  serves the robot's other computers (`TIME_ALLOW`); `ptp4l` as PTP master on the LiDAR's
+  interface (the route to `LIVOX_IP`, or `PTP_IFACE`) makes the Mid-360 stamp its points with
+  the same clock. Both are in the default install; health watches the offset on the robot
+  (`clock.enabled` in `stack.yaml`, off in the simulator).
+- The offset to NETRA's clock: the uplink sends `time_sync` after `hello` and every
+  `clock_sync_period_sec` (10 s), NETRA answers with its times, and the offset NTP style goes
+  to `telemetry.clock` {offset_ms, rtt_ms, age_sec}; a warning above `clock_warn_ms` (200 ms).
+  A server that does not answer yet keeps working (`clock` null). See API.md, "Clocks".
+  FakeNetra answers it (`--clock-offset` simulates a server clock that differs).
+
 ### Fixed
 
 - `fleet_uplink_node` could hang right after start and never reach NETRA: its WebSocket and

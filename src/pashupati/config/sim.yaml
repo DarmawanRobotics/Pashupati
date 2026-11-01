@@ -28,6 +28,7 @@ path_follower_node:
 
 health_monitor_node:
   ros__parameters:
+    clock.enabled: false # the simulator runs on this computer's clock, chrony or not
     sensors:
       topics:
         - /cloud_registered_body:5.0
