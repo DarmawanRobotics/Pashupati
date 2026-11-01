@@ -14,7 +14,11 @@ note: >-
   Pashupati's parameter files. Units: m, s, m/s, rad/s, deg; 0-1 means a fraction.
 revisions:
   - ["1.0", "2026-10-16", "First version: Pashupati with the Genisom L1W"]
-  - ["2.0", "2026-10-29", "Pashupati 3 on Dharma 0.2: robot profile, stack file, sites, new parameter names"]
+  - [
+      "2.0",
+      "2026-10-29",
+      "Pashupati 3 on Dharma 0.2: robot profile, stack file, sites, new parameter names",
+    ]
 ---
 
 # How tuning works
@@ -29,7 +33,7 @@ wins):
 | Robot profile | `src/pashupati/config/robot.yaml` (or `ROBOT_PARAMS`) | a Pashupati or robot update                                                                               |
 | Stack file    | `src/pashupati/config/stack.yaml`                     | a Pashupati update                                                                                        |
 | Site file     | `/etc/pashupati/site.yaml` (`SITE_CONFIG`)            | you, for this robot and site                                                                              |
-| Launch        | non-empty values of `/etc/pashupati/pashupati.env`    | you (chapter 9)                                                                                          |
+| Launch        | non-empty values of `/etc/pashupati/pashupati.env`    | you (chapter 9)                                                                                           |
 | Live changes  | in the running node                                   | handheld, `ros2 param set`, RViz; lost at a restart, except the handheld's inspection and people settings |
 
 The **robot profile** (`robot.*`) is the one description of the robot that every node reads:
@@ -77,8 +81,8 @@ a laptop with ROS 2 Humble on the robot's network: set `ROS_LOCALHOST_ONLY=0` in
 restart, and use the robot's `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION` on the laptop.
 
 !!! danger "Set it back"
-    With `ROS_LOCALHOST_ONLY=0` anyone on the robot's network can send motion commands to the
-    robot. Set it back to `1` and restart when you are done.
+With `ROS_LOCALHOST_ONLY=0` anyone on the robot's network can send motion commands to the
+robot. Set it back to `1` and restart when you are done.
 
 ## What the handheld changes
 
@@ -210,7 +214,7 @@ and the e-stop still apply. Without a fresh scan the robot does not drive itself
 | `field.min_speed`                       | 0.02                  | m/s, a slower allowed speed stops instead                                                |
 | `field.remote_degraded_speed`           | 0.15                  | m/s, the REMOTE cap while the scan is stale or blind                                     |
 | `field.scan_timeout_sec`                | 0.5                   | s; an older scan stops AUTO and caps REMOTE                                              |
-| `use_health_limit`                      | true                  | scale every command by the health monitor's speed limit (section 8.5)                      |
+| `use_health_limit`                      | true                  | scale every command by the health monitor's speed limit (section 8.5)                    |
 | `remote_sources`                        | [handheld, dashboard] | who may drive in REMOTE (`control/remote/<source>/cmd_vel`)                              |
 | `remote_timeout_sec`, `nav_timeout_sec` | 0.3, 0.5              | s; a silent source gets zero speed                                                       |
 
@@ -498,6 +502,8 @@ with spaces, and never put a comment after a value.
 | `WEBRTC`, `MEDIAMTX`                      | `true`, empty                                             | WebRTC video for the handheld                              |
 | `CC_URL`, `CC_TOKEN`                      | NETRA's address, the robot's token                        | NETRA uplink; empty: findings are kept on the robot        |
 | `TIME_SYNC_WAIT`                          | `60`                                                      | s to wait at boot for the network clock                    |
+| `TIME_SERVERS`, `TIME_ALLOW`              | empty (Ubuntu's pool), empty                              | chrony's time sources, the subnets it serves               |
+| `LIVOX_IP`, `PTP_IFACE`                   | `192.168.123.20`, empty (the route to `LIVOX_IP`)         | the LiDAR follows this computer's clock over PTP           |
 | `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` | `1`                                                       | keep at 1: more threads waste CPU                          |
 
 `scripts/setup.sh check` reports a missing key, or a line that breaks the rules above.
