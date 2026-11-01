@@ -86,6 +86,7 @@ class FleetUplinkNode(DharmaNode):
         self.every(0.1, self.drain_commands)
         self.every(5.0, self.flush_crowd)
         self.every(0.25, self.flush_anomalies)
+        self.every(cfg.clock_sync_period_sec, self.sync_clock)
         if cfg.server_url:
             self.link.start(cfg.upload_period_sec)
             self.log.info('command center', url=cfg.server_url, robot_id=cfg.robot_id)
@@ -117,8 +118,17 @@ class FleetUplinkNode(DharmaNode):
         """Send the snapshot (telemetry_hz) and remember where the robot was."""
         pose, now = self.pose(), time.time()
         self.poses.add(now, pose)
+        clock = self.link.clock.report(now, 3.0 * self.config.clock_sync_period_sec)
         self.send({'type': 'telemetry', 'pose': pose, 'patrol': self.patrol.current,
-                   **self.patrol.context(), **self.telemetry.state})  # fmt: skip
+                   'clock': clock, **self.patrol.context(), **self.telemetry.state})  # fmt: skip
+
+    def sync_clock(self):
+        """Measure the offset to NETRA's clock again; warn when ours is off."""
+        self.link.sync_clock()
+        best = self.link.clock.best()
+        if best is not None and abs(best[0]) * 1000.0 > self.config.clock_warn_ms:
+            self.log.warning('clock differs from NETRA (scripts/setup.sh install timesync)',
+                             offset_ms=round(best[0] * 1000.0), throttle=60.0)  # fmt: skip
 
     def on_people(self, msg: PoseArray):
         """Feed people positions into the crowd heatmap."""

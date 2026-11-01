@@ -16,6 +16,7 @@ import re
 import threading
 import time
 
+from pashupati_fleet.core.clock import ClockOffset
 from pashupati_fleet.core.spool import Spool
 
 UPLOADS = {'anomaly': '/api/v1/robot/anomalies', 'route': '/api/v1/robot/routes'}
@@ -37,6 +38,7 @@ class NetraLink:
         self.ws = None
         self.lock = threading.Lock()
         self.running = False
+        self.clock = ClockOffset()  # NETRA's clock minus ours (time_sync answers)
 
     def ws_url(self) -> str:
         """Return the WebSocket URL of server_url."""
@@ -94,6 +96,7 @@ class NetraLink:
                 self.ws = ws
             self.log.info('command center connected', url=self.base_url)
             self.send({'type': 'hello', 'robot_id': self.robot_id, 'version': 1})
+            self.sync_clock()
             while self.outbox and self.running:
                 self.send(self.outbox.popleft(), durable=True)
             self.receive(ws, websocket.WebSocketTimeoutException)
@@ -119,8 +122,24 @@ class NetraLink:
                 message = json.loads(text)
             except ValueError:
                 continue
-            if isinstance(message, dict) and message.get('type') == 'command':
+            if not isinstance(message, dict):
+                continue
+            if message.get('type') == 'command':
                 self.incoming.put(message)
+            elif message.get('type') == 'time_sync':
+                self.on_time(message, time.time())
+
+    def sync_clock(self) -> bool:
+        """Ask NETRA for its time (answered with time_sync {t0, t1, t2}); dropped offline."""
+        return self.send({'type': 'time_sync', 't0': time.time()})
+
+    def on_time(self, message: dict, t3: float):
+        """Add NETRA's time_sync answer to the clock offset."""
+        try:
+            t0, t1, t2 = (float(message[k]) for k in ('t0', 't1', 't2'))
+        except (KeyError, TypeError, ValueError):
+            return
+        self.clock.add(t0, t1, t2, t3)
 
     def send(self, message: dict, durable: bool = False) -> bool:
         """Send now; durable messages wait in the outbox while offline (telemetry does not)."""

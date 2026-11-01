@@ -7,3 +7,7 @@ fleet_uplink_node:
     robot_id: robot-01 # ROBOT_ID
     spool_dir: ~/.pashupati/spool # anomalies and taught routes wait here until NETRA has them
     sites_dir: ~/dharma/map # patrol routes from NETRA go to <site>/netra/<route_id>.csv
+    # The offset to NETRA's clock, measured like NTP (time_sync), in telemetry.clock; a warning
+    # when it exceeds clock_warn_ms (the fix: scripts/setup.sh install timesync)
+    clock_sync_period_sec: 10.0
+    clock_warn_ms: 200.0

@@ -41,6 +41,12 @@ class FleetConfig:
         '/anomaly_detector/evidence', live=False, doc='the frame each result was found in'
     )
     anomaly_min_confidence: float = param(0.5, min=0.0, max=1.0, live=False, doc='lower: ignored')
+    clock_sync_period_sec: float = param(
+        10.0, min=1.0, max=3600.0, unit='s', live=False, doc="measure the offset to NETRA's clock"
+    )
+    clock_warn_ms: float = param(
+        200.0, min=0.0, max=1e7, unit='ms', doc="warn when the robot's clock differs this much"
+    )
     health_diagnostics_topic: str = param(
         '/diagnostics', live=False, doc="health_monitor_node's findings (CPU, GPU, RAM, rates)"
     )

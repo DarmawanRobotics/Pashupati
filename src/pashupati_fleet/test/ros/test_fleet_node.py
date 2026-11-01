@@ -56,8 +56,8 @@ class Stack:
 
 
 @pytest.fixture
-def rig(tmp_path):
-    netra = FakeNetra().start()
+def rig(tmp_path, request):
+    netra = FakeNetra(clock_offset=getattr(request, 'param', 0.0)).start()
     compat.init(args=['--ros-args', '-p', f'server_url:={netra.url}', '-p', 'token:=t0k',
                       '-p', 'robot_id:=sim-01', '-p', f'spool_dir:={tmp_path / "spool"}',
                       '-p', f'sites_dir:={tmp_path / "sites"}',
@@ -95,6 +95,20 @@ def test_hello_and_telemetry_from_the_typed_status(rig):
     telemetry = netra.of_type('telemetry')[-1]
     assert telemetry['field'] == 'clear' and telemetry['nav']['state'] == 'NAV_INACTIVE'
     assert {'pose', 'localization', 'battery', 'health', 'patrol', 'ts'} <= set(telemetry)
+
+
+@pytest.mark.parametrize('rig', [2.5], indirect=True)
+def test_the_offset_to_netras_clock_is_in_the_telemetry(rig):
+    netra, _, _, _ = rig
+    assert wait_for(lambda: netra.of_type('time_sync'), 10.0), 'no time_sync after hello'
+
+    def clock():
+        telemetry = netra.of_type('telemetry')
+        return telemetry[-1].get('clock') if telemetry else None
+
+    assert wait_for(lambda: clock() is not None, 10.0)
+    assert clock()['offset_ms'] == pytest.approx(2500.0, abs=50.0)
+    assert 0.0 <= clock()['rtt_ms'] < 1000.0
 
 
 def test_estop_alert_and_command(rig):
