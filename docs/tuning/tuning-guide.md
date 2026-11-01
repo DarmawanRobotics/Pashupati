@@ -2,8 +2,8 @@
 title: Tuning Guide
 header: Pashupati Tuning Guide
 subtitle: What the parameters do, and how to tune a Genisom L1W for a site
-version: "2.0"
-date: 2026-10-29
+version: "2.1"
+date: 2026-11-01
 audience: >-
   For the technician who sets up and tunes a Pashupati robot. You need an SSH shell on the robot
   computer and some ROS 2 basics.
@@ -14,11 +14,8 @@ note: >-
   Pashupati's parameter files. Units: m, s, m/s, rad/s, deg; 0-1 means a fraction.
 revisions:
   - ["1.0", "2026-10-16", "First version: Pashupati with the Genisom L1W"]
-  - [
-      "2.0",
-      "2026-10-29",
-      "Pashupati 3 on Dharma 0.2: robot profile, stack file, sites, new parameter names",
-    ]
+  - ["2.0", "2026-10-29", "Pashupati 3 on Dharma 0.2: robot profile, stack file, sites, new parameter names"]
+  - ["2.1", "2026-11-01", "Time synchronisation: chrony, PTP for the LiDAR, the offset to NETRA"]
 ---
 
 # How tuning works
@@ -33,7 +30,7 @@ wins):
 | Robot profile | `src/pashupati/config/robot.yaml` (or `ROBOT_PARAMS`) | a Pashupati or robot update                                                                               |
 | Stack file    | `src/pashupati/config/stack.yaml`                     | a Pashupati update                                                                                        |
 | Site file     | `/etc/pashupati/site.yaml` (`SITE_CONFIG`)            | you, for this robot and site                                                                              |
-| Launch        | non-empty values of `/etc/pashupati/pashupati.env`    | you (chapter 9)                                                                                           |
+| Launch        | non-empty values of `/etc/pashupati/pashupati.env`    | you (chapter 9)                                                                                          |
 | Live changes  | in the running node                                   | handheld, `ros2 param set`, RViz; lost at a restart, except the handheld's inspection and people settings |
 
 The **robot profile** (`robot.*`) is the one description of the robot that every node reads:
@@ -81,8 +78,8 @@ a laptop with ROS 2 Humble on the robot's network: set `ROS_LOCALHOST_ONLY=0` in
 restart, and use the robot's `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION` on the laptop.
 
 !!! danger "Set it back"
-With `ROS_LOCALHOST_ONLY=0` anyone on the robot's network can send motion commands to the
-robot. Set it back to `1` and restart when you are done.
+    With `ROS_LOCALHOST_ONLY=0` anyone on the robot's network can send motion commands to the
+    robot. Set it back to `1` and restart when you are done.
 
 ## What the handheld changes
 
@@ -214,7 +211,7 @@ and the e-stop still apply. Without a fresh scan the robot does not drive itself
 | `field.min_speed`                       | 0.02                  | m/s, a slower allowed speed stops instead                                                |
 | `field.remote_degraded_speed`           | 0.15                  | m/s, the REMOTE cap while the scan is stale or blind                                     |
 | `field.scan_timeout_sec`                | 0.5                   | s; an older scan stops AUTO and caps REMOTE                                              |
-| `use_health_limit`                      | true                  | scale every command by the health monitor's speed limit (section 8.5)                    |
+| `use_health_limit`                      | true                  | scale every command by the health monitor's speed limit (section 8.5)                      |
 | `remote_sources`                        | [handheld, dashboard] | who may drive in REMOTE (`control/remote/<source>/cmd_vel`)                              |
 | `remote_timeout_sec`, `nav_timeout_sec` | 0.3, 0.5              | s; a silent source gets zero speed                                                       |
 
@@ -428,7 +425,7 @@ off). It places people on the floor `robot.base_height` below `base_link`.
 
 NETRA's crowd map uses `fleet_uplink_node` `crowd_cell_size` (1 m) and `crowd_window_sec` (60).
 
-# Handheld, camera, video, NETRA and health
+# Handheld, camera, video, NETRA, health and time
 
 ## Handheld link
 
@@ -463,7 +460,9 @@ The handheld gets H.264 over WebRTC from `video_stream_node`, started while it w
 
 `fleet_uplink_node`: `server_url` (`CC_URL`), `token` (`CC_TOKEN`), `robot_id` (`ROBOT_ID` wins),
 `telemetry_hz` (1.0), `upload_period_sec` (5.0), `verify_tls` (true; keep it on), `spool_dir`
-(`~/.pashupati/spool`: findings and routes wait there while NETRA is unreachable).
+(`~/.pashupati/spool`: findings and routes wait there while NETRA is unreachable),
+`clock_sync_period_sec` (10: how often the offset to NETRA's clock is measured) and
+`clock_warn_ms` (200: a warning in the log above it), see section 8.6.
 
 ## Health monitor
 
@@ -477,6 +476,48 @@ handheld and in NETRA. `control_mux_node` scales every command by its speed limi
 | `nodes.expected`                                                            | empty                                                            | a listed node is missing (add the driver's nodes) |
 | `system.max_temp_c`, `system.max_memory_percent`, `system.min_disk_free_gb` | 85, 92, 5                                                        | the computer is hot, full or out of disk          |
 | `startup_grace_sec`                                                         | 30                                                               | s after start without missing-node issues         |
+| `clock.enabled`, `clock.max_offset_sec` | true (false in the simulator), 0.05 | the clock is off its time source (`clock:ntp`) |
+
+## Time synchronisation
+
+Every stamp must come from one clock: the LiDAR's points, the IMU, the camera, the odometry, TF
+and the events sent to NETRA. Two clocks that differ by a few hundred milliseconds already make
+TF "too old" (the robot stops, `TF_STALE`), make the odometry jump, and put findings and patrol
+events at the wrong time in NETRA.
+
+| Clock | Kept by | Check |
+| --- | --- | --- |
+| Robot computer | chrony (`scripts/setup.sh install timesync`): follows `TIME_SERVERS`, serves `TIME_ALLOW` | `scripts/timesync.sh check`, `chronyc tracking`; health `clock:ntp` |
+| LiDAR (MID-360) | PTP (`scripts/setup.sh install ptp`): `ptp4l` as master on the LiDAR's interface (the route to `LIVOX_IP`, or `PTP_IFACE`), service `lidar-ptp` | `systemctl status lidar-ptp`; no "in the future" or "steady" issue on `/livox/lidar` |
+| Robot motion computer | its own; Pashupati stamps the driver's messages on arrival | |
+| NETRA | the server's NTP | `telemetry.clock.offset_ms` in NETRA; _clock differs from NETRA_ in the log |
+
+Set it up once per robot, in `/etc/pashupati/pashupati.env`:
+
+```bash
+TIME_SERVERS=netra.example.com   # NETRA's host, or the NTP server NETRA uses; empty: Ubuntu's pool
+TIME_ALLOW=                      # subnets of other computers on the robot that sync to this one
+LIVOX_IP=192.168.123.20
+PTP_IFACE=                       # empty: the interface that routes to LIVOX_IP
+```
+
+Then `scripts/setup.sh install timesync ptp` (both are in the default install) and
+`scripts/timesync.sh check`:
+
+```text
+chrony: offset 0.000231 s to C0A87B01 (netra.example.com)
+ptp: PTP master on eth1 (software timestamps)
+```
+
+The offset must stay below 0.05 s (`TIME_MAX_OFFSET`); with a time server on the same network it
+is below a millisecond. At boot the stack waits up to `TIME_SYNC_WAIT` (60 s) for the first
+synchronisation, so that the clock does not jump under a running stack.
+
+**The offset to NETRA.** The uplink sends `time_sync` after connecting and every
+`clock_sync_period_sec`; NETRA answers with its own times and the robot computes the offset like
+NTP. It is in every telemetry message as `clock` {offset_ms, rtt_ms, age_sec} (null while NETRA
+does not answer), so NETRA can place the robot's events on its own clock. Above `clock_warn_ms`
+the robot logs _clock differs from NETRA_: fix the time source, not the parameter.
 
 # The env file
 
@@ -502,8 +543,8 @@ with spaces, and never put a comment after a value.
 | `WEBRTC`, `MEDIAMTX`                      | `true`, empty                                             | WebRTC video for the handheld                              |
 | `CC_URL`, `CC_TOKEN`                      | NETRA's address, the robot's token                        | NETRA uplink; empty: findings are kept on the robot        |
 | `TIME_SYNC_WAIT`                          | `60`                                                      | s to wait at boot for the network clock                    |
-| `TIME_SERVERS`, `TIME_ALLOW`              | empty (Ubuntu's pool), empty                              | chrony's time sources, the subnets it serves               |
-| `LIVOX_IP`, `PTP_IFACE`                   | `192.168.123.20`, empty (the route to `LIVOX_IP`)         | the LiDAR follows this computer's clock over PTP           |
+| `TIME_SERVERS`, `TIME_ALLOW` | empty (Ubuntu's pool), empty | chrony's time sources, the subnets it serves (section 8.6) |
+| `LIVOX_IP`, `PTP_IFACE` | `192.168.123.20`, empty (the route to `LIVOX_IP`) | the LiDAR follows this computer's clock over PTP |
 | `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` | `1`                                                       | keep at 1: more threads waste CPU                          |
 
 `scripts/setup.sh check` reports a missing key, or a line that breaks the rules above.
@@ -535,6 +576,8 @@ with spaces, and never put a comment after a value.
 | Video stutters                                  | `bitrate_kbps`, `fps`                                              | 800, 10                                           |
 | Handheld map lags                               | `lidar_hz`, `lidar_voxel`, `lidar_max_points`                      | 1, 0.2, 1500                                      |
 | Findings missing in NETRA                       | `CC_URL`, `CC_TOKEN`, `alarm_categories`, `anomaly_min_confidence` | the log of `fleet_uplink_node`                    |
+| Robot stops with `TF_STALE`, odometry jumps | `/health/status` (`clock:ntp`, `/livox/lidar` "in the future") | `scripts/timesync.sh check` (section 8.6) |
+| Events in NETRA at the wrong time | `telemetry.clock.offset_ms`, _clock differs from NETRA_ in the log | `TIME_SERVERS`, `scripts/setup.sh install timesync` |
 
 # Site file for the Genisom L1W
 

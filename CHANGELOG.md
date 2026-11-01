@@ -18,9 +18,14 @@ versions follow [SemVer](https://semver.org).
   to `telemetry.clock` {offset_ms, rtt_ms, age_sec}; a warning above `clock_warn_ms` (200 ms).
   A server that does not answer yet keeps working (`clock` null). See API.md, "Clocks".
   FakeNetra answers it (`--clock-offset` simulates a server clock that differs).
+- Docs: the Tuning Guide 2.1 has a time synchronisation section (8.6), the env file rows and two
+  symptoms; the User Manual 1.1 has it for the technician (12.4) and a troubleshooting row.
+  Both PDFs rebuilt.
 
 ### Fixed
 
+- Tuning Guide: the "Set it back" warning lost its indentation (the formatter must not touch
+  `docs/manual` and `docs/tuning`) and printed as plain text.
 - `fleet_uplink_node` could hang right after start and never reach NETRA: its WebSocket and
   upload threads imported `websocket` and `requests` at the same time, which can deadlock in
   the import system (six.moves on Ubuntu 22.04's Python 3.10). Both are imported before the
