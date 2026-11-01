@@ -2,8 +2,8 @@
 title: User Manual
 header: Pashupati User Manual
 subtitle: Patrol and inspection with the ZSBot Genisom L1W and the Pashupati Controller
-version: "1.0"
-date: 2026-10-16
+version: "1.1"
+date: 2026-11-01
 audience: For operators of a Genisom L1W running Pashupati. No robotics knowledge needed.
 note: >-
   The robot's own hardware (battery, charging, power switch, the ZSBot remote) is described in
@@ -12,6 +12,7 @@ note: >-
   in the Pashupati Tuning Guide.
 revisions:
   - ["1.0", "2026-10-16", "First version: Pashupati with Pashupati Controller 2.6"]
+  - ["1.1", "2026-11-01", "Time synchronisation for the technician"]
 ---
 
 # Safety first
@@ -460,6 +461,10 @@ it. Through NETRA the team:
 Routes you record on the handheld are uploaded to NETRA automatically. If the robot loses its
 network, it keeps patrolling and sends its findings once it is back online.
 
+Every time NETRA shows (a finding, a patrol event, an alert) comes from the robot's clock. Your
+technician keeps the robot's clock in step with NETRA's (section 12.4); if times in NETRA look
+wrong, tell your technician.
+
 # After the shift
 
 ## Park and switch off
@@ -504,6 +509,7 @@ this manual does not explain.
 | Inspection shows *Error* or *Not running* | the AI is not running on the robot | tell your technician |
 | *Sensors stale* or *No scan* | the laser scanner stopped | end the patrol, sit the robot down, call your technician |
 | *Needs attention*, or red CPU, GPU or RAM | the robot computer has a problem | finish the lap, then tell your technician |
+| Times in NETRA are off, or the robot stops with *TF stale* | the robot's clock is not in step | tell your technician (section 12.4) |
 
 
 # For the technician
@@ -517,6 +523,7 @@ this manual does not explain.
 | Video for the handheld (WebRTC) | TCP `8890`, UDP `8190` |
 | Robot motion computer (ZSBot SDK) | `192.168.234.1`, UDP `8081` / `8080` |
 | LiDAR (Livox MID-360) | `192.168.123.20`; robot computer `192.168.123.19` on that cable |
+| Time | chrony on the robot computer (`TIME_SERVERS`); PTP master for the LiDAR on its cable |
 | AI models (Ollama) | `127.0.0.1:11434`, on the robot only |
 
 ## Service commands
@@ -538,6 +545,20 @@ ros2 topic echo --once /health/status
 | `~/.pashupati/sites/<site>/` | one site: its map, AprilTag positions (`tags.json`) and recorded routes (`routes/`) |
 
 Restart the service after changing either file in `/etc/pashupati`.
+
+## Time
+
+The LiDAR, the camera, the robot computer and NETRA must use one clock: two clocks that differ
+make the robot stop (*TF stale*) and put findings at the wrong time in NETRA. Once per robot, set
+`TIME_SERVERS` (NETRA's host or its NTP server) in `/etc/pashupati/pashupati.env`, then:
+
+```bash
+scripts/setup.sh install timesync ptp   # chrony, and the PTP master for the LiDAR
+scripts/timesync.sh check               # offset to the time source, PTP master running?
+```
+
+The offset must stay below 0.05 s. NETRA receives the robot's measured offset in its telemetry
+(`clock`). Details are in the Tuning Guide, section 8.6.
 
 ## Update
 
