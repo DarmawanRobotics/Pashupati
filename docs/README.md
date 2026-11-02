@@ -6,7 +6,9 @@
 | **Tuning Guide** | technicians: what every parameter does, the site file, and how to tune a robot for a site, with a reference of all parameters | [PDF](Pashupati-Tuning-Guide.pdf) · [source](tuning/tuning-guide.md) |
 
 Both are A5 PDFs, sized to read on a phone during a shift or a tuning session: open them here on
-GitHub or keep them on the phone. They describe Pashupati on the ZSBot Genisom L1W with the
+GitHub or keep them on the phone. The same guides, with search and every other document below,
+are the documentation site: [darmawanrobotics.github.io/Pashupati](https://darmawanrobotics.github.io/Pashupati/)
+(built from [site/](site/README.md)). They describe Pashupati on the ZSBot Genisom L1W with the
 [Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController) handheld; the
 parameter reference holds for every robot.
 

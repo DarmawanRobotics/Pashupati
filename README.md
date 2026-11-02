@@ -9,7 +9,7 @@ with a ROS 2 driver: teach and repeat on mapped sites, VLM inspection at stop po
 sensing, a handheld controller and the NETRA command center. Built on the Dharma stack.**
 
 [![CI](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DarmawanRobotics/Pashupati/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-manual%20%26%20tuning%20guide-1F9E93)](docs/README.md)
+[![Docs](https://img.shields.io/badge/docs-site%20%C2%B7%20manual%20%C2%B7%20tuning%20guide-1F9E93)](https://darmawanrobotics.github.io/Pashupati/)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
 [![Dharma](https://img.shields.io/badge/stack-Dharma%200.2-4A78C2)](pashupati.repos)
@@ -20,7 +20,7 @@ sensing, a handheld controller and the NETRA command center. Built on the Dharma
 
 [Packages](#packages) · [Architecture](#architecture) · [Quick start](#quick-start) ·
 [Simulation](#simulation) · [Install on the robot](#install-on-the-robot) ·
-[Operate](#operate) · [Develop](#develop) · [Docs](docs/README.md)
+[Operate](#operate) · [Develop](#develop) · [Docs](docs/README.md) · [Docs site](https://darmawanrobotics.github.io/Pashupati/)
 
 </div>
 

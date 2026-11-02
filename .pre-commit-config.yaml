@@ -33,7 +33,7 @@ repos:
         types_or: [yaml, markdown, json]
         # the guides are Python-Markdown for docs/pdf/build.py: prettier would unindent the
         # bodies of their admonitions (!!! note)
-        exclude: ^docs/(manual|tuning)/
+        exclude: ^docs/(manual|tuning)/|^docs/site/package-lock\.json$
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:

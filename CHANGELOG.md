@@ -7,6 +7,11 @@ versions follow [SemVer](https://semver.org).
 
 ### Added
 
+- Documentation site: `docs/site` (the kit from the Dharma template, VitePress) builds the User
+  Manual and the Tuning Guide (numbered like their PDFs, with the generated parameter
+  reference), the READMEs, NETRA API and handheld protocol into a site with search and the PDFs,
+  published to GitHub Pages by `.github/workflows/docs.yml`. The parameter reference moved from
+  `docs/pdf/build.py` to `docs/pdf/params.py` (PyYAML only), shared by the PDFs and the site.
 - One clock for every stamp: `scripts/setup.sh install timesync ptp` (`scripts/timesync.sh`, from
   the Dharma template). chrony makes the clock follow `TIME_SERVERS` (e.g. NETRA's host) and
   serves the robot's other computers (`TIME_ALLOW`); `ptp4l` as PTP master on the LiDAR's
