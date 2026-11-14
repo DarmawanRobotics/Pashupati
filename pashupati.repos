@@ -21,7 +21,7 @@ repositories:
   dharma/dharma_perception:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_perception.git
-    version: 3e088d208aae317dbe56c7103a01569a0f8e1031 # main 2026-10-28
+    version: 94fadf33d12ecc9ca0831d171a1f258a60754d5d # feat/depth-obstacles 2026-11-14 (depth camera obstacles)
   dharma/dharma_mapping:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_mapping.git

@@ -5,6 +5,8 @@ lidar_sector_node:
   ros__parameters:
     input:
       type: pointcloud2
+    depth:
+      enabled: false # no depth camera in the simulator
 
 control_mux_node:
   ros__parameters:
