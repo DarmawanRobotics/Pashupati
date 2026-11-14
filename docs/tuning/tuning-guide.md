@@ -374,7 +374,7 @@ Against ghost obstacles on shiny or tiled floors:
 - **The floor is fitted in every cloud**, and heights are measured above it, not above the
   floor the camera's TF predicts. The camera's pitch in the URDF is an estimate (10°); once a
   minute the log shows how far the floor says the mount is off:
-  `depth camera floor fitted: the mount looks this far off its TF pitch_deg=+1.8 roll_deg=-0.3`.
+  `depth camera floor fitted: the mount looks this far off its TF pitch_deg=1.8 roll_deg=-0.3`.
   The same value for minutes of driving is a mount error: add it, in radians, to the pitch
   and roll of the camera's `rpy` in `l1w.urdf.xacro`. Beyond `depth.floor_max_tilt_deg` (5°) the
   fit is not used and the far floor turns into obstacles: correct the mount first.
