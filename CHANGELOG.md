@@ -7,6 +7,17 @@ versions follow [SemVer](https://semver.org).
 
 ### Added
 
+- Low obstacles from the RealSense (Dharma pin, `lidar_sector_node` `depth.*` in `stack.yaml`):
+  the D435i's depth point cloud joins both sector scans, so a box, a bag or a low step below
+  the Mid-360 (which sees nothing below ~40 cm within a metre) stops the robot or is passed
+  around. The floor is fitted in every cloud (a few degrees of mount or body pitch make no
+  ghost obstacles; the mount's offset from its TF is logged once a minute), an obstacle needs
+  4 points in a 5 cm cell and the cloud before it too (no speckles, no one-frame ghosts), and
+  a box the camera lost beside the robot stays in the safety scan for 6 s until the camera sees
+  its place again. A silent camera leaves the scans to the LiDAR, with a warning; health
+  watches `/camera/camera/depth/camera_info`. Needs the robot package's depth cloud
+  (`l1w_bringup` `realsense_params.yaml`: depth 424 x 240 decimated to 212 x 120, no texture).
+  Off in the simulator.
 - Detours (Dharma pin): stuck while following (slower than 0.1 m/s for `detour.after_sec`,
   1.5 s, not near a stop point), the robot turns in place toward the gap that takes it
   furthest along the route and drives a straight run through it, checked like every command;

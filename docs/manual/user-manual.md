@@ -2,7 +2,7 @@
 title: User Manual
 header: Pashupati User Manual
 subtitle: Patrol and inspection with the ZSBot Genisom L1W and the Pashupati Controller
-version: "1.2"
+version: "1.3"
 date: 2026-11-14
 audience: For operators of a Genisom L1W running Pashupati. No robotics knowledge needed.
 note: >-
@@ -14,6 +14,7 @@ revisions:
   - ["1.0", "2026-10-16", "First version: Pashupati with Pashupati Controller 2.6"]
   - ["1.1", "2026-11-01", "Time synchronisation for the technician"]
   - ["1.2", "2026-11-14", "Trip meter on the main screen (Pashupati Controller 2.7)"]
+  - ["1.3", "2026-11-14", "The camera sees low obstacles ahead"]
 ---
 
 # Safety first
@@ -28,8 +29,9 @@ before you use the robot for the first time.
 - Keep routes away from places where the floor ends: stairs going down, escalator openings,
   platform edges, holes. **The robot does not see drops.**
 - Glass walls, mirrors and very thin objects can be invisible to the robot's laser scanner
-  (LiDAR). Objects lower than about 10 cm, such as a flat bag or a cable, are not treated as
-  obstacles.
+  (LiDAR). Low objects in front of the robot, such as a box or a bag, are seen by the camera:
+  keep its window clean. Objects lower than about 10 cm, such as a flat bag or a cable, are
+  not treated as obstacles.
 - Charge the robot battery and the handheld. Start a patrol with at least 30 % battery.
 - Keep the ZSBot remote nearby as a backup. It can take control of the robot at any time.
 
@@ -74,7 +76,7 @@ way it counts the people it sees and keeps clear of people and obstacles.
 | Genisom L1W | the robot: walks and rolls on four legs with wheels |
 | Robot computer | an NVIDIA Jetson on the robot that runs Pashupati |
 | LiDAR | the laser scanner on top: tells the robot where it is and what is around it |
-| Camera | Intel RealSense: video for you, AprilTags and the AI inspection |
+| Camera | Intel RealSense: video for you, AprilTags, the AI inspection, and low obstacles in front |
 | Pashupati Controller | the app on the Retroid Pocket handheld you hold |
 | NETRA | the command center in the office: schedules, findings, reports |
 
@@ -521,6 +523,7 @@ this manual does not explain.
 | **Start** does nothing, or *robot is … m from the route* | not localized, no route loaded, or more than 3 m from the route | localize, load the route, drive the robot next to the route |
 | *Off the route* | pushed or blocked far from the route | drive it back to the route in REMOTE, then AUTO and **Start** |
 | *Blocked* for a long time | something stays in the way | clear the way, or end the patrol and drive around it |
+| The robot stops or swerves for nothing right in front of it | a dirty camera window, or the camera sees the shiny floor as an obstacle | clean the camera window; if it goes on, tell your technician |
 | Video stays black | Wi-Fi is weak, or the camera is off | move closer; check *Camera video* in the settings |
 | Inspection shows *Error* or *Not running* | the AI is not running on the robot | tell your technician |
 | *Sensors stale* or *No scan* | the laser scanner stopped | end the patrol, sit the robot down, call your technician |
