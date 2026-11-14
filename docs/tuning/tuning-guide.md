@@ -2,7 +2,7 @@
 title: Tuning Guide
 header: Pashupati Tuning Guide
 subtitle: What the parameters do, and how to tune a Genisom L1W for a site
-version: "2.4"
+version: "2.5"
 date: 2026-11-14
 audience: >-
   For the technician who sets up and tunes a Pashupati robot. You need an SSH shell on the robot
@@ -19,6 +19,7 @@ revisions:
   - ["2.2", "2026-11-14", "Field fixes on the L1W: perception as in 2.0, path shift patience and emergency slide, trip meter"]
   - ["2.3", "2026-11-14", "Path shift passes obstacles beside it parallel and drives narrow lanes in their middle"]
   - ["2.4", "2026-11-14", "Detours: turning in place toward a gap when sliding does not get the robot on"]
+  - ["2.5", "2026-11-14", "Low obstacles from the RealSense depth camera, below the LiDAR"]
 ---
 
 # How tuning works
@@ -357,6 +358,56 @@ robot's own footprint, grown by `filter.self_margin`, is ignored.
 | `filter.level_source`                | none      | `tf` levels the band with the odometry's tilt: only on slopes, with a level odometry |
 | `memory.enabled`                     | false     | true keeps obstacles below the lowest beam for 10 s (odom frame)                   |
 
+## What the camera sees
+
+The Mid-360 sits on top of the body and looks level: within a metre it sees nothing lower
+than about 40 cm, within 3 m nothing lower than about 16 cm. The RealSense D435i at the front
+looks 10° down and sees the floor from about 0.4 m in front of the body to 3 m
+(`depth.range_max`), a 15 cm box from about 0.25 m in front of the body. `lidar_sector_node`
+merges what it sees into both scans with the LiDAR's height band (`filter.height_min`,
+`filter.height_max`): a box, a bag, a low bench or a step the LiDAR misses stops the robot, or
+path shift passes it. The camera's point cloud comes from the robot package (`l1w_bringup`
+`realsense_params.yaml`: depth 424 × 240 at 15 fps, decimated to 212 × 120 points, no texture).
+
+Against ghost obstacles on shiny or tiled floors:
+
+- **The floor is fitted in every cloud**, and heights are measured above it, not above the
+  floor the camera's TF predicts. The camera's pitch in the URDF is an estimate (10°); once a
+  minute the log shows how far the floor says the mount is off:
+  `depth camera floor fitted: the mount looks this far off its TF pitch_deg=+1.8 roll_deg=-0.3`.
+  The same value for minutes of driving is a mount error: add it, in radians, to the pitch
+  and roll of the camera's `rpy` in `l1w.urdf.xacro`. Beyond `depth.floor_max_tilt_deg` (5°) the
+  fit is not used and the far floor turns into obstacles: correct the mount first.
+- **An obstacle needs 4 points in one 5 cm cell** (`depth.cell_points`), **and the cloud
+  before it** must have one within `depth.confirm_radius` (0.15 m): a wrong depth on a glossy
+  tile lasts one frame. A new obstacle shows one camera frame later (67 ms).
+- Nothing farther than 3 m from the camera, where the depth error reaches 7 cm.
+
+The camera loses a low box when it is about 0.3 m in front of the body. So that path shift does
+not slide back into it while passing, the box stays in the safety scan for `depth.memory_sec`
+(6 s) or until the camera sees its place again. A camera that stops (USB, driver restart)
+leaves the scans to the LiDAR alone after 0.3 s: the log says
+`depth camera not merged: scans from the LiDAR alone`, and health shows
+`/camera/camera/depth/camera_info` stale.
+
+To see it: RViz, `/perception/obstacles`, namespace `depth` (blue) is what the camera adds,
+`memory` (orange) what it remembers. `ros2 topic hz /camera/camera/depth/color/points` shows
+about 15 Hz.
+
+| Parameter                                     | Pashupati  | What it does · when to change                                                 |
+| --------------------------------------------- | ---------- | ----------------------------------------------------------------------------- |
+| `depth.enabled`                               | true       | false: the LiDAR alone (a robot without the camera, or to compare)            |
+| `depth.range_max`                             | 3.0        | m from the camera; 2.5 when ghosts show up far ahead                          |
+| `depth.cell_points`                           | 4          | points in one 5 cm cell; 6 on very shiny floors, 3 to see smaller things      |
+| `depth.confirm_radius`                        | 0.15       | m to the obstacle in the cloud before; 0: off (one frame sooner, more ghosts) |
+| `depth.memory_sec`                            | 6.0        | s a passed box stays beside the robot; 0: off                                 |
+| `depth.floor_fit`, `depth.floor_max_tilt_deg` | true, 5.0  | the fitted floor; a mount further off its TF is not corrected                 |
+| `depth.timeout_sec`, `depth.required`         | 0.3, false | s without a cloud before the LiDAR alone; true: every sector BLOCKED instead  |
+
+Neither sensor sees drops (stairs going down, a platform edge). Glass, black matte and
+mirror-like surfaces may return no depth, and right in front of the body (lower than the
+camera's lowest ray) and beside it the camera sees nothing.
+
 # Sites, maps and localization
 
 ## Sites
@@ -607,7 +658,9 @@ with spaces, and never put a comment after a value.
 | Stops just short of a stop point and waits 20 s | `approach.min_speed`, `approach.position_tolerance`                | 0.06, 0.08                                        |
 | Leaves stop points too late                     | dwell time of the route, `hooks.inspection_timeout_sec`, pace      | shorter dwell, faster model                       |
 | _Slowed_ or _Blocked_ with nothing around       | `filter.self_margin`, `filter.height_min`, floor slopes            | margin +0.02; height_min +0.03                    |
-| Ignores low objects (bags, boxes)               | `filter.height_min`                                                | lower 0.03 at a time, check the floor is not seen |
+| Ignores low objects (bags, boxes)               | `filter.height_min`, the camera (section 5.3)                      | lower 0.03 at a time, check the floor is not seen |
+| Stops or swerves for nothing right ahead        | blue `depth` points in RViz, the mount offset in the log (5.3)     | clean the camera; correct the mount; cell_points 6 |
+| Ghost obstacles far ahead, only with the camera | the mount offset in the log, `depth.range_max`                     | correct the mount; range_max 2.5                  |
 | Stops far before obstacles                      | `path_shift.stop_margin`, `field.margin`, `robot.limits.max_decel` | small steps; repeat the test of section 3.3       |
 | Gets too close to obstacles                     | `robot.limits.max_decel`, `robot.limits.reaction_time`             | measure the braking again (section 3.2)           |
 | Does not pass gaps that look wide enough        | `path_shift.clearance`, `path_shift.max_offset`, the footprint     | clearance 0.05, larger offset                     |
