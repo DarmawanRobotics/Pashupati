@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org).
 
 ### Added
 
+- The Dharma console (`dharma_console`, pinned in `pashupati.repos`): `pconfig` /
+  `scripts/console.sh menuconfig` edits `/etc/pashupati/site.yaml` and the env file through a
+  menu of every node's typed parameters, Dharma's and Pashupati's (`console.py` of
+  `pashupati_bridge`, `pashupati_inspection`, `pashupati_fleet`), with where each value comes
+  from, range checks, a `.bak` and a restart; `pmonitor` / `scripts/console.sh monitor` shows the
+  robot live (status, health checks with rates, the computer, warnings, inspection, people) and
+  writes a report file (`r`, `--once`). Product file `src/pashupati/config/console.yaml`. Tuning
+  Guide 2.8 (1.2, 8.7), User Manual 1.5.
 - `scripts/depth_floor.py`: where the depth camera sees the floor, by RANSAC without a window
   around the nominal floor; prints the heights above the floor by distance, the floor's depth
   under base_link and the pitch and roll the camera's mount is off its TF (Tuning Guide 5.3).

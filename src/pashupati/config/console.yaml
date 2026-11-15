@@ -1,0 +1,23 @@
+# The Dharma console for Pashupati: scripts/console.sh menuconfig | monitor (pconfig, pmonitor
+# after `source scripts/env.sh`). Relative paths are relative to this file; console.sh passes
+# SITE_CONFIG and PASHUPATI_ENV, so the files the stack really reads are the ones edited.
+title: Pashupati
+site_file: /etc/pashupati/site.yaml
+env_file: /etc/pashupati/pashupati.env
+env_example: ../../../scripts/pashupati.env.example
+layers: [stack.yaml] # below the site file (the robot profile holds only robot.*)
+restart: sudo systemctl restart pashupati
+hide: [sim_robot_node]
+battery_topic: /${ROBOT_NS}/battery
+report_dir: ~/.pashupati/reports
+report_commands:
+  - git -C "$PASHUPATI_WS" log -1 --format='%h %s (%cd)' --date=short
+  - systemctl status pashupati --no-pager -n 0
+  - journalctl -u pashupati -n 300 --no-pager -o short-iso
+panels:
+  - title: Inspection
+    topic: anomaly_detector/status
+    type: std_msgs/msg/String
+  - title: People
+    topic: perception/people_status
+    type: std_msgs/msg/String

@@ -2,7 +2,7 @@
 title: Tuning Guide
 header: Pashupati Tuning Guide
 subtitle: What the parameters do, and how to tune a Genisom L1W for a site
-version: "2.7"
+version: "2.8"
 date: 2026-11-15
 audience: >-
   For the technician who sets up and tunes a Pashupati robot. You need an SSH shell on the robot
@@ -22,6 +22,7 @@ revisions:
   - ["2.5", "2026-11-14", "Low obstacles from the RealSense depth camera, below the LiDAR"]
   - ["2.6", "2026-11-15", "The camera's measured mount, its point cloud on the Jetson, USB 3, depth_floor.py"]
   - ["2.7", "2026-11-15", "The L1W steps over 10 cm and passes gaps from about 0.7 m"]
+  - ["2.8", "2026-11-15", "menuconfig for the site and env files, the console monitor and its report"]
 ---
 
 # How tuning works
@@ -49,6 +50,30 @@ every change in the site file. The robot driver (`l1w_driver_node`) is not a Pas
 settings live in the robot package (section 2.3).
 
 ## Change a value for good
+
+The quickest way is **menuconfig**, the Dharma console's menu (`pconfig` in the ROS shell of the
+stack, `pashu`, or `scripts/console.sh menuconfig`):
+
+```text
+Pashupati
+  Navigation  --->
+    path_follower_node  --->
+      path_shift  --->
+        (0.05) clearance                                        stack.yaml
+        (0.25) centre_room                                      default
+```
+
+Every node of the stack is there with every parameter, typed: `<Enter>` edits a value (or picks
+a choice, or toggles a `[*]` switch), `/` searches names and descriptions, `?` shows what a value
+does with its unit, range and value in every layer, `d` goes back to the inherited value. The tag
+on the right says where the value comes from: `default` (Dharma's), the package's file,
+`stack.yaml`, `site` (the site file) or `changed` (not saved). A value out of range or against
+another value is refused before it is saved. `s` lists the changes, writes the site file (a
+`.bak` copy first; `sudo` asks for the password) and offers to restart the stack. _Launch
+options_ edits the env file the same way (chapter 9). Setting a value back to the inherited one
+removes it from the site file, which then holds only what this robot changes.
+
+By hand:
 
 1. Open the site file: `sudo nano /etc/pashupati/site.yaml`.
 2. Find the node's section, or add one like the example below. Indent with spaces, two per
@@ -648,6 +673,17 @@ synchronisation, so that the clock does not jump under a running stack.
 NTP. It is in every telemetry message as `clock` {offset_ms, rtt_ms, age_sec} (null while NETRA
 does not answer), so NETRA can place the robot's events on its own clock. Above `clock_warn_ms`
 the robot logs _clock differs from NETRA_: fix the time source, not the parameter.
+
+## Console monitor
+
+`pmonitor` (or `scripts/console.sh monitor`) shows the whole robot in one terminal, over SSH too:
+mode, e-stop and protective field, battery, route, localization and odometry, the site, every
+health check with its rate or age (instead of `ros2 topic hz`), the computer with its busiest
+processes (instead of `top`), the newest warnings of every node, inspection and people counting.
+`<Tab>` switches to menuconfig. `r` writes a report file to `~/.pashupati/reports/`: every
+panel, the log since the monitor started, the commit, the service state and its last 300 log
+lines. Ask an operator for a screenshot of the monitor or for that file when the robot misbehaves;
+`pmonitor --once > report.txt` writes it without the screen.
 
 # The env file
 

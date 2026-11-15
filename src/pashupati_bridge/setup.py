@@ -29,5 +29,6 @@ setup(
             'video_stream_node = pashupati_bridge.video_stream_node:main',
             'rtsp_camera_node = pashupati_bridge.rtsp_camera_node:main',
         ],
+        'dharma.console': ['pashupati_bridge = pashupati_bridge.console:nodes'],
     },
 )

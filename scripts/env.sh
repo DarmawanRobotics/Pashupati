@@ -4,6 +4,8 @@
 #   source ~/dev/Pashupati/scripts/env.sh      # e.g. alias pashu='source ~/dev/Pashupati/scripts/env.sh'
 #   ros2 topic list                            # sees the stack, not a vendor stack on another RMW
 #   pnode pashupati_bridge teleop_udp_node bridge.yaml [ros args]
+#   pconfig                                    # menuconfig: the site and env files
+#   pmonitor                                   # live status, <r> writes a report file
 #
 # pnode runs one node the way robot.launch.py does: package defaults, then SITE_CONFIG, then args.
 # Env: PASHUPATI_ENV (/etc/pashupati/pashupati.env), ROS_DISTRO (humble)
@@ -50,5 +52,8 @@ pnode() {
     ros2 run "$pkg" "$exe" --ros-args -r __node:="$exe" \
         --params-file "$PASHUPATI_WS/install/$pkg/share/$pkg/config/$cfg" "${site[@]}" "$@"
 }
+
+pconfig() { "$PASHUPATI_WS/scripts/console.sh" menuconfig "$@"; }
+pmonitor() { "$PASHUPATI_WS/scripts/console.sh" monitor "$@"; }
 
 echo "pashupati env: $RMW_IMPLEMENTATION, domain $ROS_DOMAIN_ID, robot ns ${ROBOT_NS:-robot}"

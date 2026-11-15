@@ -2,7 +2,7 @@
 title: User Manual
 header: Pashupati User Manual
 subtitle: Patrol and inspection with the ZSBot Genisom L1W and the Pashupati Controller
-version: "1.4"
+version: "1.5"
 date: 2026-11-15
 audience: For operators of a Genisom L1W running Pashupati. No robotics knowledge needed.
 note: >-
@@ -16,6 +16,7 @@ revisions:
   - ["1.2", "2026-11-14", "Trip meter on the main screen (Pashupati Controller 2.7)"]
   - ["1.3", "2026-11-14", "The camera sees low obstacles ahead"]
   - ["1.4", "2026-11-15", "The robot walks over what is lower than about 12 cm and passes gaps from about 0.7 m"]
+  - ["1.5", "2026-11-15", "The status screen for your technician; menuconfig for the technician"]
 ---
 
 # Safety first
@@ -533,6 +534,11 @@ this manual does not explain.
 | *Needs attention*, or red CPU, GPU or RAM | the robot computer has a problem | finish the lap, then tell your technician |
 | Times in NETRA are off, or the robot stops with *TF stale* | the robot's clock is not in step | tell your technician (section 12.4) |
 
+Your technician may ask for the robot's **status screen**. On a computer connected to the robot
+(the technician sets it up), log in to the robot and type `pmonitor`: one screen shows the mode,
+the battery, the route, the sensors and the robot computer, with problems in yellow and red. Send
+a screenshot, or press `r` and send the file whose name it shows. `q` closes it.
+
 
 # For the technician
 
@@ -566,7 +572,10 @@ ros2 topic echo --once /health/status
 | `/etc/pashupati/site.yaml` | parameters of this robot and site, see the Tuning Guide |
 | `~/.pashupati/sites/<site>/` | one site: its map, AprilTag positions (`tags.json`) and recorded routes (`routes/`) |
 
-Restart the service after changing either file in `/etc/pashupati`.
+Restart the service after changing either file in `/etc/pashupati`. `pconfig` (menuconfig)
+edits both through a menu: every parameter with its description and range, values checked before
+they are saved, a backup kept and a restart offered (Tuning Guide, section 1.2). `pmonitor` shows
+the robot's live state and writes a report file (Tuning Guide, section 8.7).
 
 ## Time
 
