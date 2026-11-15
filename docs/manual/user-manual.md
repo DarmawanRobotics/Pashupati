@@ -2,7 +2,7 @@
 title: User Manual
 header: Pashupati User Manual
 subtitle: Patrol and inspection with the ZSBot Genisom L1W and the Pashupati Controller
-version: "1.5"
+version: "1.6"
 date: 2026-11-15
 audience: For operators of a Genisom L1W running Pashupati. No robotics knowledge needed.
 note: >-
@@ -17,6 +17,7 @@ revisions:
   - ["1.3", "2026-11-14", "The camera sees low obstacles ahead"]
   - ["1.4", "2026-11-15", "The robot walks over what is lower than about 12 cm and passes gaps from about 0.7 m"]
   - ["1.5", "2026-11-15", "The status screen for your technician; menuconfig for the technician"]
+  - ["1.6", "2026-11-15", "The robot backs up when it is stuck; the robot's internet on the handheld"]
 ---
 
 # Safety first
@@ -335,6 +336,10 @@ The robot also localizes by itself when it sees a known tag after start-up.
   from about 0.7 m wide. When there is no gap, it stops about 0.4 m before the obstacle and
   waits.
 - **Slows down and stops** for anything in its path, in every direction (the protective field).
+- **Backs up when it is stuck**: when it gets no further for 30 seconds (it can neither pass
+  nor turn), it walks back about 1 m along the way it came, slowly, and tries again. It checks
+  behind it like everywhere else. After three tries at the same place it stays *Blocked* and
+  waits for you.
 - **Loops** a route that ends near its start, lap after lap.
 - **Goes home at low battery**: when the battery is low, it ends the patrol at the end of the
   current lap (20 % unless your technician changed it).
@@ -465,6 +470,7 @@ Inspection page:
 | Queue | *3 frames queued* | images waiting for the AI (interval pace) |
 | People | *2 people* | people in the camera view now |
 | Load | *CPU 31 % GPU 44 %*, *RAM 7.2/15.3 GB 56 °C* | the robot computer's load; red near the limit |
+| Internet | *Internet 38 ms* | the robot's own internet (its modem) answers; *offline* in red: no internet, findings wait on the robot |
 
 Each new finding also shows a short message, *Finding: Trash*, with a vibration. Tap the panel
 to open the Inspection page.
@@ -526,7 +532,9 @@ this manual does not explain.
 | *No loc* in red | the robot does not know where it is | turn it towards an AprilTag and tap **Localize** |
 | **Start** does nothing, or *robot is … m from the route* | not localized, no route loaded, or more than 3 m from the route | localize, load the route, drive the robot next to the route |
 | *Off the route* | pushed or blocked far from the route | drive it back to the route in REMOTE, then AUTO and **Start** |
-| *Blocked* for a long time | something stays in the way | clear the way, or end the patrol and drive around it |
+| *Blocked* for a long time | something stays in the way; after three back-ups the robot waits | clear the way, or end the patrol and drive around it |
+| The robot walks back a little by itself | it was stuck for 30 seconds and tries again from further back | nothing: that is normal; clear the way if it keeps happening |
+| *Internet offline* | the robot's modem has no signal or no data | check the modem and its SIM card; the patrol goes on, NETRA gets the findings later |
 | The robot stops or swerves for nothing right in front of it | a dirty camera window, or the camera sees the shiny floor as an obstacle | clean the camera window; if it goes on, tell your technician |
 | Video stays black | Wi-Fi is weak, or the camera is off | move closer; check *Camera video* in the settings |
 | Inspection shows *Error* or *Not running* | the AI is not running on the robot | tell your technician |
@@ -536,8 +544,9 @@ this manual does not explain.
 
 Your technician may ask for the robot's **status screen**. On a computer connected to the robot
 (the technician sets it up), log in to the robot and type `pmonitor`: one screen shows the mode,
-the battery, the route, the sensors and the robot computer, with problems in yellow and red. Send
-a screenshot, or press `r` and send the file whose name it shows. `q` closes it.
+the battery, the route, the sensors, the internet and the robot computer, one line each, with
+problems in yellow and red. Tap a line to see it in detail and **Back** to return. Send a
+screenshot, or tap **Report** and send the file whose name it shows. **Quit** closes it.
 
 
 # For the technician

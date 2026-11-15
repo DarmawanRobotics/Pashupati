@@ -15,6 +15,9 @@ report_commands:
   - systemctl status pashupati --no-pager -n 0
   - journalctl -u pashupati -n 300 --no-pager -o short-iso
 panels:
+  - title: Internet
+    topic: internet/status
+    type: std_msgs/msg/String
   - title: Inspection
     topic: anomaly_detector/status
     type: std_msgs/msg/String
