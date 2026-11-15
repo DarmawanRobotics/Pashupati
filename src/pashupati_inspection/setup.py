@@ -28,5 +28,6 @@ setup(
             'anomaly_detector_node = pashupati_inspection.anomaly_detector_node:main',
             'person_detector_node = pashupati_inspection.person_detector_node:main',
         ],
+        'dharma.console': ['pashupati_inspection = pashupati_inspection.console:nodes'],
     },
 )
