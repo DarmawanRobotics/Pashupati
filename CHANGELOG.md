@@ -7,6 +7,13 @@ versions follow [SemVer](https://semver.org).
 
 ### Added
 
+- Internet check: `teleop_udp_node` pings `internet_target` (8.8.8.8, Google's DNS) through
+  the robot's modem every `internet_period_sec` (5 s). The handheld gets `state.net` (online, the
+  round trip, the share of the last 12 pings lost; PROTOCOL.md), the console an _Internet_ line
+  (`internet/status`, its own `level`). Offline after two unanswered pings in a row.
+- Backing up when stuck (Dharma navigation, on): no progress along the route for 30 s, the robot
+  backs up 1 m along the way it came and tries again, 3 times at one place, then it waits.
+  Tuning Guide 2.9, User Manual 1.6.
 - The Dharma console (`dharma_console`, pinned in `pashupati.repos`): `pconfig` /
   `scripts/console.sh menuconfig` edits `/etc/pashupati/site.yaml` and the env file through a
   menu of every node's typed parameters, Dharma's and Pashupati's (`console.py` of
@@ -62,6 +69,8 @@ versions follow [SemVer](https://semver.org).
 
 ### Changed
 
+- The console takes taps: one line per part in `pmonitor`, a tap for the details, buttons
+  instead of key hints; menuconfig selects a line on the first tap and opens it on the second.
 - `pashupati.repos` pins every Dharma repository at its main of 2026-11-15, with the console
   and the tidy-up merged (dharma_interfaces at its main of 2026-11-14, the same TripStatus).
 - Tidy-up: one-line docstrings (the details as short comments, usage lines of the scripts and

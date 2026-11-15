@@ -2,7 +2,7 @@
 title: Tuning Guide
 header: Pashupati Tuning Guide
 subtitle: What the parameters do, and how to tune a Genisom L1W for a site
-version: "2.8"
+version: "2.9"
 date: 2026-11-15
 audience: >-
   For the technician who sets up and tunes a Pashupati robot. You need an SSH shell on the robot
@@ -23,6 +23,7 @@ revisions:
   - ["2.6", "2026-11-15", "The camera's measured mount, its point cloud on the Jetson, USB 3, depth_floor.py"]
   - ["2.7", "2026-11-15", "The L1W steps over 10 cm and passes gaps from about 0.7 m"]
   - ["2.8", "2026-11-15", "menuconfig for the site and env files, the console monitor and its report"]
+  - ["2.9", "2026-11-15", "Backing up when stuck, the internet check, a console that takes taps"]
 ---
 
 # How tuning works
@@ -63,8 +64,10 @@ Pashupati
         (0.25) centre_room                                      default
 ```
 
-Every node of the stack is there with every parameter, typed: `<Enter>` edits a value (or picks
-a choice, or toggles a `[*]` switch), `/` searches names and descriptions, `?` shows what a value
+Every node of the stack is there with every parameter, typed. A tap selects a line and a second
+tap opens or edits it (a phone's SSH app needs no arrow keys); the `[Save]`, `[Find]`, `[Help]`,
+`[Default]`, `[Back]`, `[Monitor]` and `[Quit]` buttons do the same as the keys. `<Enter>` edits a
+value (or picks a choice, or toggles a `[*]` switch), `/` searches names and descriptions, `?` shows what a value
 does with its unit, range and value in every layer, `d` goes back to the inherited value. The tag
 on the right says where the value comes from: `default` (Dharma's), the package's file,
 `stack.yaml`, `site` (the site file) or `changed` (not saved). A value out of range or against
@@ -357,6 +360,16 @@ body, the protective field); the run ends as soon as the way along the route is 
 and path shift brings the robot back. The status reads `detour: turning to +45 deg off the
 route, toward a gap`. Near a stop point there is no detour: the robot waits on the route.
 
+When none of this gets the robot further along the route for `backtrack.after_sec` (30 s:
+wedged where it can neither slide nor turn, someone who stays in front of it), it **backs up**
+`backtrack.distance` (1 m) along the way it came, at `backtrack.speed`, keeping the heading it
+had there, and tries again from there: path shift and detours then have the room they lacked.
+The rear is checked on the 360° safety scan and by the protective field like every motion; a
+rear blocked for 3 s ends the back-up. The status reads `stuck 30 s: backing up along the driven
+path 0.40 / 1.00 m (attempt 1/3)`. After `backtrack.max_attempts` (3) at the same place the robot
+stays _Blocked_ and waits for help; getting past that place starts the count again. Pauses (the
+handheld, an e-stop) do not count as stuck.
+
 Something in the emergency cone of `obstacle_avoidance_node` (`shared.emergency_distance` 0.75 m
 ahead, `shared.emergency_cone_deg` 40° in Pashupati) stops the forward motion at once. Dharma's
 60° caught the sides of a gap narrower than about 0.7 m within those 0.75 m and held the robot
@@ -379,6 +392,9 @@ starts with `EMERGENCY: ..., forward held` while it does.
 | `path_shift.centre_room`                              | 0.25       | m beside the body: a narrower lane is driven in its middle                    |
 | `detour.after_sec`, `detour.speed`                    | 1.5, 0.25  | s stuck before a detour (0.5 at least), m/s on its run                        |
 | `detour.max_angle_deg`, `detour.length`               | 75, 2.0    | deg off the route direction, m of one straight run                            |
+| `backtrack.enabled`, `backtrack.after_sec`            | true, 30   | back up when stuck, s without progress along the route                        |
+| `backtrack.distance`, `backtrack.speed`               | 1.0, 0.15  | m back along the way it came, m/s                                             |
+| `backtrack.max_attempts`                              | 3          | attempts at one place, then it waits (_Blocked_)                              |
 
 ## What the LiDAR sees
 
@@ -595,6 +611,13 @@ NETRA's crowd map uses `fleet_uplink_node` `crowd_cell_size` (1 m) and `crowd_wi
 | `robot_commands`                              | [stand_up, sit_down, emergency_stop] | robot actions on the handheld: `/<ROBOT_NS>/<name>` services     |
 | `patrol_speed_min`, `patrol_speed_max`        | 0.1, 0.6                             | m/s range of the patrol speed slider                             |
 | `lidar_hz`, `lidar_voxel`, `lidar_max_points` | 2, 0.1, 3000                         | LiDAR points on the handheld's map                               |
+| `internet_target`                             | 8.8.8.8                              | pinged for the internet check (Google DNS); "" turns it off      |
+| `internet_period_sec`, `internet_timeout_sec` | 5, 2                                 | s between pings, s a ping may take                               |
+
+The internet check pings `internet_target` through the robot's modem every
+`internet_period_sec`: the handheld shows _Internet 38 ms_, or _Internet offline_ in red after
+two pings in a row got no answer, and `pmonitor` an _Internet_ line (`internet/status`). A host
+name instead of the address tests the modem's DNS too.
 
 ## Camera source
 
@@ -676,14 +699,17 @@ the robot logs _clock differs from NETRA_: fix the time source, not the paramete
 
 ## Console monitor
 
-`pmonitor` (or `scripts/console.sh monitor`) shows the whole robot in one terminal, over SSH too:
-mode, e-stop and protective field, battery, route, localization and odometry, the site, every
-health check with its rate or age (instead of `ros2 topic hz`), the computer with its busiest
-processes (instead of `top`), the newest warnings of every node, inspection and people counting.
-`<Tab>` switches to menuconfig. `r` writes a report file to `~/.pashupati/reports/`: every
-panel, the log since the monitor started, the commit, the service state and its last 300 log
-lines. Ask an operator for a screenshot of the monitor or for that file when the robot misbehaves;
-`pmonitor --once > report.txt` writes it without the screen.
+`pmonitor` (or `scripts/console.sh monitor`) shows the whole robot in one terminal, over SSH too
+(a phone's SSH app as well): one line per part with `[ OK ]`, `[WARN]` or `[ERR ]` and its worst
+problem: Robot (mode, e-stop, protective field, battery), Navigation, Localization, Health (every
+check with its rate or age, instead of `ros2 topic hz`), System, Internet, Inspection, People and
+the newest warnings of every node. A tap on a line (or `<Enter>`) shows it in detail, `[Back]`
+returns; System's detail lists the busiest processes (instead of `top`). CPU is averaged over
+3 s; the load (processes running or waiting, over a minute) is shown against the cores: below
+their number nothing waits. `[Menuconfig]` switches to menuconfig. `[Report]` writes a report
+file to `~/.pashupati/reports/`: every panel, the log since the monitor started, the commit, the
+service state and its last 300 log lines. Ask an operator for a screenshot of the monitor or for
+that file when the robot misbehaves; `pmonitor --once > report.txt` writes it without the screen.
 
 # The env file
 

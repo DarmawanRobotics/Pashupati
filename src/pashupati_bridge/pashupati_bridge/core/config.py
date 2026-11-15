@@ -84,6 +84,15 @@ class TeleopConfig:
     patrol_speed_max: float = param(
         0.6, min=0.01, max=5.0, unit='m/s', live=False, doc='fastest (and robot.limits.max_vx)'
     )
+    internet_target: str = param(
+        '8.8.8.8', live=False, doc='pinged for the internet check (Google DNS; "": off)'
+    )
+    internet_period_sec: float = param(
+        5.0, min=1.0, max=300.0, unit='s', live=False, doc='one ping this often'
+    )
+    internet_timeout_sec: float = param(
+        2.0, min=0.5, max=10.0, unit='s', live=False, doc='an answer slower than this is lost'
+    )
 
     def validate(self) -> list[str]:
         """Return cross-field problems."""

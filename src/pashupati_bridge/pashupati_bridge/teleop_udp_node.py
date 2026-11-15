@@ -13,13 +13,15 @@ from geometry_msgs.msg import Twist
 from pashupati_utils.utils.calls import call_service
 from std_msgs.msg import String
 
-from dharma_utils.ros import COMMAND, EVENTS, DharmaNode, run
+from dharma_utils.ros import COMMAND, EVENTS, LATCHED, DharmaNode, run
 from pashupati_bridge.core import commands, protocol
 from pashupati_bridge.core.config import TeleopConfig
+from pashupati_bridge.core.internet import monitor_status
 from pashupati_bridge.core.routes import list_routes
 from pashupati_bridge.core.session import Session
 from pashupati_bridge.utils.clients import CommandClients, PatrolSpeed
 from pashupati_bridge.utils.link import UdpLink
+from pashupati_bridge.utils.pinger import Pinger
 from pashupati_bridge.utils.streams import Streams
 from pashupati_bridge.utils.telemetry import Telemetry
 
@@ -50,6 +52,12 @@ class TeleopUdpNode(DharmaNode):
             self, cfg.health_diagnostics_topic, cfg.driver_diagnostics_topic, self.send_route
         )
         self.streams = Streams(self, cfg, self.send_stream)
+        self.pinger = None
+        if cfg.internet_target:
+            args = (cfg.internet_target, cfg.internet_period_sec, cfg.internet_timeout_sec)
+            self.pinger = Pinger(*args)
+            self.internet_pub = self.create_publisher(String, 'internet/status', LATCHED)
+            self.every(cfg.internet_period_sec, self.publish_internet)
         # A reader thread wakes the executor per datagram: no polling timer while idle.
         self.wake = self.create_guard_condition(self.drain)
         try:
@@ -64,9 +72,15 @@ class TeleopUdpNode(DharmaNode):
         self.log.info('teleop UDP', port=cfg.port, source=source, limits=self.limits)
 
     def destroy_node(self):
-        """Close the socket, so the port is free again at once."""
+        """Close the socket, so the port is free again at once, and stop pinging."""
         self.link.close()
+        if self.pinger is not None:
+            self.pinger.stop()
         return super().destroy_node()
+
+    def publish_internet(self):
+        """Publish internet/status for the Dharma console's monitor."""
+        self.internet_pub.publish(String(data=monitor_status(*self.pinger.summary())))
 
     # ---------------------------------------------------------------- socket
     def send(self, data: bytes, addr=None) -> bool:
@@ -247,6 +261,7 @@ class TeleopUdpNode(DharmaNode):
             'inspection': self.telemetry.inspection(),
             'people': self.telemetry.people(),
             'speed': self.patrol.speed,
+            'net': self.pinger.summary()[0] if self.pinger is not None else None,
             **self.telemetry.state,
         })  # fmt: skip
 
