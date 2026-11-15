@@ -52,6 +52,18 @@ versions follow [SemVer](https://semver.org).
   symptoms; the User Manual 1.1 has it for the technician (12.4) and a troubleshooting row.
   Both PDFs rebuilt.
 
+### Changed
+
+- The L1W steps over low things and passes narrower gaps (`stack.yaml`, field-tested on the
+  robot): `lidar_sector_node` `filter.height_min` 0.12 (Dharma 0.10), so a 10 cm step, a taped
+  cable or a dip is walked over; 5 cm beside the body instead of 10 for path shift
+  (`path_shift.clearance`), the motion guard (`safety.lateral_margin`) and the protective field
+  (`field.lateral_margin`); `obstacle_avoidance_node` `shared.emergency_cone_deg` 40 (in the
+  60 deg cone a gap's sides held the robot in front of gaps narrower than about 0.7 m); 144
+  safety sectors of 2.5 deg (Dharma 72). Gaps from about 0.7 m pass (0.76 m before). A site
+  file copied from the old `site.example.yaml` still sets `height_min: 0.10`: set 0.12 or
+  remove it. Tuning Guide 2.7 (5.1, 5.2, symptoms), User Manual 1.4.
+
 ### Fixed
 
 - Low obstacles from the RealSense on the L1W (robot package `l1w_ros2`): on the Jetson the

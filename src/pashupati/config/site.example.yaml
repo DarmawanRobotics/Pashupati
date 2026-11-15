@@ -17,7 +17,7 @@ teleop_udp_node:
 lidar_sector_node:
   ros__parameters:
     filter:
-      height_min: 0.10 # m above the floor: lower is floor (raise on uneven floors)
+      height_min: 0.12 # m above the floor: lower is stepped over (raise on uneven floors)
 
 # docking_node:                       # a robot with a charging dock (driver services)
 #   ros__parameters:
