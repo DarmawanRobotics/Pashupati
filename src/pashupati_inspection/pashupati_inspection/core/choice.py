@@ -1,9 +1,7 @@
-"""
-The live choices of a detector kept across restarts (state_file, JSON).
+"""The live choices of a detector kept across restarts (state_file, JSON)."""
 
-What the operator switched on the handheld or NETRA (on / off, model, pace, finding types) wins
-over the parameter files at the next start; deleting the file goes back to them.
-"""
+# What the operator switched on the handheld or NETRA (on / off, model, pace, finding
+# types) wins over the parameter files at the next start; deleting the file goes back.
 
 from __future__ import annotations
 

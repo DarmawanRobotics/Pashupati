@@ -81,12 +81,9 @@ class Ollama:
         return ''
 
     def ask(self, model: str, jpeg: bytes, prompt: dict, timeout: float) -> tuple[dict, str]:
-        """
-        Run the model on one image; return (result, raw answer). One retry covers a restart.
-
-        prompt: categories, describe, use_schema and hints of vlm.build_request. Raises one of
-        ERRORS when Ollama fails twice.
-        """
+        """Run the model on one image; return (result, raw answer). One retry covers a restart."""
+        # prompt: categories, describe, use_schema and hints of vlm.build_request. Raises one
+        # of ERRORS when Ollama fails twice.
         body = build_request(
             model,
             jpeg,

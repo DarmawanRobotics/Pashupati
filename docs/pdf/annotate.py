@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""
-Number the parts of the handheld's main screen for the user manual.
+"""Number the parts of the handheld's main screen for the user manual."""
 
-    python3 docs/pdf/annotate.py      # docs/manual/img/03_main_patrol.png -> 03_main_tour.png
-
-The screenshots come from the PashupatiController repository (test/screenshots_test.dart, the
-`screenshots` workflow publishes them on its `screenshots` branch), 1668 x 938 px.
-"""
+# python3 docs/pdf/annotate.py   docs/manual/img/03_main_patrol.png -> 03_main_tour.png
+# The screenshots (1668 x 938 px) come from PashupatiController's `screenshots`
+# workflow (test/screenshots_test.dart), published on its `screenshots` branch.
 
 from __future__ import annotations
 

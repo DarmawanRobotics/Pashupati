@@ -1,12 +1,9 @@
-"""
-rtsp_camera_node: an RTSP camera (IP camera, gimbal pod, a robot's own camera) as the camera.
+"""rtsp_camera_node: an RTSP camera (IP camera, gimbal pod, a robot's own) as the camera."""
 
-The bringup starts it with camera:=rtsp and camera_url:=..., remapped onto the camera topics
-every consumer reads (image_raw, image_raw/compressed, camera_info under camera_topics), so the
-inspection, the people, the tag detector and the handheld do not care where the frames come from.
-GStreamer decodes (the Jetson hardware decoder when present), the node reconnects on its own and
-rectifies the image when a calibration file is given.
-"""
+# The bringup starts it with camera:=rtsp and camera_url:=..., remapped onto the camera
+# topics every consumer reads, so the inspection, the people, the tag detector and the
+# handheld do not care where the frames come from. GStreamer decodes (the Jetson
+# decoder when present); the node reconnects and rectifies with a calibration file.
 
 from __future__ import annotations
 
@@ -27,12 +24,9 @@ RECONNECT_MAX_SEC = 30.0
 
 
 def byte_array(data: bytes) -> array.array:
-    """
-    Return data as the uint8 array a message field takes without a per-byte conversion.
-
-    rclpy checks a bytes object byte by byte (a 1280x720 frame took 0.75 s on the Jetson, the
-    node fell to 2 fps at 100 % CPU); an array('B') goes through the buffer protocol (1 ms).
-    """
+    """Return data as an array('B'), which a message field takes without a per-byte check."""
+    # As bytes a 1280x720 frame took 0.75 s on the Jetson (2 fps at 100 % CPU); through
+    # the buffer protocol it takes 1 ms.
     out = array.array('B')
     out.frombytes(data)
     return out

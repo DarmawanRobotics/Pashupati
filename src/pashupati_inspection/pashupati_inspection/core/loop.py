@@ -1,9 +1,6 @@
-"""
-The inspection worker loop (no ROS).
+"""The inspection worker loop (no ROS): back to back or through the interval queue."""
 
-It keeps the model loaded, inspects back to back or works through the interval queue, and frees
-the model when inspection is switched off.
-"""
+# It keeps the model loaded while inspecting and frees it once inspection is off.
 
 from __future__ import annotations
 

@@ -1,9 +1,7 @@
-"""
-The inspection itself: which model is loaded, what an answer means, what the status says.
+"""The inspection itself (no ROS): the loaded model, what an answer means, the status."""
 
-No ROS: the node feeds it frames and publishes what it decides. Thread safe: the worker thread
-and the stop-point service both inspect, one at a time.
-"""
+# The node feeds it frames and publishes what it decides. Thread safe: the worker
+# thread and the stop-point service both inspect, one at a time.
 
 from __future__ import annotations
 

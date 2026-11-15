@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
-"""
-The parameter reference of the guides, as HTML tables.
+"""The guides' parameter reference: every parameter of the config files, as HTML tables."""
 
-Every parameter in the packages' config files, read with their comments. Used by build.py (the
-PDFs) and by the documentation site (docs/site), which runs it as a script:
-
-    python3 docs/pdf/params.py   # the tables on stdout
-
-Needs only PyYAML.
-"""
+# Used by build.py (the PDFs) and by the documentation site (docs/site), which runs
+# `python3 docs/pdf/params.py` for the tables on stdout. Needs only PyYAML.
 
 from __future__ import annotations
 
@@ -193,17 +187,13 @@ def read_parameters(path: Path) -> dict:
         }
         nodes[node].append(last)
         pending = ''
-    return {
-        node: [
-            (
-                p['name'],
-                p['value'] if not p['list'] else '[' + ', '.join(p['items']) + ']',
-                p['description'],
-            )
-            for p in params
-        ]
-        for node, params in nodes.items()
-    }
+    return {node: [row(p) for p in params] for node, params in nodes.items()}
+
+
+def row(param: dict) -> tuple:
+    """Return (name, default, description) of a parsed parameter; a list as [a, b]."""
+    value = param['value'] if not param['list'] else '[' + ', '.join(param['items']) + ']'
+    return param['name'], value, param['description']
 
 
 def meaning(node: str, param: str, comment: str) -> str:

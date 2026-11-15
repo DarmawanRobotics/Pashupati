@@ -24,15 +24,11 @@ def gstreamer_pipeline(
     width: int = 0,
     height: int = 0,
 ) -> str:
-    """
-    Return the OpenCV GStreamer pipeline for an RTSP stream; BGR frames, newest only.
-
-    Frames beyond max_fps are dropped (videorate max-rate: a caps framerate does not negotiate
-    on an RTSP stream without a fixed rate, and drop-only with max-rate asserts) and the image
-    is scaled to width x height inside the pipeline, before the colour conversion: a 1080p30
-    stream published at 5 fps then costs a fraction of the CPU (the Jetson scales in hardware,
-    nvvidconv).
-    """
+    """Return the OpenCV GStreamer pipeline of an RTSP stream: BGR frames, newest only."""
+    # videorate max-rate drops the frames beyond max_fps (a caps framerate does not
+    # negotiate on an RTSP stream without a fixed rate, drop-only with max-rate asserts).
+    # Scaling before the colour conversion (on the Jetson in hardware, nvvidconv) makes a
+    # 1080p30 stream published at 5 fps cost a fraction of the CPU.
     codec = codec.lower()
     if codec not in DEPAY:
         raise ValueError(f'codec must be h264 or h265, not {codec!r}')

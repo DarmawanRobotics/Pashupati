@@ -1,8 +1,4 @@
-"""
-The handheld's commands: which service each one calls, and the checks of their arguments.
-
-Everything here is pure: the node builds the requests from what these functions return.
-"""
+"""The handheld's commands (pure): the service each one calls, the checks of its arguments."""
 
 from __future__ import annotations
 
@@ -56,12 +52,9 @@ def dwell_seconds(value) -> float:
 
 
 def category_parameters(categories) -> list:
-    """
-    Map the handheld's finding types to the detector's category parameters.
-
-    categories: [{name, desc, report}] in the order the model gets them; an empty desc keeps
-    the built-in text of a known type. Returns (name, [str]) pairs.
-    """
+    """Return the detector's (name, [str]) category parameters of the handheld's finding types."""
+    # categories: [{name, desc, report}] in the model's order; an empty desc keeps the
+    # built-in text of a known type.
     if not isinstance(categories, list) or not 1 <= len(categories) <= MAX_CATEGORIES:
         raise ValueError(f'categories: 1 to {MAX_CATEGORIES} types')
     names, reported, descriptions = [], [], []

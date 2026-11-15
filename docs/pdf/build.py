@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""
-Build the PDF guides from their Markdown sources.
+"""Build the PDF guides from their Markdown sources."""
 
-    pip install weasyprint markdown pyyaml       # macOS: brew install pango first
-    python3 docs/pdf/build.py                    # every guide
-    python3 docs/pdf/build.py manual             # one of: manual, tuning
-
-Pages are A5, which reads well on a phone. Text is Barlow Semi Condensed (docs/pdf/fonts, SIL
-Open Font License). A source starts with a YAML front matter (title, subtitle, version, date,
-revisions) and may contain `{{ parameter_reference }}`, replaced by tables of every parameter in
-the packages' config files, read with their comments.
-"""
+# pip install weasyprint markdown pyyaml   (macOS: brew install pango first)
+# python3 docs/pdf/build.py                every guide
+# python3 docs/pdf/build.py manual         one of: manual, tuning
+# A5 pages (they read well on a phone) in Barlow Semi Condensed (docs/pdf/fonts, SIL
+# OFL). A source starts with a YAML front matter (title, subtitle, version, date,
+# revisions); {{ parameter_reference }} becomes the tables of every parameter.
 
 from __future__ import annotations
 
@@ -31,6 +27,15 @@ GUIDES = {
     'manual': (DOCS / 'manual' / 'user-manual.md', DOCS / 'Pashupati-User-Manual.pdf'),
     'tuning': (DOCS / 'tuning' / 'tuning-guide.md', DOCS / 'Pashupati-Tuning-Guide.pdf'),
 }
+EXTENSIONS = [
+    'tables',
+    'attr_list',
+    'admonition',
+    'toc',
+    'fenced_code',
+    'md_in_html',
+    'sane_lists',
+]
 
 
 def front_matter(text: str) -> tuple:
@@ -84,19 +89,26 @@ def build(name: str):
     meta, text = front_matter(source.read_text())
     text = text.replace('{{ parameter_reference }}', parameter_reference())
     body = markdown.markdown(
-        text,
-        extensions=[
-            'tables',
-            'attr_list',
-            'admonition',
-            'toc',
-            'fenced_code',
-            'md_in_html',
-            'sane_lists',
-        ],
-        extension_configs={'toc': {'permalink': False}},
+        text, extensions=EXTENSIONS, extension_configs={'toc': {'permalink': False}}
     )
     body, entries = number_headings(figures(body))
+    page = page_html(name, meta, body, entries)
+    css = (
+        (Path(__file__).parent / 'style.css')
+        .read_text()
+        .replace('%HEADER%', meta.get('header', meta.get('title', '')))
+    )
+    fonts = FontConfiguration()  # loads the @font-face fonts of the stylesheet
+    HTML(string=page, base_url=str(source.parent)).write_pdf(
+        target,
+        stylesheets=[CSS(string=css, base_url=str(Path(__file__).parent), font_config=fonts)],
+        font_config=fonts,
+    )
+    print(f'{target.relative_to(ROOT)}: {len(entries)} sections')
+
+
+def page_html(name: str, meta: dict, body: str, entries: list) -> str:
+    """Return the guide as one HTML page: cover, revision history, contents, body."""
     contents = '\n'.join(
         f'<li class="toc{level}"><a href="#{anchor}"><span class="num">{label}</span> '
         f'{re.sub("<[^>]+>", "", text)}</a></li>'
@@ -108,7 +120,7 @@ def build(name: str):
         for v, d, n in meta.get('revisions', [])
     )
     title = html.escape(meta.get('title', name))
-    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{title}</title>
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{title}</title>
 </head><body>
 <section class="cover">
   <img class="logo" src="{(DOCS / 'logo.png').as_uri()}" alt="">
@@ -131,18 +143,6 @@ def build(name: str):
 </section>
 <main>{body}</main>
 </body></html>"""
-    css = (
-        (Path(__file__).parent / 'style.css')
-        .read_text()
-        .replace('%HEADER%', meta.get('header', meta.get('title', '')))
-    )
-    fonts = FontConfiguration()  # loads the @font-face fonts of the stylesheet
-    HTML(string=page, base_url=str(source.parent)).write_pdf(
-        target,
-        stylesheets=[CSS(string=css, base_url=str(Path(__file__).parent), font_config=fonts)],
-        font_config=fonts,
-    )
-    print(f'{target.relative_to(ROOT)}: {len(entries)} sections')
 
 
 if __name__ == '__main__':

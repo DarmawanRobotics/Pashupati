@@ -25,11 +25,7 @@ CATEGORY_HINTS = {
 
 
 def category_names(values) -> list[str]:
-    """
-    Return the category names of a parameter list ('' entries dropped).
-
-    Raises ValueError for a bad, repeated or reserved name, or too many / no names.
-    """
+    """Return the category names of a parameter list ('' dropped); ValueError for a bad list."""
     names = [str(v).strip() for v in values if str(v).strip()]
     for name in names:
         if not CATEGORY_NAME.match(name) or name == 'none':
@@ -42,11 +38,7 @@ def category_names(values) -> list[str]:
 
 
 def parse_descriptions(values) -> dict:
-    """
-    Return {category: description} from 'name: description' entries ('' entries dropped).
-
-    Raises ValueError for an entry without a valid name or with an empty or long description.
-    """
+    """Return {category: description} of 'name: description' entries; ValueError for a bad one."""
     descriptions = {}
     for value in values:
         entry = str(value).strip()
@@ -100,11 +92,8 @@ def build_prompt(
 
 
 def build_schema(categories: list[str], describe: bool) -> dict:
-    """
-    Return the JSON schema for Ollama structured output.
-
-    `description` comes before `type` so the model looks first and decides after.
-    """
+    """Return the JSON schema for Ollama structured output."""
+    # `description` comes before `type` so the model looks first and decides after.
     properties, required = {}, []
     if describe:
         properties['description'] = {'type': 'string'}
@@ -145,11 +134,8 @@ def build_request(
 
 
 def parse_response(text: str, categories: list[str], use_schema: bool) -> dict:
-    """
-    Normalise a model answer to {category, description, valid}.
-
-    `valid` is False when no known category could be read; category is then 'none'.
-    """
+    """Normalise a model answer to {category, description, valid}."""
+    # `valid` is False when no known category could be read; category is then 'none'.
     category, description = '', ''
     if use_schema:
         try:
@@ -178,13 +164,10 @@ def full_name(model: str) -> str:
 
 
 def model_options(configured: list[str], installed, current: str) -> list[dict]:
-    """
-    Models the operator can choose from: the configured ones first, then other vision models.
-
-    `installed` maps the models in Ollama to whether they take images (None: unknown), or is None
-    when Ollama could not be asked. Each option is {name, installed (True, False or None when
-    unknown), active (the model in use)}; a text-only model is never offered.
-    """
+    """Return the models the operator can choose: the configured ones, then other vision models."""
+    # installed maps the models in Ollama to whether they take images (None: unknown), or
+    # is None when Ollama could not be asked. Each option is {name, installed (True, False
+    # or None), active (the model in use)}; a text-only model is never offered.
     options, seen = [], set()
     wanted = full_name(current) if current else ''
 

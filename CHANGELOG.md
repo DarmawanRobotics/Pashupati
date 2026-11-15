@@ -62,6 +62,9 @@ versions follow [SemVer](https://semver.org).
 
 ### Changed
 
+- Tidy-up: one-line docstrings (the details as short comments, usage lines of the scripts and
+  launch files as comments), the PDF builder and the diagrams in smaller functions. No change
+  in behaviour.
 - The L1W steps over low things and passes narrower gaps (`stack.yaml`, field-tested on the
   robot): `lidar_sector_node` `filter.height_min` 0.12 (Dharma 0.10), so a 10 cm step, a taped
   cable or a dip is walked over; 5 cm beside the body instead of 10 for path shift

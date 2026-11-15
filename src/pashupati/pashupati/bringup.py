@@ -1,8 +1,4 @@
-"""
-Pure helpers of the bringup: argument validation and parameter files.
-
-No launch or ROS imports, so everything here is unit-tested without a robot.
-"""
+"""Pure bringup helpers (no launch or ROS imports): argument validation and parameter files."""
 
 from __future__ import annotations
 
@@ -181,13 +177,9 @@ def unknown_sections(data: dict, nodes: list[str]) -> list[str]:
 
 
 def shared_parameters(data: dict) -> list[str]:
-    """
-    Return the '/**' parameters of a parameter file other than the robot profile.
-
-    Foxy applies a node's own section after '/**' whatever the file order, so a '/**' value
-    loses there against the same parameter in a package's defaults: put overrides under the
-    node name.
-    """
+    """Return the '/**' parameters of a parameter file other than the robot profile."""
+    # Foxy applies a node's own section after '/**' whatever the file order, so there a '/**'
+    # value loses against the same parameter in a package's defaults: overrides go under the node.
     params = flatten(data.get(WILDCARD, {}).get('ros__parameters', {}))
     return sorted(k for k in params if not k.startswith(ROBOT_PREFIX))
 
