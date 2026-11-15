@@ -1,13 +1,10 @@
-"""
-A stand-in for the NETRA backend (API.md), for the simulator, tests and bench checks.
+"""A stand-in for the NETRA backend (API.md), for the simulator, tests and bench checks."""
 
-    ros2 run pashupati_fleet fake_netra --port 8765 --log /tmp/netra.jsonl
-    ros2 launch pashupati sim.launch.py cc_url:=http://127.0.0.1:8765
-
-It accepts the robot's WebSocket (`/api/v1/robot/ws`), records every message, answers uploads
-(`/api/v1/robot/anomalies`, `/api/v1/robot/routes`) and serves route files to `start_patrol`.
-Standard library only; one robot at a time. Not a server for production.
-"""
+# ros2 run pashupati_fleet fake_netra --port 8765 --log /tmp/netra.jsonl
+# ros2 launch pashupati sim.launch.py cc_url:=http://127.0.0.1:8765
+# It accepts the robot's WebSocket (/api/v1/robot/ws), records every message, answers
+# the uploads (/api/v1/robot/anomalies, /api/v1/robot/routes) and serves route files to
+# start_patrol. Standard library only, one robot at a time; not a production server.
 
 from __future__ import annotations
 
@@ -203,7 +200,7 @@ class NetraHandler(BaseHTTPRequestHandler):
 
 def main(args=None):
     """Run the server until Ctrl-C (--log keeps what the robot sent)."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--log', default='', help='append every message as a JSON line')
     parser.add_argument('--clock-offset', type=float, default=0.0, help='server clock skew (s)')

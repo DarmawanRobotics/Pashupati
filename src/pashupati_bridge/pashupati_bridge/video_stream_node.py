@@ -1,11 +1,9 @@
-"""
-video_stream_node: H.264 video of the camera for the handheld, published to MediaMTX (WebRTC).
+"""video_stream_node: the camera as H.264 for the handheld's WebRTC video, via MediaMTX."""
 
-MediaMTX starts this node when the handheld opens the WebRTC video (runOnDemand in the
-configuration the pashupati bringup writes) and stops it with SIGINT once nobody watches.
-Frames go through GStreamer: the Jetson hardware encoder when it works, else x264 or OpenH264,
-then over RTSP to MediaMTX on the loopback interface.
-"""
+# MediaMTX starts it when the handheld opens the video (runOnDemand in the configuration
+# the bringup writes) and stops it with SIGINT once nobody watches. GStreamer encodes
+# (the Jetson hardware encoder when it works, else x264 or OpenH264) and publishes over
+# RTSP to MediaMTX on the loopback interface.
 
 from __future__ import annotations
 

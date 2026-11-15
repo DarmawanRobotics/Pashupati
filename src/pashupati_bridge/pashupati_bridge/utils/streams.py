@@ -1,9 +1,7 @@
-"""
-The handheld's camera, cloud and tag streams, and the robot pose: subscribed only while used.
+"""The handheld's camera, cloud, tag and pose streams, subscribed only while it uses them."""
 
-Deserializing a 30 Hz camera, a 10 Hz cloud and every TF message cost a third of a Jetson core
-while nobody was connected, so every subscription here lives only while a handheld wants it.
-"""
+# Deserializing a 30 Hz camera, a 10 Hz cloud and every TF message cost a third of a
+# Jetson core while nobody was connected.
 
 from __future__ import annotations
 
@@ -98,12 +96,9 @@ class Streams:
             self.send_stream(protocol.STREAM_CAMERA, jpeg)
 
     def shrink(self, jpeg: bytes) -> bytes:
-        """
-        Re-encode a driver JPEG bigger than camera_max_bytes (drivers default to quality 95).
-
-        A frame travels as a burst of 1400-byte datagrams and one lost datagram loses it, so a
-        150 kB JPEG rarely reaches the handheld whole over Wi-Fi.
-        """
+        """Re-encode a driver JPEG bigger than camera_max_bytes (drivers default to quality 95)."""
+        # A frame travels as a burst of 1400-byte datagrams and one lost datagram loses it,
+        # so a 150 kB JPEG rarely reaches the handheld whole over Wi-Fi.
         if len(jpeg) <= self.config.camera_max_bytes:
             return jpeg
         try:

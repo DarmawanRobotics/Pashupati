@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""
-Draw the user manual's diagrams (docs/manual/img/system.png and workflow.png).
-
-    python3 docs/pdf/diagrams.py
-"""
+"""Draw the user manual's diagrams (docs/manual/img/system.png and workflow.png)."""
 
 from __future__ import annotations
 
@@ -53,7 +49,13 @@ def system():
     """Draw the parts: handheld, robot (sensors, computer, motion), NETRA, Telegram."""
     image = Image.new('RGB', (2300, 970), '#ffffff')
     draw = ImageDraw.Draw(image)
-    # robot: sensors feed the computer, the computer drives the motion computer
+    robot(draw)
+    links(draw)
+    image.save(DOCS / 'manual' / 'img' / 'system.png', optimize=True)
+
+
+def robot(draw):
+    """Draw the robot: the sensors feed the computer, the computer drives the motion computer."""
     draw.rounded_rectangle((650, 30, 1650, 930), radius=34, fill='#f6f9fa', outline=TEAL, width=5)
     draw.text(
         (1150, 88), 'Robot: ZSBot Genisom L1W', fill=TEAL, font=font('Bold', 46), anchor='mm'
@@ -82,7 +84,10 @@ def system():
     arrow(draw, (920, 342), (920, 428))
     arrow(draw, (1380, 342), (1380, 428))
     arrow(draw, (1150, 642), (1150, 728), both=True)
-    # the handheld and NETRA talk to the robot computer
+
+
+def links(draw):
+    """Draw the handheld, NETRA and Telegram around the robot computer."""
     box(
         draw,
         (30, 435, 500, 635),
@@ -103,7 +108,6 @@ def system():
     draw.text((1725, 492), 'network', fill=TEAL, font=font('SemiBold', 32), anchor='mm')
     box(draw, (1800, 730, 2270, 860), 'Telegram', ['alerts to the team'])
     arrow(draw, (2035, 637), (2035, 728))
-    image.save(DOCS / 'manual' / 'img' / 'system.png', optimize=True)
 
 
 def workflow():

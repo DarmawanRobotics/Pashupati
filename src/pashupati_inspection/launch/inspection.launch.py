@@ -1,13 +1,10 @@
-"""
-The inspection nodes: the VLM anomaly detector and the person detector, each optional.
+"""The inspection nodes: the VLM anomaly detector and the person detector, each optional."""
 
-    ros2 launch pashupati_inspection inspection.launch.py
-    ros2 launch pashupati_inspection inspection.launch.py people:=false
-    ros2 launch pashupati_inspection inspection.launch.py camera_image:=/front/image_raw
-
-Same contract as the Dharma package launches (params_file, robot_params, use_sim_time,
-log_level); the pashupati bringup starts it with its merged parameter file.
-"""
+# ros2 launch pashupati_inspection inspection.launch.py
+# ros2 launch pashupati_inspection inspection.launch.py people:=false
+# ros2 launch pashupati_inspection inspection.launch.py camera_image:=/front/image_raw
+# The Dharma launch contract (params_file, robot_params, use_sim_time, log_level); the
+# pashupati bringup passes its merged parameter file.
 
 from __future__ import annotations
 

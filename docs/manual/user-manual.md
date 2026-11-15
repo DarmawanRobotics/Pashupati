@@ -2,8 +2,8 @@
 title: User Manual
 header: Pashupati User Manual
 subtitle: Patrol and inspection with the ZSBot Genisom L1W and the Pashupati Controller
-version: "1.3"
-date: 2026-11-14
+version: "1.5"
+date: 2026-11-15
 audience: For operators of a Genisom L1W running Pashupati. No robotics knowledge needed.
 note: >-
   The robot's own hardware (battery, charging, power switch, the ZSBot remote) is described in
@@ -15,6 +15,8 @@ revisions:
   - ["1.1", "2026-11-01", "Time synchronisation for the technician"]
   - ["1.2", "2026-11-14", "Trip meter on the main screen (Pashupati Controller 2.7)"]
   - ["1.3", "2026-11-14", "The camera sees low obstacles ahead"]
+  - ["1.4", "2026-11-15", "The robot walks over what is lower than about 12 cm and passes gaps from about 0.7 m"]
+  - ["1.5", "2026-11-15", "The status screen for your technician; menuconfig for the technician"]
 ---
 
 # Safety first
@@ -30,8 +32,9 @@ before you use the robot for the first time.
   platform edges, holes. **The robot does not see drops.**
 - Glass walls, mirrors and very thin objects can be invisible to the robot's laser scanner
   (LiDAR). Low objects in front of the robot, such as a box or a bag, are seen by the camera:
-  keep its window clean. Objects lower than about 10 cm, such as a flat bag or a cable, are
-  not treated as obstacles.
+  keep its window clean. Objects lower than about 12 cm, such as a 10 cm step, a cable taped
+  to the floor or a flat bag, are not treated as obstacles: the robot walks over them. Keep
+  what it must not step on off the route.
 - Charge the robot battery and the handheld. Start a patrol with at least 30 % battery.
 - Keep the ZSBot remote nearby as a backup. It can take control of the robot at any time.
 
@@ -259,8 +262,8 @@ when it restarts. To start again from zero, hold the trip meter for a second. Tu
   robot then loops it.
 - Fix AprilTags on walls along the route, at about the camera's height, and note their places.
   Your technician sets which tag numbers the robot uses.
-- Avoid passages narrower than about 1.2 m (the robot has no room there to pass obstacles),
-  glass walls, and every drop (section 1.1).
+- Avoid passages narrower than about 1.2 m (the robot fits through about 0.7 m, but has no
+  room there to pass obstacles), glass walls, and every drop (section 1.1).
 
 ## Record the route
 
@@ -328,8 +331,9 @@ The robot also localizes by itself when it sees a known tag after start-up.
 - **Follows the route** at the patrol speed (section 8.7), slower in tight bends.
 - **Stops at each stop point**, turns to the recorded direction, waits for the AI to inspect,
   stays for the stop time, then walks on.
-- **Passes obstacles** by sliding sideways, at most 0.8 m away from the route. When there is no
-  gap, it stops about 0.4 m before the obstacle and waits.
+- **Passes obstacles** by sliding sideways, at most 0.8 m away from the route, through gaps
+  from about 0.7 m wide. When there is no gap, it stops about 0.4 m before the obstacle and
+  waits.
 - **Slows down and stops** for anything in its path, in every direction (the protective field).
 - **Loops** a route that ends near its start, lap after lap.
 - **Goes home at low battery**: when the battery is low, it ends the patrol at the end of the
@@ -530,6 +534,11 @@ this manual does not explain.
 | *Needs attention*, or red CPU, GPU or RAM | the robot computer has a problem | finish the lap, then tell your technician |
 | Times in NETRA are off, or the robot stops with *TF stale* | the robot's clock is not in step | tell your technician (section 12.4) |
 
+Your technician may ask for the robot's **status screen**. On a computer connected to the robot
+(the technician sets it up), log in to the robot and type `pmonitor`: one screen shows the mode,
+the battery, the route, the sensors and the robot computer, with problems in yellow and red. Send
+a screenshot, or press `r` and send the file whose name it shows. `q` closes it.
+
 
 # For the technician
 
@@ -563,7 +572,10 @@ ros2 topic echo --once /health/status
 | `/etc/pashupati/site.yaml` | parameters of this robot and site, see the Tuning Guide |
 | `~/.pashupati/sites/<site>/` | one site: its map, AprilTag positions (`tags.json`) and recorded routes (`routes/`) |
 
-Restart the service after changing either file in `/etc/pashupati`.
+Restart the service after changing either file in `/etc/pashupati`. `pconfig` (menuconfig)
+edits both through a menu: every parameter with its description and range, values checked before
+they are saved, a backup kept and a restart offered (Tuning Guide, section 1.2). `pmonitor` shows
+the robot's live state and writes a report file (Tuning Guide, section 8.7).
 
 ## Time
 

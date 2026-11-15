@@ -1,14 +1,10 @@
-"""
-The handheld's UDP gateway, and optionally an RTSP camera as the robot's camera.
+"""The handheld's UDP gateway, and optionally an RTSP camera as the robot's camera."""
 
-    ros2 launch pashupati_bridge bridge.launch.py robot_ns:=robot
-    ros2 launch pashupati_bridge bridge.launch.py camera:=rtsp camera_url:=rtsp://10.0.0.5/live
-
-Same contract as the Dharma package launches (params_file, robot_params, use_sim_time,
-log_level). The gateway sends the stick to control/remote/<remote_source>/cmd_vel: only the
-control mux publishes the robot's cmd_vel. The robot driver's battery, diagnostics and the
-mux's cmd_vel (shown on the handheld) are read from /<robot_ns>/.
-"""
+# ros2 launch pashupati_bridge bridge.launch.py robot_ns:=robot
+# ros2 launch pashupati_bridge bridge.launch.py camera:=rtsp camera_url:=rtsp://10.0.0.5/live
+# The Dharma launch contract (params_file, robot_params, use_sim_time, log_level). The
+# stick goes to control/remote/<remote_source>/cmd_vel (only the mux publishes cmd_vel);
+# the driver's battery and diagnostics and the mux's cmd_vel are read from /<robot_ns>/.
 
 from __future__ import annotations
 

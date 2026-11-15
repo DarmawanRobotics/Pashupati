@@ -2,7 +2,7 @@
 title: Tuning Guide
 header: Pashupati Tuning Guide
 subtitle: What the parameters do, and how to tune a Genisom L1W for a site
-version: "2.6"
+version: "2.8"
 date: 2026-11-15
 audience: >-
   For the technician who sets up and tunes a Pashupati robot. You need an SSH shell on the robot
@@ -21,6 +21,8 @@ revisions:
   - ["2.4", "2026-11-14", "Detours: turning in place toward a gap when sliding does not get the robot on"]
   - ["2.5", "2026-11-14", "Low obstacles from the RealSense depth camera, below the LiDAR"]
   - ["2.6", "2026-11-15", "The camera's measured mount, its point cloud on the Jetson, USB 3, depth_floor.py"]
+  - ["2.7", "2026-11-15", "The L1W steps over 10 cm and passes gaps from about 0.7 m"]
+  - ["2.8", "2026-11-15", "menuconfig for the site and env files, the console monitor and its report"]
 ---
 
 # How tuning works
@@ -48,6 +50,30 @@ every change in the site file. The robot driver (`l1w_driver_node`) is not a Pas
 settings live in the robot package (section 2.3).
 
 ## Change a value for good
+
+The quickest way is **menuconfig**, the Dharma console's menu (`pconfig` in the ROS shell of the
+stack, `pashu`, or `scripts/console.sh menuconfig`):
+
+```text
+Pashupati
+  Navigation  --->
+    path_follower_node  --->
+      path_shift  --->
+        (0.05) clearance                                        stack.yaml
+        (0.25) centre_room                                      default
+```
+
+Every node of the stack is there with every parameter, typed: `<Enter>` edits a value (or picks
+a choice, or toggles a `[*]` switch), `/` searches names and descriptions, `?` shows what a value
+does with its unit, range and value in every layer, `d` goes back to the inherited value. The tag
+on the right says where the value comes from: `default` (Dharma's), the package's file,
+`stack.yaml`, `site` (the site file) or `changed` (not saved). A value out of range or against
+another value is refused before it is saved. `s` lists the changes, writes the site file (a
+`.bak` copy first; `sudo` asks for the password) and offers to restart the stack. _Launch
+options_ edits the env file the same way (chapter 9). Setting a value back to the inherited one
+removes it from the site file, which then holds only what this robot changes.
+
+By hand:
 
 1. Open the site file: `sudo nano /etc/pashupati/site.yaml`.
 2. Find the node's section, or add one like the example below. Indent with spaces, two per
@@ -211,7 +237,7 @@ and the e-stop still apply. Without a fresh scan the robot does not drive itself
 | `field.in_remote`                       | false                 | true: limit REMOTE too (with `field.remote_margin`), e.g. for operators new to the robot |
 | `field.margin`                          | 0.15                  | m, gap left to the obstacle in AUTO                                                      |
 | `field.remote_margin`                   | 0.10                  | m, the same in REMOTE                                                                    |
-| `field.lateral_margin`                  | 0.10                  | m, extra width of the swept path on each side                                            |
+| `field.lateral_margin`                  | 0.05                  | m, extra width of the swept path on each side (Dharma: 0.10; section 5.1)                |
 | `field.human_speed`                     | 0.5                   | m/s, a person walking toward the robot                                                   |
 | `field.min_speed`                       | 0.02                  | m/s, a slower allowed speed stops instead                                                |
 | `field.remote_degraded_speed`           | 0.15                  | m/s, the REMOTE cap while the scan is stale or blind                                     |
@@ -311,8 +337,15 @@ When there is no offset with the full clearance, the robot keeps its own line as
 nothing is ahead on it, and returns to the route once it can; it always may slide away from
 something beside it. In a lane bounded ahead on both sides (a narrow corridor, between a
 person and a wall) with less than `path_shift.centre_room` beside the body, it drives in the
-middle, to the centimetre. A gap ahead still needs `path_shift.clearance` on both sides (the
-field needs its `lateral_margin` too): a corridor at least 0.76 m wide for the L1W.
+middle, to the centimetre.
+
+A gap ahead needs `path_shift.clearance` beside the body on both sides, and the motion guard
+(`safety.lateral_margin`) and the protective field (`field.lateral_margin`) keep theirs too.
+Pashupati sets all three to 5 cm (Dharma: 10 cm), field-tested on the L1W: the body, 0.56 m
+wide, passes gaps from 0.66 m, about 0.7 m in practice (0.76 m with 10 cm). The guard's margin
+must not be below the field's, or the guard lets the robot into a gap the field then stops it
+in. The 360° safety scan has 144 sectors of 2.5° (`safety.num_sectors`, Dharma: 72): wider
+sectors place the sides of a narrow gap nearer the path than they are.
 
 When sliding does not get it on (walls too close for the guard to let it slide, a gap it
 passes only facing it, a crowd), the robot makes a **detour**: stuck for `detour.after_sec`
@@ -325,23 +358,27 @@ and path shift brings the robot back. The status reads `detour: turning to +45 d
 route, toward a gap`. Near a stop point there is no detour: the robot waits on the route.
 
 Something in the emergency cone of `obstacle_avoidance_node` (`shared.emergency_distance` 0.75 m
-ahead, `shared.emergency_cone_deg` 60°) stops the forward motion at once. With
+ahead, `shared.emergency_cone_deg` 40° in Pashupati) stops the forward motion at once. Dharma's
+60° caught the sides of a gap narrower than about 0.7 m within those 0.75 m and held the robot
+in front of it; at ±20° the sides are left to the motion guard and the protective field, which
+check the whole swept body: something beside the cone still stops the robot short of it. With
 `path_shift.emergency_slide` the robot may still slide sideways out of the cone (a pole right in
 front, room beside it); the protective field and the motion guard check every slide. The status
 starts with `EMERGENCY: ..., forward held` while it does.
 
-| `path_follower_node` parameter                        | Default    | What it does                                               |
-| ----------------------------------------------------- | ---------- | ---------------------------------------------------------- |
-| `avoidance_mode`                                      | path_shift | or a reactive policy of `obstacle_avoidance_node`          |
-| `path_shift.max_offset`                               | 0.8        | m, furthest from the route                                 |
-| `path_shift.clearance`                                | 0.10       | m, gap kept between the robot's side and an obstacle       |
-| `path_shift.stop_margin`                              | 0.40       | m, stop this far before an obstacle                        |
-| `path_shift.switch_cost`, `path_shift.switch_margin`  | 0.5, 0.05  | keeps its side around an obstacle                          |
-| `path_shift.patience_sec`, `path_shift.search_offset` | 3.0, 1.5   | s, m: wait with no gap, then search this far (0.8: off)    |
-| `path_shift.emergency_slide`                          | true       | an emergency stops only the forward motion; false: all     |
-| `path_shift.centre_room`                              | 0.25       | m beside the body: a narrower lane is driven in its middle |
-| `detour.after_sec`, `detour.speed`                    | 1.5, 0.25  | s stuck before a detour (0.5 at least), m/s on its run     |
-| `detour.max_angle_deg`, `detour.length`               | 75, 2.0    | deg off the route direction, m of one straight run         |
+| `path_follower_node` parameter                        | Default    | What it does                                                                  |
+| ----------------------------------------------------- | ---------- | ----------------------------------------------------------------------------- |
+| `avoidance_mode`                                      | path_shift | or a reactive policy of `obstacle_avoidance_node`                             |
+| `path_shift.max_offset`                               | 0.8        | m, furthest from the route                                                    |
+| `path_shift.clearance`                                | 0.05       | m, gap kept between the robot's side and an obstacle (Dharma: 0.10)           |
+| `safety.lateral_margin`                               | 0.05       | m kept free beside the guarded path (Dharma: 0.10), >= `field.lateral_margin` |
+| `path_shift.stop_margin`                              | 0.40       | m, stop this far before an obstacle                                           |
+| `path_shift.switch_cost`, `path_shift.switch_margin`  | 0.5, 0.05  | keeps its side around an obstacle                                             |
+| `path_shift.patience_sec`, `path_shift.search_offset` | 3.0, 1.5   | s, m: wait with no gap, then search this far (0.8: off)                       |
+| `path_shift.emergency_slide`                          | true       | an emergency stops only the forward motion; false: all                        |
+| `path_shift.centre_room`                              | 0.25       | m beside the body: a narrower lane is driven in its middle                    |
+| `detour.after_sec`, `detour.speed`                    | 1.5, 0.25  | s stuck before a detour (0.5 at least), m/s on its run                        |
+| `detour.max_angle_deg`, `detour.length`               | 75, 2.0    | deg off the route direction, m of one straight run                            |
 
 ## What the LiDAR sees
 
@@ -350,14 +387,22 @@ scan (for the protective field). The band between `filter.height_min` and `filte
 above the floor (the floor is `robot.base_height` below `base_link`) counts as obstacles; the
 robot's own footprint, grown by `filter.self_margin`, is ignored.
 
-| Parameter                            | Pashupati | What it does · when to change                                                      |
-| ------------------------------------ | --------- | ---------------------------------------------------------------------------------- |
-| `filter.height_min`                  | 0.10      | m above the floor; lower sees low objects, too low sees the floor on slopes        |
-| `filter.height_max`                  | 1.55      | m above the floor (the L1W's top plus margin)                                      |
-| `filter.self_margin`                 | 0.05      | m around the footprint: _Slowed_ or _Blocked_ with nothing around, widen it 2-3 cm |
-| `front.num_sectors`, `front.fov_deg` | 32, 180   | 64, 360 when the robot backs up after an inspection (`reverse_distance_m` > 0)     |
-| `filter.level_source`                | none      | `tf` levels the band with the odometry's tilt: only on slopes, with a level odometry |
-| `memory.enabled`                     | false     | true keeps obstacles below the lowest beam for 10 s (odom frame)                   |
+What is lower than `filter.height_min` the L1W steps over: a 10 cm step, a cable taped to the
+floor, a dip. Pashupati sets 0.12 m (Dharma: 0.10), which leaves 2 cm for an uneven floor and
+the sensors' error. A box is seen once enough of it rises above the band's bottom: in a
+simulated depth cloud the camera finds a 14 cm box from about 2.3 m away, a 20 cm one from 3 m,
+and a 10 cm step stays free. A site file copied from an older `site.example.yaml` may still set
+`height_min: 0.10`, and its robot then stops for 10 cm steps: set 0.12 or remove the line.
+
+| Parameter                            | Pashupati | What it does · when to change                                                             |
+| ------------------------------------ | --------- | ----------------------------------------------------------------------------------------- |
+| `filter.height_min`                  | 0.12      | m above the floor, lower is stepped over (Dharma: 0.10); too low sees the floor on slopes |
+| `filter.height_max`                  | 1.55      | m above the floor (the L1W's top plus margin)                                             |
+| `safety.num_sectors`                 | 144       | sectors of the 360° safety scan (Dharma: 72): the sides of a narrow gap where they are    |
+| `filter.self_margin`                 | 0.05      | m around the footprint: _Slowed_ or _Blocked_ with nothing around, widen it 2-3 cm        |
+| `front.num_sectors`, `front.fov_deg` | 32, 180   | 64, 360 when the robot backs up after an inspection (`reverse_distance_m` > 0)            |
+| `filter.level_source`                | none      | `tf` levels the band with the odometry's tilt: only on slopes, with a level odometry      |
+| `memory.enabled`                     | false     | true keeps obstacles below the lowest beam for 10 s (odom frame)                          |
 
 ## What the camera sees
 
@@ -366,8 +411,9 @@ than about 40 cm, within 3 m nothing lower than about 16 cm. The RealSense D435i
 looks 18° down and sees the floor from about 0.3 m in front of the body to 3 m
 (`depth.range_max`), a 15 cm box from about 0.15 m in front of the body. `lidar_sector_node`
 merges what it sees into both scans with the LiDAR's height band (`filter.height_min`,
-`filter.height_max`): a box, a bag, a low bench or a step the LiDAR misses stops the robot, or
-path shift passes it. The camera's point cloud comes from the robot package (`l1w_bringup`
+`filter.height_max`): a box, a bag, a low bench or a step taller than the band's bottom that the
+LiDAR misses stops the robot, or path shift passes it; a 10 cm step or a taped cable it walks
+over. The camera's point cloud comes from the robot package (`l1w_bringup`
 `realsense_params.yaml`: depth 640 × 480 at 15 fps, decimated to 160 × 120 points, no texture).
 On the Jetson its parameters are `pointcloud__neon_.*`: librealsense names its ARM block
 "Pointcloud (NEON)", and `pointcloud.enable` alone publishes no cloud there.
@@ -628,6 +674,17 @@ NTP. It is in every telemetry message as `clock` {offset_ms, rtt_ms, age_sec} (n
 does not answer), so NETRA can place the robot's events on its own clock. Above `clock_warn_ms`
 the robot logs _clock differs from NETRA_: fix the time source, not the parameter.
 
+## Console monitor
+
+`pmonitor` (or `scripts/console.sh monitor`) shows the whole robot in one terminal, over SSH too:
+mode, e-stop and protective field, battery, route, localization and odometry, the site, every
+health check with its rate or age (instead of `ros2 topic hz`), the computer with its busiest
+processes (instead of `top`), the newest warnings of every node, inspection and people counting.
+`<Tab>` switches to menuconfig. `r` writes a report file to `~/.pashupati/reports/`: every
+panel, the log since the monitor started, the commit, the service state and its last 300 log
+lines. Ask an operator for a screenshot of the monitor or for that file when the robot misbehaves;
+`pmonitor --once > report.txt` writes it without the screen.
+
 # The env file
 
 `/etc/pashupati/pashupati.env` says what runs. Restart the service after a change. Quote values
@@ -670,17 +727,18 @@ with spaces, and never put a comment after a value.
 | Stops just short of a stop point and waits 20 s | `approach.min_speed`, `approach.position_tolerance`                | 0.06, 0.08                                        |
 | Leaves stop points too late                     | dwell time of the route, `hooks.inspection_timeout_sec`, pace      | shorter dwell, faster model                       |
 | _Slowed_ or _Blocked_ with nothing around       | `filter.self_margin`, `filter.height_min`, floor slopes            | margin +0.02; height_min +0.03                    |
-| Ignores low objects (bags, boxes)               | `filter.height_min`, the camera (section 5.3)                      | lower 0.03 at a time, check the floor is not seen |
+| Ignores low objects (bags, boxes)               | `filter.height_min`, the camera (section 5.3)                      | lower 0.02 at a time (a 10 cm step then stops it), check the floor is not seen |
+| Stops for a 10 cm step or a taped cable         | `filter.height_min` in the site file, the mount offset in the log (5.3) | 0.12 (5.2); correct the mount |
 | Stops or swerves for nothing right ahead        | blue `depth` points in RViz, the mount offset in the log (5.3)     | clean the camera; correct the mount; cell_points 6 |
 | Ghost obstacles far ahead, only with the camera | the mount offset in the log, `depth.range_max`                     | correct the mount; range_max 2.5                  |
 | `nominal floor kept ... on a line` every minute | the camera mount, more than 5° off its TF (5.3)                    | `scripts/depth_floor.py`, correct the URDF        |
 | `depth camera not merged ... no cloud for` now and then | the camera on USB 2.1 (5.3)                                 | a USB 3 port and cable                            |
 | Stops far before obstacles                      | `path_shift.stop_margin`, `field.margin`, `robot.limits.max_decel` | small steps; repeat the test of section 3.3       |
 | Gets too close to obstacles                     | `robot.limits.max_decel`, `robot.limits.reaction_time`             | measure the braking again (section 3.2)           |
-| Does not pass gaps that look wide enough        | `path_shift.clearance`, `path_shift.max_offset`, the footprint     | clearance 0.05, larger offset                     |
+| Does not pass gaps that look wide enough        | the three margins and the cone (5.1), `path_shift.max_offset`, the footprint | 0.05 each, cone 40; larger offset                 |
 | Waits long in front of a person or a box        | `path_shift.patience_sec`, `path_shift.search_offset`              | 2.0; 2.0 where the aisle is wide                  |
 | Goes far around where it should wait            | `path_shift.search_offset`, `path_shift.patience_sec`              | 0.8 turns the search off                          |
-| Leaves the route in corridors wider than needed | `path_shift.centre_room`                                           | 0.15; 0.10 (= clearance) turns it off             |
+| Leaves the route in corridors wider than needed | `path_shift.centre_room`                                           | 0.15; 0.05 (= clearance) turns it off             |
 | Turns toward gaps too often in a crowd          | `detour.after_sec`                                                 | 2.5-3; `detour.enabled: false` turns it off       |
 | Waits in a tight spot it could turn out of      | `detour.after_sec`, `detour.max_angle_deg`                         | 1.0; 90                                           |
 | _Blocked_ too soon or too late                  | `safety.blocked_timeout_sec`                                       | to taste                                          |

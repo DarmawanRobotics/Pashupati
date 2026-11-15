@@ -26,7 +26,10 @@ lidar_sector_node:
   ros__parameters:
     # front: Dharma's 180 deg (32 sectors); 360 only for a back-up after an inspection
     # (path_follower_node inspection.reverse_distance_m > 0)
+    safety:
+      num_sectors: 144 # 2.5 deg sectors: the sides of a narrow gap where they really are
     filter:
+      height_min: 0.12 # m above the floor: lower is stepped over (10 cm steps, taped cables)
       height_max: 1.55 # m above the floor (base_link + 1.20 m)
       # As Pashupati 2.0: a fixed height band on base_link. Leveling with the odometry's tilt
       # turned a slightly tilted odometry into ghost obstacles (the floor a metre or two away):
@@ -61,8 +64,13 @@ path_follower_node:
     speed:
       accel: 0.5 # m/s^2 (Pashupati 2.0 linear_accel_limit)
       smoothing: 0.4
+    # Gaps from about 0.7 m: the body plus 5 cm on each side for path shift, the motion guard
+    # and the protective field alike (10 cm each made it 0.76 m); see obstacle_avoidance_node.
+    path_shift:
+      clearance: 0.05 # m kept beside the body in a gap
     safety:
       blocked_timeout_sec: 30.0 # s standing in front of an obstacle before BLOCKED
+      lateral_margin: 0.05 # m, >= control_mux_node field.lateral_margin
     hooks:
       # Inspection at every stop point: the VLM check answers (or, switched off, says so at
       # once); a hook whose node does not run is skipped, so INSPECTION=false never blocks.
@@ -79,6 +87,14 @@ control_mux_node:
     # decision of Pashupati 1.0); the envelope and the e-stop still apply. sim.yaml keeps it on.
     field:
       in_remote: false
+      lateral_margin: 0.05 # m, extra width of the swept path (the follower's is not below)
+
+obstacle_avoidance_node:
+  ros__parameters:
+    # +-20 deg: in Dharma's 60 deg emergency cone the sides of a gap narrower than about 0.7 m
+    # stood within 0.75 m and held the robot in front of it. The guard and the field check the
+    # whole swept body.
+    shared.emergency_cone_deg: 40.0
 
 docking_node:
   ros__parameters:

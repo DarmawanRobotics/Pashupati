@@ -100,12 +100,8 @@ def voxel_downsample(xyz: np.ndarray, voxel: float, max_points: int) -> np.ndarr
 
 
 def tag_quads(tags, width: float, height: float) -> list:
-    """
-    Return AprilTags for the handheld overlay: [[id, x0, y0, x1, y1, x2, y2, x3, y3], ...].
-
-    tags is [(id, [(x, y) * 4 corner pixels]), ...]; the corners become fractions of the image
-    size, so they fit the video at any resolution.
-    """
+    """Return [[id, x0, y0, ... x3, y3], ...] for the overlay, corners as image fractions."""
+    # tags: [(id, [(x, y) * 4 corner pixels]), ...]; fractions fit the video at any size.
     if width <= 0 or height <= 0:
         return []
     out = []

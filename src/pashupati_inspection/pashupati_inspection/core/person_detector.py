@@ -8,12 +8,8 @@ PERSON = 0  # COCO class of a person in the Ultralytics YOLO heads
 
 
 def letterbox(bgr: np.ndarray, size: int):
-    """
-    Resize keeping the aspect ratio and pad to size x size with grey 114 (Ultralytics style).
-
-    Returns the network input (1, 3, size, size) RGB float32 in 0..1, the scale and the padding
-    (x, y) in pixels of the padded image.
-    """
+    """Letterbox to size x size, grey 114 (Ultralytics); return (input, scale, (pad_x, pad_y))."""
+    # input: (1, 3, size, size) RGB float32 in 0..1; the padding is in pixels.
     import cv2
 
     height, width = bgr.shape[:2]
@@ -54,12 +50,9 @@ def person_boxes(
     iou: float = 0.45,
     max_people: int = 100,
 ) -> list[tuple]:
-    """
-    Decode a YOLOv8 / YOLO11 head (1, 4 + classes, anchors) into person boxes.
-
-    Rows are centre x, centre y, width, height in the padded input, then one score per class.
-    Returns (x1, y1, x2, y2, score) in pixels of the original image, best first.
-    """
+    """Decode a YOLOv8 / YOLO11 head (1, 4 + classes, anchors) into person boxes, best first."""
+    # Rows: centre x, centre y, width, height in the padded input, then a score per class.
+    # Boxes: (x1, y1, x2, y2, score) in pixels of the original image.
     out = np.asarray(output, dtype=np.float32)
     out = out.reshape(out.shape[-2:])
     if out.shape[0] > out.shape[1]:  # exported as (anchors, 4 + classes)
@@ -86,11 +79,7 @@ def person_boxes(
 
 
 class OnnxPersonDetector:
-    """
-    YOLO person detector on an Ultralytics ONNX export, without PyTorch.
-
-    ONNX Runtime when installed (its CUDA provider when that is available), else OpenCV DNN.
-    """
+    """YOLO person detector on an Ultralytics ONNX export, without PyTorch."""
 
     def __init__(
         self,
@@ -109,6 +98,7 @@ class OnnxPersonDetector:
         self._session = self._net = None
         self.backend = ''
         missing = ''
+        # ONNX Runtime when installed (its CUDA provider when available), else OpenCV DNN
         if backend in ('auto', 'onnxruntime'):
             try:
                 import onnxruntime as ort

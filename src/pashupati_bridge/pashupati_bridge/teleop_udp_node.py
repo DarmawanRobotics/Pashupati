@@ -1,10 +1,8 @@
-"""
-teleop_udp_node: the handheld's UDP gateway (PROTOCOL.md), no ROS on the handheld.
+"""teleop_udp_node: the handheld's UDP gateway (PROTOCOL.md), no ROS on the handheld."""
 
-The stick goes to the control mux as an operator source (control/remote/<source>/cmd_vel): the
-mux decides what reaches the robot. Commands call the stack's services, telemetry comes from
-the typed status topics.
-"""
+# The stick goes to the control mux as an operator source (control/remote/<source>/
+# cmd_vel), so the mux decides what reaches the robot. Commands call the services of
+# the stack, telemetry comes from its typed status topics.
 
 from __future__ import annotations
 

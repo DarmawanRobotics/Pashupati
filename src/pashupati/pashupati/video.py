@@ -1,13 +1,9 @@
-"""
-WebRTC video for the handheld: the MediaMTX server robot.launch.py starts.
+"""WebRTC video for the handheld: the MediaMTX server robot.launch.py starts (pure, no ROS)."""
 
-The handheld opens the video with WHEP (WebRTC over HTTP) on WEBRTC_PORT. MediaMTX then runs
-video_stream_node (runOnDemand), which encodes the camera to H.264 and publishes it over RTSP on
-the loopback interface; when nobody watches any more, MediaMTX stops it again. Reading needs the
-teleop token (HTTP basic auth, user 'teleop'), publishing is only allowed from this computer.
-
-No launch or ROS imports, so everything here is unit-tested without a robot.
-"""
+# The handheld opens the video with WHEP (WebRTC over HTTP) on WEBRTC_PORT; MediaMTX then
+# runs video_stream_node (runOnDemand), which publishes H.264 over RTSP on the loopback
+# interface, and stops it once nobody watches. Reading needs the teleop token (HTTP basic
+# auth, user 'teleop'), publishing is only allowed from this computer.
 
 from __future__ import annotations
 
@@ -99,11 +95,8 @@ def mediamtx_config(
     ice_port: int = ICE_PORT,
     rtsp_port: int = RTSP_PORT,
 ) -> dict:
-    """
-    Return the MediaMTX configuration: WebRTC out, RTSP in on loopback, nothing else.
-
-    Without a token anyone on the network may watch, like the teleop link itself.
-    """
+    """Return the MediaMTX configuration: WebRTC out, RTSP in on loopback, nothing else."""
+    # Without a token anyone on the network may watch, like the teleop link itself.
     reader = {
         'user': USER if token else 'any',
         'pass': password_hash(token) if token else '',

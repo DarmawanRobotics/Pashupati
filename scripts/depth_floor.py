@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
-"""
-Where the depth camera sees the floor: its mount's offset from its TF, measured.
+"""Where the depth camera sees the floor: its mount's offset from its TF, measured."""
 
-Robot standing, about 3 m of free floor ahead, the stack running:
-
-    source scripts/env.sh && python3 scripts/depth_floor.py [base_height] [topic]
-
-Prints the heights the cloud shows above the nominal floor (robot.base_height below base_link,
-0.35 by default) by distance, then the floor plane found by RANSAC among the planes within 35
-deg of level (no window around the nominal floor, so it also finds a floor the perception fit
-gives up on), and what it means: the floor's depth under base_link and the pitch and roll to
-add to the camera's rpy in the URDF (Tuning Guide 5.3).
-"""
+# Robot standing, about 3 m of free floor ahead, the stack running:
+#   source scripts/env.sh && python3 scripts/depth_floor.py [base_height] [topic]
+# Prints the floor heights by distance and the floor plane (RANSAC within 35 deg of
+# level, no window around the nominal floor): the floor's depth under base_link and
+# the pitch and roll to add to the camera's rpy in the URDF (Tuning Guide 5.3).
 
 from __future__ import annotations
 

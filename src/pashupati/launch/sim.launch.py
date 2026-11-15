@@ -1,18 +1,15 @@
-r"""
-The whole Pashupati stack on the simulated robot of dharma_sim: no robot, no hardware.
+"""The whole Pashupati stack on the simulated robot of dharma_sim: no robot, no hardware."""
 
-    ros2 launch pashupati sim.launch.py rviz:=true
-    ros2 launch pashupati sim.launch.py scenario:=person_crossing
-    ros2 run pashupati_fleet fake_netra &   # a stand-in NETRA
-    ros2 launch pashupati sim.launch.py cc_url:=http://127.0.0.1:8765
-    ros2 topic pub --once /sim/obstacles geometry_msgs/msg/PoseArray \\
-        "{poses: [{position: {x: 2.0, y: -3.0}}]}"
-
-The site (mall_loop under /tmp/pashupati_sim/sites) is drawn from the world when it has no map
-yet. config/sim.yaml adapts the robot to the simulator (PointCloud2 input, no camera, the
-simulated dock); inspection and people are off unless asked for (inspection:=true with an
-Ollama, or a stand-in, at ollama_url).
-"""
+# ros2 launch pashupati sim.launch.py rviz:=true
+# ros2 launch pashupati sim.launch.py scenario:=person_crossing
+# ros2 run pashupati_fleet fake_netra &   (a stand-in NETRA)
+# ros2 launch pashupati sim.launch.py cc_url:=http://127.0.0.1:8765
+# ros2 topic pub --once /sim/obstacles geometry_msgs/msg/PoseArray \
+#     "{poses: [{position: {x: 2.0, y: -3.0}}]}"
+# A site without a map (mall_loop under /tmp/pashupati_sim/sites) is drawn from the
+# world; config/sim.yaml adapts the robot to the simulator (PointCloud2, no camera, the
+# simulated dock). Inspection and people are off unless asked for (inspection:=true
+# with an Ollama, or a stand-in, at ollama_url).
 
 from __future__ import annotations
 

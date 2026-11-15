@@ -28,5 +28,6 @@ setup(
             'fleet_uplink_node = pashupati_fleet.fleet_uplink_node:main',
             'fake_netra = pashupati_fleet.tools.fake_netra:main',
         ],
+        'dharma.console': ['pashupati_fleet = pashupati_fleet.console:nodes'],
     },
 )
