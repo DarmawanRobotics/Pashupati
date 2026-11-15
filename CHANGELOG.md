@@ -62,6 +62,8 @@ versions follow [SemVer](https://semver.org).
 
 ### Changed
 
+- `pashupati.repos` pins every Dharma repository at its main of 2026-11-15, with the console
+  and the tidy-up merged (dharma_interfaces at its main of 2026-11-14, the same TripStatus).
 - Tidy-up: one-line docstrings (the details as short comments, usage lines of the scripts and
   launch files as comments), the PDF builder and the diagrams in smaller functions. No change
   in behaviour.
