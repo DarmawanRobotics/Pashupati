@@ -1,10 +1,4 @@
-"""
-The composition of the Pashupati robot: the Dharma stack plus the Pashupati packages.
-
-This is the one place to adjust when a package's launch contract changes. Every package launch
-accepts params_file, robot_params, use_sim_time and log_level; only non-empty arguments are
-passed, so an unset one never hides a value from a parameter file.
-"""
+"""The composition of the Pashupati robot: the Dharma stack plus the Pashupati packages."""
 
 from __future__ import annotations
 
@@ -120,7 +114,7 @@ def flag(value: bool) -> str:
 
 
 def common(o: Options) -> dict:
-    """Return the arguments every package launch accepts."""
+    """Return the arguments every package launch accepts (the Dharma launch contract)."""
     return {
         'params_file': o.params_file,
         'robot_params': o.robot_params,

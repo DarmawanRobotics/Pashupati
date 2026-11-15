@@ -1,18 +1,14 @@
-"""
-The whole Pashupati robot in one launch (production: pashupati.service, scripts/run_robot.sh).
+"""The whole Pashupati robot in one launch (in production: pashupati.service, run_robot.sh)."""
 
-    ros2 launch pashupati robot.launch.py                                 # patrol, last site
-    ros2 launch pashupati robot.launch.py robot_driver:=my_dog_bringup site:=lobby
-    ros2 launch pashupati robot.launch.py site:=lobby mode:=teach        # map the site
-    ros2 launch pashupati robot.launch.py camera:=rtsp camera_url:=rtsp://192.168.1.120:8554/test
-
-The robot driver comes from the robot's own package (robot_driver:=, src/xtras/README.md).
-Every package launch gets robot_params:=config/robot.yaml and one parameter file merged from
-config/stack.yaml and the site file (params_file, /etc/pashupati/site.yaml; later wins), with
-the started nodes added to the health monitor's nodes.expected. Most arguments default to the
-environment of pashupati.service (/etc/pashupati/pashupati.env). The composition is in
-pashupati/stack.py.
-"""
+# ros2 launch pashupati robot.launch.py                                patrol, last site
+# ros2 launch pashupati robot.launch.py robot_driver:=my_dog_bringup site:=lobby
+# ros2 launch pashupati robot.launch.py site:=lobby mode:=teach        map the site
+# ros2 launch pashupati robot.launch.py camera:=rtsp camera_url:=rtsp://192.168.1.120:8554/test
+# The robot driver comes from the robot's own package (robot_driver:=, src/xtras/README.md).
+# Every package launch gets robot_params:=config/robot.yaml and one parameter file merged from
+# config/stack.yaml and the site file (/etc/pashupati/site.yaml; later wins), the started nodes
+# in health's nodes.expected. Most arguments default to /etc/pashupati/pashupati.env (the
+# environment of pashupati.service); the composition is in pashupati/stack.py.
 
 from __future__ import annotations
 

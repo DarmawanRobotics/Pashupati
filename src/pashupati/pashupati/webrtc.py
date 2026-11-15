@@ -27,12 +27,9 @@ def unavailable(enabled: str, binary: str):
 
 
 def video_server(enabled: str, binary: str, options: Options, data: dict):
-    """
-    Return (MediaMTX action or None, log line).
-
-    MediaMTX reads the teleop token of the merged parameters and starts video_stream_node with
-    them while the handheld watches; without it the handheld gets the JPEG frames.
-    """
+    """Return (MediaMTX action or None, log line); without MediaMTX the handheld gets JPEGs."""
+    # MediaMTX takes the teleop token of the merged parameters and runs video_stream_node
+    # with them while the handheld watches.
     found, version, executable, reason = unavailable(enabled, binary)
     if reason:
         return None, reason

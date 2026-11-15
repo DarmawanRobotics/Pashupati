@@ -1,15 +1,11 @@
-"""
-End to end: the whole Pashupati robot on dharma_sim, the way an operator uses it.
+"""End to end: the whole Pashupati robot on dharma_sim, the way an operator uses it."""
 
-Starts `ros2 launch pashupati sim.launch.py` with the VLM inspection (a stand-in Ollama) and the
-NETRA uplink (pashupati_fleet's fake_netra), publishes a camera, then: the robot localizes, a
-route with three stop points is taught (driven with planner/go_to while route/start records),
-the taught route is patrolled to its end with the inspection hook answered at every stop, the
-handheld takes over through the control mux in the middle and gives it back, and NETRA receives
-the telemetry, the stop events, the findings and the taught route. Finally the launch must stop
-cleanly with no node died. Needs the workspace installed (colcon test); PASHUPATI_SKIP_SIM=1
-skips it.
-"""
+# sim.launch.py with the VLM inspection (a stand-in Ollama), the NETRA uplink (fake_netra)
+# and a published camera: the robot localizes, a route with three stop points is taught
+# (planner/go_to while route/start records) and patrolled to its end with the inspection
+# hook answered at every stop, the handheld takes over in the middle and gives it back,
+# NETRA receives telemetry, stop events, findings and the route, and the launch stops
+# cleanly. Needs the workspace installed (colcon test); PASHUPATI_SKIP_SIM=1 skips it.
 
 from __future__ import annotations
 
