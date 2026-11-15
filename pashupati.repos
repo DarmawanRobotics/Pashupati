@@ -38,7 +38,7 @@ repositories:
   dharma/dharma_console:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_console.git
-    version: 2d1aa4e2a0765c648ace6d2f51c16b6894e6f35a # feat/console 2026-11-15 (menuconfig, monitor)
+    version: 5bdee8c910f9ae0480a5df6f6d7eec51ee3ca30c # feat/console 2026-11-15 (menuconfig, monitor)
   dharma/dharma_rviz:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_rviz.git
