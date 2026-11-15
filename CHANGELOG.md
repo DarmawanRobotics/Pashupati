@@ -7,6 +7,9 @@ versions follow [SemVer](https://semver.org).
 
 ### Added
 
+- `scripts/depth_floor.py`: where the depth camera sees the floor, by RANSAC without a window
+  around the nominal floor; prints the heights above the floor by distance, the floor's depth
+  under base_link and the pitch and roll the camera's mount is off its TF (Tuning Guide 5.3).
 - Low obstacles from the RealSense (Dharma pin, `lidar_sector_node` `depth.*` in `stack.yaml`):
   the D435i's depth point cloud joins both sector scans, so a box, a bag or a low step below
   the Mid-360 (which sees nothing below ~40 cm within a metre) stops the robot or is passed
@@ -51,6 +54,12 @@ versions follow [SemVer](https://semver.org).
 
 ### Fixed
 
+- Low obstacles from the RealSense on the L1W (robot package `l1w_ros2`): on the Jetson the
+  point cloud parameters are `pointcloud__neon_.*` (librealsense's ARM block), so the cloud was
+  never published; depth now 640 x 480 decimated to 160 x 120. The D435i's mount, measured from
+  its floor, is 18.3 deg down and 1.85 deg rolled, not the mesh's 10 deg: the floor fit gave up
+  and the floor read as obstacles 0.6 m ahead. Tuning Guide 2.6: the measured mount, the
+  Jetson parameters, USB 3, the symptoms.
 - Tuning Guide: the "Set it back" warning lost its indentation (the formatter must not touch
   `docs/manual` and `docs/tuning`) and printed as plain text.
 - `fleet_uplink_node` could hang right after start and never reach NETRA: its WebSocket and

@@ -35,12 +35,13 @@ lidar_sector_node:
     memory:
       enabled: false # as 2.0: remembered points (odom frame, 10 s) kept those ghosts around
     depth:
-      # The RealSense D435i, pitched 10 deg down, sees the floor right ahead, where the Mid-360
-      # on top sees nothing below ~40 cm within a metre: a box, a bag or a low step there stops
-      # the robot or is passed around. The cloud comes from the robot package (l1w_bringup
-      # realsense_params.yaml: depth 424 x 240 decimated, no texture). The floor is fitted in
-      # every cloud: the TODO pitch of the mount (10 deg) is logged against the floor once a
-      # minute ("depth camera floor fitted"). A silent camera leaves the scans to the LiDAR.
+      # The RealSense D435i, pitched 18 deg down (measured from the floor, l1w_description),
+      # sees the floor right ahead, where the Mid-360 on top sees nothing below ~40 cm within a
+      # metre: a box, a bag or a low step there stops the robot or is passed around. The cloud
+      # comes from the robot package (l1w_bringup realsense_params.yaml: depth 640 x 480
+      # decimated to 160 x 120, no texture; pointcloud__neon_.* on the Jetson). The floor is
+      # fitted in every cloud, the mount's offset from its TF logged once a minute ("depth
+      # camera floor fitted"); a silent camera leaves the scans to the LiDAR.
       enabled: true # the camera's low obstacles join both scans; false: the LiDAR alone
       topic: /camera/camera/depth/color/points # PointCloud2 of realsense2_camera
       memory_sec: 6.0 # s, a low box beside the robot (out of the camera's view) is kept
