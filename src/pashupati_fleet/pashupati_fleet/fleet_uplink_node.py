@@ -1,9 +1,8 @@
-"""
-fleet_uplink_node: the robot side of the NETRA command center (API.md).
+"""fleet_uplink_node: the robot side of the NETRA command center (API.md)."""
 
-Telemetry, patrol, stop-point and alert events over one WebSocket; anomalies and taught routes
-through an on-disk spool uploaded over HTTP; NETRA's commands become the stack's services.
-"""
+# Telemetry, patrol, stop-point and alert events over one WebSocket; anomalies and
+# taught routes through an on-disk spool uploaded over HTTP; NETRA's commands become
+# the stack's services.
 
 from __future__ import annotations
 

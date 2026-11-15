@@ -1,9 +1,7 @@
-"""
-The link to NETRA: a WebSocket and the HTTP uploader of the spool.
+"""The link to NETRA: a WebSocket and the HTTP uploader of the spool, each on its own thread."""
 
-The WebSocket reconnects and keeps an outbox while offline; both run on their own threads and
-NETRA's commands are handed to the ROS thread.
-"""
+# The WebSocket reconnects and keeps an outbox while offline; NETRA's commands are
+# handed to the ROS thread.
 
 from __future__ import annotations
 

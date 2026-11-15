@@ -1,11 +1,4 @@
-"""
-The robot's clock offset to NETRA, measured like NTP over the WebSocket.
-
-The robot sends `time_sync` {t0} (its clock), NETRA answers {t0, t1, t2} (its clock when it
-received and when it answered), the robot notes t3 on arrival. offset = ((t1 - t0) + (t2 - t3))
-/ 2 is NETRA's clock minus the robot's; the round trip minus NETRA's own time bounds its error.
-The sample with the shortest round trip of the last few is the best estimate.
-"""
+"""The robot's clock offset to NETRA, measured like NTP over the WebSocket (time_sync)."""
 
 from __future__ import annotations
 
@@ -24,6 +17,8 @@ class ClockOffset:
 
     def add(self, t0: float, t1: float, t2: float, t3: float) -> bool:
         """Add one exchange; False when its times are impossible (ignored)."""
+        # t0 sent and t3 received on the robot's clock, t1 received and t2 answered on NETRA's;
+        # the round trip minus NETRA's own time bounds the error of the offset
         rtt = (t3 - t0) - (t2 - t1)
         if t3 < t0 or t2 < t1 or rtt < 0.0:
             return False

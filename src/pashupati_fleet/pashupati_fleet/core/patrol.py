@@ -1,9 +1,4 @@
-"""
-A patrol as NETRA sees it: started by a command, laps, alerts, finished (no ROS).
-
-Laps are counted from the follower's progress: on a loop route the waypoint index starts over
-at the beginning of every lap.
-"""
+"""A patrol as NETRA sees it (no ROS): started by a command, laps, alerts, finished."""
 
 from __future__ import annotations
 
@@ -51,6 +46,7 @@ class Patrol:
         """Return the alerts, laps and end of the patrol a follower status brings."""
         out = []
         previous, self.state = self.state, state
+        # a lap: on a loop route the follower's waypoint index starts over
         wrapped = count > 0 and self.index >= count // 2 and index < count // 4
         if self.current and state in MOVING_STATES and wrapped:
             self.lap += 1

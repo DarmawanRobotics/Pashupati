@@ -1,12 +1,9 @@
-r"""
-The NETRA uplink (fleet_uplink_node).
+"""The NETRA uplink (fleet_uplink_node)."""
 
-    ros2 launch pashupati_fleet fleet.launch.py robot_ns:=robot \\
-        server_url:=https://netra.example.com token:=<robot token>
-
-Same contract as the Dharma package launches (params_file, robot_params, use_sim_time,
-log_level); non-empty server_url, token and robot_id win over the parameter files.
-"""
+# ros2 launch pashupati_fleet fleet.launch.py robot_ns:=robot \
+#     server_url:=https://netra.example.com token:=<robot token>
+# The Dharma launch contract (params_file, robot_params, use_sim_time, log_level);
+# non-empty server_url, token and robot_id win over the parameter files.
 
 from __future__ import annotations
 
