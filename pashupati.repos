@@ -5,45 +5,45 @@ repositories:
   dharma/dharma_utils:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_utils.git
-    version: 8d0472301cea83651c176288df4bf344a87199eb # main 2026-10-30
+    version: 6e445e338142a538529c724f9d420f13f5b44fe8 # main 2026-11-15
   dharma/dharma_interfaces:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_interfaces.git
-    version: c04650b4bc08288bfea2fac7d0f432befbb9ea9f # feat/trip 2026-11-14 (TripStatus)
+    version: 3ec0a9f023a81dbb32801797e521eb186f0e57c8 # main 2026-11-14 (TripStatus)
   dharma/dharma_odometry:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_odometry.git
-    version: 838ade93d533a98618dc90de6026d054d038d927 # feat/console 2026-11-15 (console)
+    version: a554b072230158420ba3a9ee3121d3f961080ced # main 2026-11-15
   dharma/dharma_localization:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_localization.git
-    version: 160847df63b7516d6c87e8d5eca043fe3f46c96f # feat/console 2026-11-15 (console)
+    version: c1296f3a88759c95c6257e7b196567b1963f936a # main 2026-11-15
   dharma/dharma_perception:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_perception.git
-    version: c1491add56340ad899dc04104f82ea971567087b # feat/console 2026-11-15 (console)
+    version: a6d6b79cc64befb763a447f00c112cf432eb4d18 # main 2026-11-15
   dharma/dharma_mapping:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_mapping.git
-    version: bcef37070059c8f41c8fa8862c4e3eb6dd7b3f7e # feat/console 2026-11-15 (console)
+    version: 8beb6b1763bacdcb28806a92a17ee1607b157ffc # main 2026-11-15
   # dharma_navigation and dharma_control
   dharma/dharma_navigation:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_navigation.git
-    version: 518320002b7a0b457e84e04965f23a9da9cc4633 # feat/console 2026-11-15 (console)
+    version: fa25b5342c608d22a5099817cd116e406ce2ad94 # main 2026-11-15
   dharma/dharma_health:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_health.git
-    version: d76e038b81fc295fedf72cbb40ec435ed604eaa3 # feat/console 2026-11-15 (console)
+    version: 586c1b1b6e385d36f09fa1d7b6f288740d4e690b # main 2026-11-15
   dharma/dharma_console:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_console.git
-    version: 5bdee8c910f9ae0480a5df6f6d7eec51ee3ca30c # feat/console 2026-11-15 (menuconfig, monitor)
+    version: d6fae4e02f543dfaf0f99228e6b16a0c83317f61 # main 2026-11-15 (menuconfig, monitor)
   dharma/dharma_rviz:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_rviz.git
-    version: 60370b3887b8fa70b6b31e7fc067d9727a1fae82 # main 2026-10-30
+    version: 11b86925e5471c9a24eda9d1dbf2510baae07df5 # main 2026-11-15
   dharma/dharma_sim:
     type: git
     url: git@github.com:DarmawanRobotics/dharma_sim.git
-    version: 3560074a0497ffde11689e86433abce7b49d0a1d # feat/console 2026-11-15 (console)
+    version: 124ccd0cc866580d0e18d768e371745f1375c2c4 # main 2026-11-15
