@@ -159,6 +159,15 @@ pashu
 pnode pashupati_bridge teleop_udp_node bridge.yaml   # one node, as robot.launch.py runs it
 ```
 
+The Dharma console, the same for every login (no `pashu` needed):
+
+```bash
+echo "alias pconfig='~/dev/Pashupati/scripts/console.sh menuconfig'" >> ~/.bashrc   # once
+echo "alias pmonitor='~/dev/Pashupati/scripts/console.sh monitor'" >> ~/.bashrc
+pconfig     # menuconfig: every parameter of the site file and the env file, checked, saved, restart
+pmonitor    # the robot live: status, health checks and rates, computer, warnings; r: report file
+```
+
 ## Operate
 
 **Teach.** Map the site and teach a route (the handheld's **Record** and **Point** do the same):
