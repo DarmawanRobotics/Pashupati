@@ -6,11 +6,7 @@ from pashupati_utils.utils.params import outcome
 
 
 def call_service(client, request, done) -> bool:
-    """
-    Call a service without waiting; done(ok, message, result) runs once it answered.
-
-    Returns False (and calls nothing) when the service is not available.
-    """
+    """Call a service, done(ok, message, result) once it answers; False when it is unavailable."""
     if not client.service_is_ready():
         return False
 

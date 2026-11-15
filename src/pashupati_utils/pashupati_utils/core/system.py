@@ -1,10 +1,8 @@
-"""
-The computer's figures and the sensor rates the handheld and NETRA show, from health findings.
+"""The computer's figures and sensor rates the handheld and NETRA show, from health findings."""
 
-health_monitor_node publishes one diagnostic status per finding, named '<prefix>: <finding>'
-(`system:cpu`, `system:memory`, `sensor:/livox/lidar`, ...) with its numbers as key / value
-pairs. These helpers turn them back into the fields of the Pashupati protocols.
-"""
+# health_monitor_node publishes one diagnostic status per finding, '<prefix>: <finding>'
+# (system:cpu, system:memory, sensor:/livox/lidar, ...) with its numbers as key / value
+# pairs; these helpers turn them back into the fields of the Pashupati protocols.
 
 from __future__ import annotations
 
