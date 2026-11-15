@@ -21,26 +21,20 @@ def thumbnail(img: np.ndarray) -> np.ndarray:
 
 
 def frame_change(thumb: np.ndarray, last) -> float:
-    """
-    Return how much the picture changed: the largest grey-level change of a thumbnail cell.
-
-    The largest, not the mean: a piece of trash appearing changes a few cells a lot and the
-    rest not at all. Camera noise averages out in the cells (below 3 levels).
-    """
+    """Return how much the picture changed: the largest grey-level change of a thumbnail cell."""
+    # The largest, not the mean: a piece of trash appearing changes a few cells a lot and
+    # the rest not at all. Camera noise averages out in the cells (below 3 levels).
     if last is None or last.shape != thumb.shape:
         return 255.0
     return float(np.max(np.abs(thumb - last)))
 
 
 class FrameQueue:
-    """
-    Frames waiting for the model, first in first out, at most `limit` (the oldest goes first).
-
-    Kept in `directory` (JPEG plus a JSON of its metadata per frame) so that frames survive a
-    restart; an empty directory keeps them in memory only.
-    """
+    """Frames waiting for the model, first in first out, at most `limit` (the oldest goes)."""
 
     def __init__(self, directory: str, limit: int):
+        # in directory a JPEG and a JSON of its metadata per frame, so frames survive a restart;
+        # an empty directory keeps them in memory only
         self._dir = os.path.expanduser(directory) if directory else ''
         self.limit = max(int(limit), 1)
         self.dropped = 0  # frames pushed out by newer ones because the queue was full
